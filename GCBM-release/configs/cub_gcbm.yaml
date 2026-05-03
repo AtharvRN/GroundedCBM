@@ -1,0 +1,8 @@
+config_json: configs/cub_gcbm.json
+dataset: cub
+model_name: savlg_cbm
+backbone: resnet50_cub_mm
+concept_set: concept_files/cub_filtered.txt
+annotation_dir: /path/to/cub_annotations
+save_dir: artifacts/cub
+seed: 6885

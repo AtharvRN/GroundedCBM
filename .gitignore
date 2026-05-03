@@ -1,0 +1,22 @@
+# Secrets and local credentials
+*.key
+*.pem
+*.p8
+*.p12
+*.der
+.env
+.env.*
+
+# Local discussion / scratch notes
+DISCUSSION.md
+DISCUSSION.txt
+NOTES.md
+NOTES.txt
+SCRATCH.md
+SCRATCH.txt
+TODO.local.md
+
+# OS / Python noise
+.DS_Store
+__pycache__/
+*.pyc
