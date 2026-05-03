@@ -42,7 +42,7 @@ from gcbm.evaluate_savlg_native_maps import (
     _normalize_map_with_mode,
     _parse_csv_floats,
 )
-from gcbm.visualize_savlg_examples import _load_args, _load_concepts
+from gcbm.savlg_eval_common import _load_args, _load_concepts
 
 
 class IndexedDataset(Dataset):

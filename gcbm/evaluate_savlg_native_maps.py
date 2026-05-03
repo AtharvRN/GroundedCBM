@@ -24,7 +24,7 @@ from methods.savlg import (
     forward_savlg_concept_layer,
 )
 from model.utils import get_bbox_iou
-from gcbm.visualize_savlg_examples import (
+from gcbm.savlg_eval_common import (
     _load_args,
     _load_concepts,
     _normalize_map,

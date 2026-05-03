@@ -1,6 +1,6 @@
 # G-CBM Release
 
-Minimal release tree for reproducing the final G-CBM paper runs on ImageNet and CUB.
+Minimal training/evaluation release tree for reproducing the final G-CBM paper runs on ImageNet and CUB.
 
 ## Install
 
@@ -38,10 +38,16 @@ python scripts/eval_imagenet_localization.py \
   --annotation_dir /path/to/imagenet_annotations
 ```
 
-CUB training:
+CUB SAVLG / G-CBM training:
 
 ```bash
-python scripts/train_cub_gcbm.py --config configs/cub_gcbm.json
+python scripts/train_cub_savlg.py --config configs/cub_gcbm.json
+```
+
+CUB SALF-CBM training:
+
+```bash
+python scripts/train_cub_salf.py --config configs/cub_salf.json
 ```
 
 CUB NEC / sparse evaluation:
@@ -50,21 +56,24 @@ CUB NEC / sparse evaluation:
 python scripts/eval_cub_nec.py --load_path /path/to/cub_run
 ```
 
-CUB localization:
+CUB localization across any subset of SAVLG, SALF, VLG, LF:
 
 ```bash
 python scripts/eval_cub_localization.py \
-  --load_path /path/to/cub_run \
-  --annotation_dir /path/to/cub_annotations \
+  --savlg_path /path/to/savlg_run \
+  --salf_path /path/to/salf_run \
+  --vlg_path /path/to/vlg_run \
+  --lf_path /path/to/lf_run \
+  --cub70_root /path/to/CUB70-PartSegmentationDataset \
   --cub_root /path/to/CUB_200_2011 \
-  --mapping_json /path/to/cub_concept_part_mapping.json \
-  --output /path/to/cub_localization.json
+  --mapping_json /path/to/cub_concept_part_mapping.json
 ```
 
-ImageNet figure rendering:
+Concept accuracy evaluation on the common concept set:
 
 ```bash
-python scripts/render_imagenet_spatial_grid.py --output_dir /tmp/gcbm_spatial_grid
+python scripts/eval_concept_accuracy.py \
+  --load_paths /path/to/savlg_run /path/to/salf_run /path/to/vlg_run /path/to/lf_run
 ```
 
 ## Smoke tests
