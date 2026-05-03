@@ -93,10 +93,13 @@ def eval_model(load_dir, common_concepts, image_indices, device_override=None):
 
     model_name = getattr(args, "model_name", "savlg_cbm")
     if not os.path.isdir(args.annotation_dir):
-        for candidate in ["annotations", "/workspace/SAVLGCBM/annotations"]:
-            if os.path.isdir(candidate):
-                args.annotation_dir = candidate
-                break
+        candidate = "annotations"
+        if os.path.isdir(candidate):
+            args.annotation_dir = candidate
+        else:
+            raise FileNotFoundError(
+                f"annotation_dir does not exist in saved args and no local fallback was found: {args.annotation_dir}"
+            )
     print(
         f"  model={model_name}, n_model_concepts={len(model_concepts)}, n_common={len(common_concepts)}",
         flush=True,
@@ -134,6 +137,12 @@ def eval_model(load_dir, common_concepts, image_indices, device_override=None):
             forward_savlg_concept_layer,
         )
 
+        if getattr(args, "skip_test_eval", False):
+            print(
+                "  overriding saved skip_test_eval=True to force evaluation on dataset_val",
+                flush=True,
+            )
+            args.skip_test_eval = False
         _, _, _, _, test_ds, backbone = create_savlg_splits(args)
         concept_layer = build_savlg_concept_layer(args, backbone, len(model_concepts))
         concept_layer.load_state_dict(torch.load(os.path.join(load_dir, "concept_layer.pt"), map_location=args.device))

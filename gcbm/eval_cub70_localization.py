@@ -139,6 +139,12 @@ def get_spatial_maps_savlg(load_dir, image_paths, device):
     with open(os.path.join(load_dir, "args.txt")) as f:
         args = argparse.Namespace(**json.load(f))
     args.device = device
+    if getattr(args, "skip_test_eval", False):
+        print(
+            "[CUB70 loc] overriding saved skip_test_eval=True to force evaluation on dataset_val",
+            flush=True,
+        )
+        args.skip_test_eval = False
     with open(os.path.join(load_dir, "concepts.txt")) as f:
         concepts = f.read().strip().split("\n")
 
@@ -328,6 +334,8 @@ def evaluate_model(model_type, load_dir, cub70_images, concept_part_map, device,
     if model_type == "savlg":
         backbone, concept_layer, args, concepts = get_spatial_maps_savlg(load_dir, [], device)
         from methods.savlg import create_savlg_splits
+        if getattr(args, "skip_test_eval", False):
+            args.skip_test_eval = False
         _, _, _, _, test_ds, _ = create_savlg_splits(args)
     elif model_type == "salf":
         backbone, concept_layer, args, concepts = get_spatial_maps_salf(load_dir, device)

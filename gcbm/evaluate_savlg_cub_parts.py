@@ -251,6 +251,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args_ns = parse_args()
     args = _load_args(args_ns.load_path, args_ns.device, args_ns.annotation_dir)
+    if getattr(args, "skip_test_eval", False):
+        print(
+            "[cub-parts] overriding saved skip_test_eval=True to force evaluation on dataset_val",
+            flush=True,
+        )
+        args.skip_test_eval = False
     _, _, _, _, test_dataset, backbone = create_savlg_splits(args)
     if args_ns.max_images is not None:
         keep = min(args_ns.max_images, len(test_dataset))

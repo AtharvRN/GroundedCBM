@@ -649,6 +649,12 @@ def sparsity_acc_test_savlg_cbm(
         args.disable_activation_cache = True
     if not hasattr(args, "use_activation_cache"):
         args.use_activation_cache = not bool(getattr(args, "disable_activation_cache", False))
+    if getattr(args, "skip_test_eval", False):
+        print(
+            "[SAVLG NEC] overriding saved skip_test_eval=True to force evaluation on dataset_val",
+            flush=True,
+        )
+        args.skip_test_eval = False
     with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
         concepts = f.read().split("\n")
     classes = data_utils.get_classes(args.dataset)
