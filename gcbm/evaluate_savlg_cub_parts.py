@@ -29,6 +29,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -140,6 +141,62 @@ def load_part_locs(part_locs_txt: Path, part_names: Dict[int, str]) -> Dict[int,
         part_id = int(part_id_str)
         out.setdefault(image_id, {})[part_names[part_id]] = (float(x_str), float(y_str))
     return out
+
+
+def resize_short_edge_size(image_size: Tuple[int, int], resize_size: int) -> Tuple[int, int]:
+    width, height = image_size
+    if width <= 0 or height <= 0:
+        return int(resize_size), int(resize_size)
+    if width == height:
+        return int(resize_size), int(resize_size)
+    if width < height:
+        return int(resize_size), int(resize_size * height / width)
+    return int(resize_size * width / height), int(resize_size)
+
+
+def infer_resize_size(backbone_name: str, crop_size: int) -> int:
+    if backbone_name == "resnet50_cub_mm" or crop_size == 448:
+        return 600
+    return 256
+
+
+def transform_point_for_model_input(
+    point: Tuple[float, float],
+    image_size: Tuple[int, int],
+    crop_size: int,
+    resize_size: int,
+) -> Optional[Tuple[float, float]]:
+    # CUB part annotations are in original image pixels. The model sees the
+    # deterministic evaluation transform, so apply Resize(short edge) +
+    # CenterCrop before comparing points to upsampled concept maps.
+    width, height = image_size
+    if width <= 0 or height <= 0:
+        return None
+    resized_width, resized_height = resize_short_edge_size(image_size, resize_size)
+    scale_x = resized_width / float(width)
+    scale_y = resized_height / float(height)
+    x = float(point[0]) * scale_x
+    y = float(point[1]) * scale_y
+    crop_left = max(int(round((resized_width - crop_size) / 2.0)), 0)
+    crop_top = max(int(round((resized_height - crop_size) / 2.0)), 0)
+    x -= crop_left
+    y -= crop_top
+    if x < 0.0 or y < 0.0 or x >= crop_size or y >= crop_size:
+        return None
+    return x, y
+
+
+def sample_image_size(ds: Dataset, idx: int, cache: Dict[int, Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+    if idx in cache:
+        return cache[idx]
+    sample_path = sample_path_from_dataset(ds, idx)
+    try:
+        with Image.open(sample_path) as image:
+            size = image.size
+    except OSError:
+        return None
+    cache[idx] = size
+    return size
 
 
 def load_mapping(mapping_json: Path) -> Dict[str, List[str]]:
@@ -254,6 +311,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--activation_thresholds", type=str, default="0.3,0.4,0.5,0.6,0.7,0.8,0.9")
     parser.add_argument("--radius_fracs", type=str, default="0.01,0.02,0.05,0.1")
     parser.add_argument("--disk_radius_frac", type=float, default=0.03)
+    parser.add_argument(
+        "--resize_size",
+        type=int,
+        default=None,
+        help="Short-edge resize used before center crop. Defaults to 256 for 224px ResNet CUB and 600 for 448px MMPretrain CUB.",
+    )
     return parser.parse_args()
 
 
@@ -318,6 +381,7 @@ def main() -> None:
 
     dataset_base_indices = [resolve_base_index(dataset.base, i) for i in range(len(dataset))]
     image_ids_by_ds_idx = build_dataset_image_ids(dataset.base, images_index)
+    image_size_by_ds_idx: Dict[int, Tuple[int, int]] = {}
     image_part_names_by_id = {img_id: set(parts.keys()) for img_id, parts in part_locs.items()}
     if args_ns.annotation_cache_json:
         cache_payload = json.loads(Path(args_ns.annotation_cache_json).read_text())
@@ -355,8 +419,32 @@ def main() -> None:
                 gt_concepts = mapped_gt_concepts_by_base_idx.get(int(base_idx), [])
                 if not gt_concepts:
                     continue
+                image_size = sample_image_size(dataset.base, int(ds_idx), image_size_by_ds_idx)
+                if image_size is None:
+                    continue
+                resize_size = int(args_ns.resize_size or infer_resize_size(getattr(args, "backbone", ""), img_h))
+                valid_gt_concepts: List[Tuple[str, List[Tuple[float, float]]]] = []
+                for label, exact_parts in gt_concepts:
+                    points = [
+                        transformed
+                        for p in exact_parts
+                        if p in image_parts
+                        for transformed in [
+                            transform_point_for_model_input(
+                                image_parts[p],
+                                image_size=image_size,
+                                crop_size=img_h,
+                                resize_size=resize_size,
+                            )
+                        ]
+                        if transformed is not None
+                    ]
+                    if points:
+                        valid_gt_concepts.append((label, points))
+                if not valid_gt_concepts:
+                    continue
 
-                concept_idx_tensor = torch.as_tensor([concept_to_idx[label] for label, _ in gt_concepts], device=spatial_maps.device, dtype=torch.long)
+                concept_idx_tensor = torch.as_tensor([concept_to_idx[label] for label, _ in valid_gt_concepts], device=spatial_maps.device, dtype=torch.long)
                 maps_k_native = spatial_maps[b].index_select(0, concept_idx_tensor)
                 maps_k = F.interpolate(
                     maps_k_native.unsqueeze(1),
@@ -380,8 +468,7 @@ def main() -> None:
                 gt_masks: List[torch.Tensor] = []
                 point_indicator_masks: List[torch.Tensor] = []
 
-                for (_label, exact_parts), px, py in zip(gt_concepts, argmax_x, argmax_y):
-                    points = [image_parts[p] for p in exact_parts]
+                for (_label, points), px, py in zip(valid_gt_concepts, argmax_x, argmax_y):
                     points_per_concept.append(points)
                     mean_dist_sum += min_normalized_distance(int(px), int(py), points, diag)
                     mean_dist_count += 1
