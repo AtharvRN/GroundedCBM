@@ -53,7 +53,8 @@ expects GDINO annotations and precomputed GDINO target tensors for concept-layer
 training.
 
 For ImageNet validation, `eval_imagenet_nec.py` supports a flat validation
-directory when the official devkit metadata is supplied.
+directory when the official devkit metadata is supplied. Localization supports
+either an extracted validation directory or the official validation tar.
 
 ## Unified CLI
 
@@ -120,6 +121,12 @@ python scripts/eval_gdino_localization.py \
   --activation_thresholds 0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9
 ```
 
+The ImageNet localization evaluator maps validation annotations by filename.
+Use the extracted `val_root` when available; otherwise pass `--val_tar`. The
+script reports distribution metrics such as mass inside GT and pointing
+accuracy, plus thresholded mask/box IoU and LocAcc at the requested box IoU
+thresholds.
+
 For ImageNet-v1 checkpoint reproduction, keep the saved checkpoint
 configuration, including `resnet50_weights=v1`.
 
@@ -145,6 +152,11 @@ python scripts/eval_gdino_localization.py \
   --map_normalization concept_zscore_minmax \
   --activation_thresholds 0.3,0.5,0.7,0.9
 ```
+
+For CUB GDINO localization, `--annotation_dir` should contain the CUB GDINO JSON
+files used during SG-CBM concept-layer training/evaluation. The evaluator uses
+the trained concept-layer checkpoint and saved concept statistics from
+`--gcbm_path`; sparse GLM weights are not used for native localization metrics.
 
 Evaluate CUB localization across model variants:
 
@@ -184,6 +196,62 @@ Evaluate concept accuracy on a common concept set:
 python scripts/eval_concept_accuracy.py \
   --load_paths /path/to/gcbm_run /path/to/salf_run /path/to/vlg_run /path/to/lf_run
 ```
+
+## Localization Details
+
+`scripts/eval_gdino_localization.py` is the shared GDINO pseudo-GT localization
+entry point for CUB and ImageNet. Dataset loading differs, but the metric code is
+shared once images, annotations, and native spatial maps are built.
+
+Required inputs:
+
+- `--dataset cub|imagenet`
+- `--gcbm_path`: SG-CBM concept-layer run directory.
+- `--annotation_dir`: GDINO annotation JSON directory.
+- `--output`: destination JSON file.
+- ImageNet only: `--val_root` for extracted validation images or `--val_tar` for
+  the official validation tar.
+
+Recommended normalization:
+
+```bash
+--map_normalization concept_zscore_minmax
+```
+
+This matches the release evaluation path. On CUB it uses saved `proj_mean.pt`
+and `proj_std.pt` when present; on ImageNet it applies per-map z-score followed
+by min-max scaling.
+
+Common full-split commands:
+
+```bash
+python scripts/eval_gdino_localization.py \
+  --dataset cub \
+  --gcbm_path /path/to/cub_sgcbm_run \
+  --annotation_dir /path/to/cub_gdino_annotations \
+  --output results/cub_gdino_localization.json \
+  --batch_size 128 \
+  --map_normalization concept_zscore_minmax \
+  --activation_thresholds 0.3,0.5,0.7,0.9 \
+  --box_iou_thresholds 0.1,0.3,0.5
+
+python scripts/eval_gdino_localization.py \
+  --dataset imagenet \
+  --gcbm_path /path/to/imagenet_sgcbm_run \
+  --annotation_dir /path/to/imagenet_gdino_annotations \
+  --val_root /path/to/imagenet_val \
+  --output results/imagenet_gdino_localization.json \
+  --batch_size 64 \
+  --num_workers 8 \
+  --map_normalization concept_zscore_minmax \
+  --activation_thresholds 0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,mean \
+  --box_iou_thresholds 0.1,0.3,0.5
+```
+
+The output JSON includes `distribution_metrics` and `threshold_metrics`.
+`mass_in_gt` is the RMA-style score, `point_hit` is pointing accuracy, and
+`threshold_metrics[*].box_acc` contains LocAcc at each requested box IoU
+threshold.
 
 ## Notes
 
