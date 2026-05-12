@@ -1,9 +1,7 @@
 # SG-CBM
 
 Code for training and evaluating Spatially Grounded Concept Bottleneck Models
-(SG-CBM) on CUB and ImageNet. The public model name is **SG-CBM**; some
-internal checkpoint keys still use `savlg_cbm` or `gcbm` for compatibility with
-trained models and existing command-line flags.
+(SG-CBM) on CUB and ImageNet.
 
 ## Installation
 
@@ -48,9 +46,9 @@ annotations/
 ### ImageNet
 
 ImageNet SG-CBM training supports either an ImageFolder train root or a JSONL
-manifest with `path`, `class_id`, and `sample_index`. The release code also
-expects GDINO annotations and precomputed GDINO target tensors for concept-layer
-training.
+manifest with `path`, `class_id`, and `sample_index`. Training also expects
+GDINO annotations and precomputed GDINO target tensors for concept-layer
+supervision.
 
 For ImageNet validation, `eval_imagenet_nec.py` supports a flat validation
 directory when the official devkit metadata is supplied. Localization supports
@@ -137,7 +135,6 @@ Dedicated training and NEC wrappers:
 ```bash
 python scripts/train_cub_gcbm.py --config configs/cub_gcbm.json
 python scripts/train_cub_salf.py --config configs/cub_salf.json
-python scripts/train_cub_savlg.py --config configs/cub_gcbm.json
 python scripts/eval_cub_nec.py --load_path /path/to/cub_run
 ```
 
@@ -157,6 +154,7 @@ For CUB GDINO localization, `--annotation_dir` should contain the CUB GDINO JSON
 files used during SG-CBM concept-layer training/evaluation. The evaluator uses
 the trained concept-layer checkpoint and saved concept statistics from
 `--gcbm_path`; sparse GLM weights are not used for native localization metrics.
+The `--gcbm_path` flag is kept as the checkpoint-directory argument name.
 
 Evaluate CUB localization across model variants:
 
@@ -218,9 +216,9 @@ Recommended normalization:
 --map_normalization concept_zscore_minmax
 ```
 
-This matches the release evaluation path. On CUB it uses saved `proj_mean.pt`
-and `proj_std.pt` when present; on ImageNet it applies per-map z-score followed
-by min-max scaling.
+This is the recommended evaluation normalization. On CUB it uses saved
+`proj_mean.pt` and `proj_std.pt` when present; on ImageNet it applies per-map
+z-score followed by min-max scaling.
 
 Common full-split commands:
 
@@ -255,9 +253,9 @@ threshold.
 
 ## Notes
 
-- User-facing scripts use `SG-CBM`; checkpoint internals may still use `SAVLG`
-  or `gcbm`.
-- ImageNet release training is for SG-CBM concept-layer training.
+- ImageNet training in this repository is SG-CBM concept-layer training.
 - Sparse GLM / NEC evaluation uses the trained concept-layer checkpoint and GLM
   sweep outputs.
 - Localization evaluation uses concept-layer checkpoints, not sparse GLM heads.
+- Some file names and flags still contain `gcbm` because they refer to existing
+  checkpoint directory conventions.
