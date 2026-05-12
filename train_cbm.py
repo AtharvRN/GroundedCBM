@@ -1253,7 +1253,7 @@ def main():
         help="Quantile used when --clip_score_mode=quantile",
     )
 
-    config_parser = argparse.ArgumentParser()
+    config_parser = argparse.ArgumentParser(add_help=False)
     config_parser.add_argument("--config", type=str, default=None)
     config_arg, remaining_args = config_parser.parse_known_args()
     if config_arg.config is not None:
