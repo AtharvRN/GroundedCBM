@@ -71,7 +71,7 @@ python train_cbm.py --config configs/imagenet_gcbm.yaml
 Run sparse GLM / NEC evaluation for a trained CUB checkpoint:
 
 ```bash
-python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
+python scripts/eval_cub_nec.py --load_path /path/to/cub_run --lam 0.1
 ```
 
 ## ImageNet

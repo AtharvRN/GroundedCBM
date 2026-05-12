@@ -7,6 +7,7 @@ import sys
 
 
 IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "sg_cbm", "gcbm", "g-cbm", "savlg", "savlg_cbm"}
+CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
 
 def _parse_scalar(value: str):
@@ -541,14 +542,12 @@ def main():
         _run_imagenet_training(sys.argv[1:])
         return
 
-    _load_cub_dependencies()
-
     parser = argparse.ArgumentParser(description="Settings for creating CBM")
     parser.add_argument(
         "--model_name",
         type=str,
         default="vlg_cbm",
-        choices=SUPPORTED_MODELS,
+        choices=CUB_MODEL_CHOICES,
         help="Which CBM variant to train",
     )
     parser.add_argument("--dataset", type=str, default="cifar10")
@@ -1265,6 +1264,7 @@ def main():
     
     # run the training
     args = parser.parse_args(remaining_args)
+    _load_cub_dependencies()
     args.use_activation_cache = not args.disable_activation_cache
     logger.info(args)
     
