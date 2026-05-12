@@ -31,7 +31,7 @@ VAL_RE = re.compile(r"ILSVRC2012_val_(\d{8})\.JPEG$")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate standalone SAVLG-CBM on ImageNet val tar.")
+    parser = argparse.ArgumentParser(description="Evaluate SG-CBM/SAVLG on ImageNet val tar.")
     parser.add_argument("--artifact_dir", required=True)
     parser.add_argument("--val_tar", required=True)
     parser.add_argument("--devkit_dir", required=True)

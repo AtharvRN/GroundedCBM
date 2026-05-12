@@ -30,16 +30,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Build a compact JSON cache mapping CUB dataset indices to the "
-            "concept/part annotations used by G-CBM CUB part localization."
+            "concept/part annotations used by SG-CBM CUB part localization."
         )
     )
-    parser.add_argument("--load_path", required=True, help="G-CBM/SAVLG run directory containing args.txt and concepts.txt.")
+    parser.add_argument("--load_path", required=True, help="SG-CBM/SAVLG run directory containing args.txt and concepts.txt.")
     parser.add_argument("--annotation_dir", required=True, help="Directory containing cub_train/cub_val annotation JSONs.")
     parser.add_argument("--cub_root", required=True, help="Official CUB_200_2011 root with images.txt and parts/.")
     parser.add_argument("--mapping_json", required=True, help="Concept-to-CUB-part mapping JSON.")
     parser.add_argument("--output", required=True, help="Output cache JSON path.")
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--max_images", type=int, default=None, help="Optional smoke-test cap.")
+    parser.add_argument("--max_images", type=int, default=None, help="Optional cap on processed images.")
     return parser.parse_args()
 
 

@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
         "--resnet50_weights",
         choices=["v1", "v2"],
         default="v2",
-        help="Torchvision ResNet-50 ImageNet weights. Use v1 for released G-CBM checkpoints trained with the original VLG-CBM backbone.",
+        help="Torchvision ResNet-50 ImageNet weights. Use v1 for released SG-CBM checkpoints trained with the original VLG-CBM backbone.",
     )
     parser.add_argument("--amp", choices=["fp16", "bf16", "none"], default="fp16")
     parser.add_argument("--channels_last", action="store_true", default=True)
@@ -1095,7 +1095,7 @@ def _box_to_original_pixels(
     image_size: Tuple[int, int],
 ) -> Optional[Tuple[float, float, float, float]]:
     # Real GDINO annotations are saved as original-image pixel xyxy boxes, but
-    # smoke-test or external annotations may already be normalized to [0, 1].
+    # Some annotation exports are already normalized to [0, 1].
     if not isinstance(box, (list, tuple)) or len(box) != 4:
         return None
     x1, y1, x2, y2 = [float(v) for v in box]

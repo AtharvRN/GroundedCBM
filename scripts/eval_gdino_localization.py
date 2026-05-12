@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified GDINO-box localization evaluation for CUB and ImageNet G-CBM runs."""
+"""Unified GDINO-box localization evaluation for CUB and ImageNet SG-CBM runs."""
 
 from __future__ import annotations
 
@@ -46,16 +46,16 @@ from gcbm.imagenet_core import (  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate G-CBM native spatial maps against GDINO pseudo boxes on CUB or ImageNet."
+        description="Evaluate SG-CBM native spatial maps against GDINO pseudo boxes on CUB or ImageNet."
     )
     parser.add_argument("--dataset", required=True, choices=["cub", "imagenet"])
-    parser.add_argument("--gcbm_path", required=True, help="Path to a trained G-CBM run directory.")
+    parser.add_argument("--gcbm_path", required=True, help="Path to a trained SG-CBM run directory.")
     parser.add_argument("--annotation_dir", required=True, help="Directory containing GDINO annotation JSONs.")
     parser.add_argument("--output", required=True, help="Output JSON path.")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", "--workers", dest="num_workers", type=int, default=0)
-    parser.add_argument("--max_images", type=int, default=0, help="Optional smoke-test cap. 0 means full split.")
+    parser.add_argument("--max_images", type=int, default=0, help="Optional cap on evaluated images. 0 means full split.")
     parser.add_argument("--activation_thresholds", default="0.3,0.5,0.7,0.9")
     parser.add_argument("--box_iou_thresholds", default="0.1,0.3,0.5")
     parser.add_argument(

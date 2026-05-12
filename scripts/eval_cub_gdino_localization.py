@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate G-CBM CUB localization against GDINO pseudo boxes."""
+"""Evaluate SG-CBM CUB localization against GDINO pseudo boxes."""
 
 import argparse
 import runpy
@@ -13,17 +13,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate G-CBM/SAVLG native spatial maps on CUB using GDINO "
+            "Evaluate SG-CBM/SAVLG native spatial maps on CUB using GDINO "
             "annotation boxes as pseudo ground truth."
         )
     )
-    parser.add_argument("--gcbm_path", required=True, help="Path to a trained G-CBM/SAVLG run directory.")
+    parser.add_argument("--gcbm_path", required=True, help="Path to a trained SG-CBM/SAVLG run directory.")
     parser.add_argument("--annotation_dir", required=True, help="Directory containing cub_train/cub_val GDINO JSONs.")
     parser.add_argument("--output", required=True, help="Output JSON path.")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--max_images", type=int, default=None, help="Optional smoke-test cap.")
+    parser.add_argument("--max_images", type=int, default=None, help="Optional cap on evaluated images.")
     parser.add_argument(
         "--activation_thresholds",
         default="0.3,0.5,0.7,0.9",

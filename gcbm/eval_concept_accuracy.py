@@ -144,7 +144,7 @@ def eval_model(load_dir, common_concepts, image_indices, device_override=None):
             )
             args.skip_test_eval = False
         # Concept-accuracy eval samples arbitrary indices from the full held-out
-        # split, so do not inherit smoke-run test caps from training.
+        # split, so do not inherit image-count caps from training.
         args.max_test_images = 0
         _, _, _, _, test_ds, backbone = create_savlg_splits(args)
         concept_layer = build_savlg_concept_layer(args, backbone, len(model_concepts))

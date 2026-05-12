@@ -23,6 +23,9 @@ MODEL_ALIASES = {
     "lf": "lf_cbm",
     "salf": "salf_cbm",
     "savlg": "savlg_cbm",
+    "sgcbm": "savlg_cbm",
+    "sg_cbm": "savlg_cbm",
+    "sg-cbm": "savlg_cbm",
     "gcbm": "savlg_cbm",
     "g-cbm": "savlg_cbm",
 }
@@ -113,8 +116,8 @@ def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dataset", choices=("cub", "imagenet"), help="Dataset to train on.")
     parser.add_argument(
         "--model",
-        choices=(*MODEL_CHOICES, "vlg", "lf", "salf", "savlg", "gcbm", "g-cbm"),
-        help="Model variant. ImageNet currently supports only G-CBM/SAVLG.",
+        choices=(*MODEL_CHOICES, "vlg", "lf", "salf", "savlg", "sgcbm", "sg-cbm", "gcbm", "g-cbm"),
+        help="Model variant. ImageNet currently supports only SG-CBM/SAVLG.",
     )
     parser.add_argument("--concept_set", help="Concept vocabulary file for CUB training.")
     parser.add_argument("--concept_file", help="Concept vocabulary file for ImageNet training.")
@@ -135,9 +138,9 @@ def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--saga_lam", type=float, help="Sparse GLM regularization.")
     parser.add_argument("--saga_n_iters", type=int, help="Sparse GLM iterations.")
     parser.add_argument("--saga_batch_size", type=int, help="Sparse GLM batch size.")
-    parser.add_argument("--max_train_images", type=int, help="Limit training images for smoke tests.")
-    parser.add_argument("--max_test_images", type=int, help="Limit test images for CUB smoke tests.")
-    parser.add_argument("--max_val_images", type=int, help="Limit ImageNet validation images for smoke tests.")
+    parser.add_argument("--max_train_images", type=int, help="Optional cap on training images.")
+    parser.add_argument("--max_test_images", type=int, help="Optional cap on CUB test images.")
+    parser.add_argument("--max_val_images", type=int, help="Optional cap on ImageNet validation images.")
     parser.add_argument("--train_root", help="ImageNet train root.")
     parser.add_argument("--val_root", help="Optional ImageNet val root.")
     parser.add_argument("--precomputed_target_dir", help="ImageNet precomputed target directory.")
@@ -148,7 +151,7 @@ def _add_common_train_args(parser: argparse.ArgumentParser) -> None:
 def cmd_train(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(
         prog="scripts/cbm.py train",
-        description="Train VLG-CBM, LF-CBM, SALF-CBM, or G-CBM using the basic release interface.",
+        description="Train VLG-CBM, LF-CBM, SALF-CBM, or SG-CBM using the basic release interface.",
         epilog="Unknown arguments are forwarded to the underlying trainer.",
     )
     _add_common_train_args(parser)
@@ -165,7 +168,7 @@ def cmd_train(argv: list[str]) -> None:
 
     if dataset == "imagenet":
         if model_name != "savlg_cbm":
-            raise SystemExit("ImageNet training in this release currently supports G-CBM/SAVLG only.")
+            raise SystemExit("ImageNet training in this release currently supports SG-CBM/SAVLG only.")
         forwarded = _config_to_argv({k: v for k, v in config.items() if k not in {"dataset", "model_name", "config_json"}})
         for name in (
             "train_root",
@@ -237,10 +240,10 @@ def cmd_test(argv: list[str]) -> None:
     parser.add_argument("--annotation_dir", help="Annotation directory override for VLG-CBM.")
     parser.add_argument("--n_iters", type=int, help="Sparse evaluation iterations.")
     parser.add_argument("--max_glm_steps", type=int, help="Maximum sparse GLM path steps.")
-    parser.add_argument("--cbl_batch_size", type=int, help="CBL batch size override for G-CBM eval.")
+    parser.add_argument("--cbl_batch_size", type=int, help="CBL batch size override for SG-CBM eval.")
     parser.add_argument("--saga_batch_size", type=int, help="Sparse GLM batch size override.")
     parser.add_argument("--num_workers", type=int, help="DataLoader worker override.")
-    parser.add_argument("--max_images", type=int, help="Limit images for smoke tests.")
+    parser.add_argument("--max_images", type=int, help="Optional cap on evaluation images.")
     parser.add_argument("--lf_cbm", action="store_true", help="Force LF-CBM for legacy runs without metadata.")
     parser.add_argument("--disable_activation_cache", action="store_true", help="Disable activation cache reuse.")
     args, passthrough = parser.parse_known_args(argv)
@@ -266,7 +269,7 @@ def cmd_test(argv: list[str]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Unified basic training/testing commands for G-CBM release code.")
+    parser = argparse.ArgumentParser(description="Unified basic training/testing commands for SG-CBM release code.")
     parser.add_argument("command", choices=("train", "test"), help="Command to run.")
     if len(sys.argv) == 1 or sys.argv[1] in {"-h", "--help"}:
         parser.parse_args(sys.argv[1:])

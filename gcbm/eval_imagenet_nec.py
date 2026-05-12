@@ -50,7 +50,7 @@ def weight_truncation(weight: torch.Tensor, sparsity: float) -> torch.Tensor:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate G-CBM NEC sweeps on ImageNet.")
+    parser = argparse.ArgumentParser(description="Evaluate SG-CBM NEC sweeps on ImageNet.")
     parser.add_argument("--artifact_dir", required=True)
     parser.add_argument("--val_tar", default="")
     parser.add_argument("--devkit_dir", default="")

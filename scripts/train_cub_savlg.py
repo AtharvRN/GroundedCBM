@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Train the CUB SAVLG/G-CBM checkpoint using the preserved legacy trainer.")
+    parser = argparse.ArgumentParser(description="Train the CUB SAVLG/SG-CBM checkpoint using the preserved legacy trainer.")
     parser.add_argument(
         "--config",
         default="configs/cub_gcbm.json",

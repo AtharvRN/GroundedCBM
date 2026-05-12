@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
-        description="Train the CUB G-CBM checkpoint using the preserved SAVLG training path."
+        description="Train the CUB SG-CBM checkpoint using the preserved SAVLG training path."
     )
     parser.add_argument(
         "--config",

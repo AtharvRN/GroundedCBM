@@ -1,4 +1,4 @@
-"""Simplified ImageNet SAVLG-CBM CBL trainer.
+"""Simplified ImageNet SG-CBM CBL trainer.
 
 This entrypoint intentionally keeps only the path we use for paper-scale
 ImageNet CBL training:
@@ -7,7 +7,7 @@ ImageNet CBL training:
 - spatial supervision is soft-align KL,
 - sparse GLM final-layer training is optional after CBL training.
 
-It reuses the tested dataset, precompute store, and model primitives from the
+It reuses the dataset, precompute store, and model primitives from the
 standalone driver so we do not duplicate the fragile ImageNet annotation/cache
 logic here.
 """
@@ -58,7 +58,7 @@ from gcbm.imagenet_core import (  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train the G-CBM concept layer on ImageNet.")
+    parser = argparse.ArgumentParser(description="Train the SG-CBM concept layer on ImageNet.")
     parser.add_argument("--train_root", required=True)
     parser.add_argument(
         "--train_manifest",

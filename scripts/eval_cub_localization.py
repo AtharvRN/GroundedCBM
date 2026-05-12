@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Run CUB70 localization evaluation for any subset of G-CBM/SAVLG, SALF, VLG, and LF CBMs.")
-    parser.add_argument("--gcbm_path", default=None, help="Path to a G-CBM/SAVLG run directory. Alias for --savlg_path.")
+    parser = argparse.ArgumentParser(description="Run CUB70 localization evaluation for any subset of SG-CBM/SAVLG, SALF, VLG, and LF CBMs.")
+    parser.add_argument("--gcbm_path", default=None, help="Path to an SG-CBM/SAVLG run directory. Alias for --savlg_path.")
     parser.add_argument("--savlg_path", default=None)
     parser.add_argument("--salf_path", default=None)
     parser.add_argument("--vlg_path", default=None)

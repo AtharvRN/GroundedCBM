@@ -52,7 +52,7 @@ VAL_RE = re.compile(r"ILSVRC2012_val_(\d{8})\.JPEG$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate G-CBM localization on ImageNet validation data."
+        description="Evaluate SG-CBM localization on ImageNet validation data."
     )
     parser.add_argument("--artifact_dir", required=True)
     parser.add_argument("--val_tar", default="", help="Official ImageNet val tar. Used when --val_root is not set.")

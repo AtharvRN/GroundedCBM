@@ -1,8 +1,9 @@
-# G-CBM
+# SG-CBM
 
-Code for training and evaluating Grounded Concept Bottleneck Models (G-CBM) on
-CUB and ImageNet. The public model name is **G-CBM**; some internal checkpoint
-keys still use `savlg_cbm` for compatibility with trained models.
+Code for training and evaluating Spatially Grounded Concept Bottleneck Models
+(SG-CBM) on CUB and ImageNet. The public model name is **SG-CBM**; some
+internal checkpoint keys still use `savlg_cbm` or `gcbm` for compatibility with
+trained models and existing command-line flags.
 
 ## Installation
 
@@ -35,7 +36,7 @@ python datasets/split_cub_dataset.py \
 export CUB_DATASET_ROOT="$PWD/datasets/CUB"
 ```
 
-CUB G-CBM/SALF training and GDINO localization use annotation JSON files:
+CUB SG-CBM/SALF training and GDINO localization use annotation JSON files:
 
 ```text
 annotations/
@@ -46,7 +47,7 @@ annotations/
 
 ### ImageNet
 
-ImageNet G-CBM training supports either an ImageFolder train root or a JSONL
+ImageNet SG-CBM training supports either an ImageFolder train root or a JSONL
 manifest with `path`, `class_id`, and `sample_index`. The release code also
 expects GDINO annotations and precomputed GDINO target tensors for concept-layer
 training.
@@ -56,18 +57,18 @@ directory when the official devkit metadata is supplied.
 
 ## Unified CLI
 
-The unified entry point supports CUB training for G-CBM, SALF-CBM, VLG-CBM, and
-LF-CBM, plus ImageNet G-CBM training.
+The unified entry point supports CUB training for SG-CBM, SALF-CBM, VLG-CBM,
+and LF-CBM, plus ImageNet SG-CBM training.
 
 ```bash
-python scripts/cbm.py train --dataset cub --model gcbm --config configs/cub_gcbm.json
+python scripts/cbm.py train --dataset cub --model sgcbm --config configs/cub_gcbm.json
 python scripts/cbm.py train --dataset cub --model salf --config configs/cub_salf.json
 python scripts/cbm.py train --dataset cub --model vlg --config configs/cub_gcbm.json
 python scripts/cbm.py train --dataset cub --model lf --config configs/cub_gcbm.json
 
 python scripts/cbm.py train \
   --dataset imagenet \
-  --model gcbm \
+  --model sgcbm \
   --config configs/imagenet_gcbm.yaml
 ```
 
@@ -79,7 +80,7 @@ python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
 
 ## ImageNet
 
-Train the G-CBM concept layer:
+Train the SG-CBM concept layer:
 
 ```bash
 python scripts/train_imagenet_gcbm.py \
@@ -186,8 +187,9 @@ python scripts/eval_concept_accuracy.py \
 
 ## Notes
 
-- User-facing scripts use `G-CBM`; checkpoint internals may still use `SAVLG`.
-- ImageNet release training is for G-CBM concept-layer training.
+- User-facing scripts use `SG-CBM`; checkpoint internals may still use `SAVLG`
+  or `gcbm`.
+- ImageNet release training is for SG-CBM concept-layer training.
 - Sparse GLM / NEC evaluation uses the trained concept-layer checkpoint and GLM
   sweep outputs.
 - Localization evaluation uses concept-layer checkpoints, not sparse GLM heads.

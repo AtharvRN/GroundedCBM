@@ -102,7 +102,7 @@ def resolve_train_root(cfg: Config) -> Path:
         return train_root.resolve()
     raise FileNotFoundError(
         f"ImageNet train root is not available: {train_root}. "
-        "Run this on a pod/job where extracted ImageNet train is mounted, or pass --train_root."
+        "Pass --train_root with an extracted ImageNet train directory."
     )
 
 

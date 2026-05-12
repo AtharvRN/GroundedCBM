@@ -541,7 +541,7 @@ def evaluate_model(model_type, load_dir, cub70_images, concept_part_map, device,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gcbm_path", default=None, help="Path to a G-CBM/SAVLG run directory. Alias for --savlg_path.")
+    parser.add_argument("--gcbm_path", default=None, help="Path to an SG-CBM/SAVLG run directory. Alias for --savlg_path.")
     parser.add_argument("--savlg_path", default=None)
     parser.add_argument("--salf_path", default=None)
     parser.add_argument("--vlg_path", default=None)
@@ -573,7 +573,7 @@ def main():
     models_to_eval = []
     savlg_path = cli.gcbm_path or cli.savlg_path
     if savlg_path:
-        models_to_eval.append(("G-CBM", "savlg", savlg_path))
+        models_to_eval.append(("SG-CBM", "savlg", savlg_path))
     if cli.salf_path:
         models_to_eval.append(("SALF", "salf", cli.salf_path))
     if cli.vlg_path:
@@ -642,11 +642,11 @@ def main():
 
     # Final comparison
     print("\n" + "="*60, flush=True)
-    print("G-CBM vs SALF — CUB70 Part Localization (IoU)", flush=True)
-    print(f"{'Part':<10} {'G-CBM IoU':>12} {'SALF IoU':>12} {'Delta':>10}", flush=True)
+    print("SG-CBM vs SALF - CUB70 Part Localization (IoU)", flush=True)
+    print(f"{'Part':<10} {'SG-CBM IoU':>12} {'SALF IoU':>12} {'Delta':>10}", flush=True)
     print("-"*46, flush=True)
     for part in ["beak", "wing", "tail", "body", "overall"]:
-        savlg_iou = results.get("G-CBM", {}).get(part, {}).get("best_iou", 0)
+        savlg_iou = results.get("SG-CBM", {}).get(part, {}).get("best_iou", 0)
         salf_iou  = results.get("SALF", {}).get(part, {}).get("best_iou", 0)
         delta = savlg_iou - salf_iou
         print(f"{part:<10} {savlg_iou:>12.4f} {salf_iou:>12.4f} {delta:>+10.4f}", flush=True)

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Run CUB sparse GLM/NEC evaluation for a trained G-CBM checkpoint.")
+    parser = argparse.ArgumentParser(description="Run CUB sparse GLM/NEC evaluation for a trained SG-CBM checkpoint.")
     parser.add_argument("--load_path", required=True, help="CUB run directory containing args.txt and saved weights.")
     return parser.parse_known_args()
 
