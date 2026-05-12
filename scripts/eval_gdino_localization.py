@@ -501,6 +501,7 @@ def eval_cub(args: argparse.Namespace, thresholds: Sequence[float], keys: Sequen
         proj_mean_all = None
         proj_std_all = None
     start = time.perf_counter()
+    next_log = max(int(args.log_every), 1)
     with torch.no_grad():
         for images, indices, widths, heights in loader:
             if int(args.max_images) > 0 and state["images_seen"] >= int(args.max_images):
@@ -546,9 +547,11 @@ def eval_cub(args: argparse.Namespace, thresholds: Sequence[float], keys: Sequen
                         box_iou_thresholds,
                     )
             state["images_seen"] += int(images.shape[0])
-            if args.log_every > 0 and state["images_seen"] % int(args.log_every) == 0:
+            if args.log_every > 0 and state["images_seen"] >= next_log:
                 elapsed = time.perf_counter() - start
                 print(f"[gdino-loc:cub] n={state['images_seen']} ips={state['images_seen']/max(elapsed,1e-6):.2f}", flush=True)
+                while next_log <= state["images_seen"]:
+                    next_log += max(int(args.log_every), 1)
     return finalize(state, keys, box_iou_thresholds)
 
 
@@ -593,6 +596,7 @@ def eval_imagenet(args: argparse.Namespace, thresholds: Sequence[float], keys: S
     annotation_val_root = Path(args.annotation_val_root).resolve() if args.annotation_val_root else None
     state = init_state(keys, box_iou_thresholds)
     start = time.perf_counter()
+    next_log = max(int(args.log_every), 1)
 
     def process_batch(images: List[torch.Tensor], annotations: List[List[Dict[str, Any]]], image_sizes: List[Tuple[int, int]]) -> None:
         batch = prepare_images(torch.stack(images, dim=0), cfg)
@@ -656,9 +660,11 @@ def eval_imagenet(args: argparse.Namespace, thresholds: Sequence[float], keys: S
                 images, annotations, image_sizes = images[:keep], annotations[:keep], image_sizes[:keep]
             process_batch(images, annotations, image_sizes)
             state["images_seen"] += len(images)
-            if args.log_every > 0 and state["images_seen"] % int(args.log_every) == 0:
+            if args.log_every > 0 and state["images_seen"] >= next_log:
                 elapsed = time.perf_counter() - start
                 print(f"[gdino-loc:imagenet] n={state['images_seen']} ips={state['images_seen']/max(elapsed,1e-6):.2f}", flush=True)
+                while next_log <= state["images_seen"]:
+                    next_log += max(int(args.log_every), 1)
     else:
         transform = transforms.Compose(
             [

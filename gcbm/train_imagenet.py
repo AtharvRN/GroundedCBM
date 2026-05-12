@@ -85,6 +85,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pin_memory", action="store_true", default=True)
     parser.add_argument("--disable_pin_memory", action="store_true")
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--resnet50_weights",
+        choices=["v1", "v2"],
+        default="v2",
+        help="Torchvision ResNet-50 ImageNet weights. Use v1 for checkpoints compatible with original VLG-CBM.",
+    )
     parser.add_argument("--amp", choices=["fp16", "bf16", "none"], default="fp16")
     parser.add_argument("--channels_last", action="store_true", default=True)
     parser.add_argument("--disable_channels_last", action="store_true")
@@ -190,6 +196,7 @@ def build_config(args: argparse.Namespace) -> Config:
         seed=args.seed,
         min_image_bytes=args.min_image_bytes,
         input_size=args.input_size,
+        resnet50_weights=str(args.resnet50_weights),
         train_random_transforms=False,
         mask_h=args.mask_h,
         mask_w=args.mask_w,

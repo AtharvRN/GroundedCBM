@@ -3,13 +3,14 @@ import json
 import sys
 import tarfile
 import time
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import torch
 from PIL import Image
 from scipy.io import loadmat
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
@@ -115,7 +116,8 @@ def load_run_config(config_dir: Path, args: argparse.Namespace) -> Config:
     payload["prefetch_factor"] = args.prefetch_factor
     payload["skip_final_layer"] = True
     payload["print_config"] = False
-    return Config(**payload)
+    valid_fields = {field.name for field in fields(Config)}
+    return Config(**{key: value for key, value in payload.items() if key in valid_fields})
 
 
 def resolve_final_layer_path(artifact_dir: Path) -> Path:
@@ -198,8 +200,39 @@ def iter_tar_samples(val_tar: Path, targets: Sequence[int], transform: transform
         raise RuntimeError(f"expected 50000 val images in tar, found {seen}")
 
 
-def build_val_loader(val_root: Path, cfg: Config) -> DataLoader:
-    dataset = ImageFolder(root=str(val_root), transform=build_transform(cfg.input_size))
+class FlatImageNetValDataset(Dataset):
+    def __init__(self, val_root: Path, targets: Sequence[int], transform: transforms.Compose) -> None:
+        self.samples = sorted(val_root.glob("*.JPEG")) or sorted(val_root.rglob("*.JPEG"))
+        if not self.samples:
+            raise FileNotFoundError(f"no ImageNet val JPEG files found under {val_root}")
+        self.targets = targets
+        self.transform = transform
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
+        path = self.samples[index]
+        image_name = path.name
+        if not (image_name.startswith(VAL_RE) and image_name.endswith(".JPEG")):
+            raise ValueError(f"ImageNet val filename does not match expected pattern: {path}")
+        image_idx = int(image_name[-13:-5])
+        target = int(self.targets[image_idx - 1])
+        with Image.open(path) as image:
+            tensor = self.transform(image.convert("RGB"))
+        return tensor, target
+
+
+def build_val_loader(val_root: Path, cfg: Config, targets: Sequence[int] | None = None) -> DataLoader:
+    transform = build_transform(cfg.input_size)
+    try:
+        dataset = ImageFolder(root=str(val_root), transform=transform)
+    except FileNotFoundError as exc:
+        if targets is None:
+            raise FileNotFoundError(
+                f"{val_root} is not an ImageFolder root. For a flat ImageNet val directory, pass --devkit_dir."
+            ) from exc
+        dataset = FlatImageNetValDataset(val_root, targets, transform)
     kwargs: Dict[str, Any] = {
         "dataset": dataset,
         "batch_size": cfg.batch_size,
@@ -379,12 +412,19 @@ def evaluate_root(
     top1 = torch.zeros(len(sweep), dtype=torch.long)
     top5 = torch.zeros(len(sweep), dtype=torch.long)
     total = 0
+    next_log = max(int(log_every), 1)
     start = time.perf_counter()
     if str(device).startswith("cuda") and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
     with torch.no_grad():
         for step, (images, targets) in enumerate(loader, start=1):
+            if max_samples is not None and total >= int(max_samples):
+                break
+            if max_samples is not None and total + int(images.shape[0]) > int(max_samples):
+                keep = int(max_samples) - total
+                images = images[:keep]
+                targets = targets[:keep]
             images = prepare_images(images, cfg)
             target_tensor = targets.to(device, non_blocking=cfg.pin_memory)
             with torch.autocast(
@@ -398,11 +438,11 @@ def evaluate_root(
                 concept_logits = (concept_logits - feature_mean) / feature_std
             _evaluate_logits(concept_logits, target_tensor, stacked_weights, stacked_biases, top1, top5)
             total += int(target_tensor.numel())
-            if step % 50 == 0 or total % log_every == 0:
+            if total >= next_log:
                 elapsed = time.perf_counter() - start
                 print(f"[nec-eval] step={step}/{len(loader)} n={total} ips={total / max(elapsed, 1e-6):.2f}", flush=True)
-            if max_samples is not None and total >= int(max_samples):
-                break
+                while next_log <= total:
+                    next_log += max(int(log_every), 1)
 
     elapsed = time.perf_counter() - start
     results = []
@@ -493,8 +533,11 @@ def main() -> None:
     elif args.val_root:
         val_root = Path(args.val_root).resolve()
         payload["val_root"] = str(val_root)
+        targets = load_val_targets(Path(args.devkit_dir).resolve()) if args.devkit_dir else None
+        if args.devkit_dir:
+            payload["devkit_dir"] = str(Path(args.devkit_dir).resolve())
         payload["metrics"] = evaluate_root(
-            build_val_loader(val_root, cfg),
+            build_val_loader(val_root, cfg, targets),
             backbone,
             head,
             sweep,
