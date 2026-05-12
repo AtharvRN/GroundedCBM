@@ -53,12 +53,18 @@ def measure_acc(
     linear.weight.data.zero_()
     linear.bias.data.zero_()
 
+    feasible_measure_level = tuple(
+        int(level) for level in measure_level if 0 < int(level) <= int(num_concepts)
+    )
+    if not feasible_measure_level:
+        feasible_measure_level = (int(num_concepts),)
+
     ALPHA = 0.99
     metadata = {}
     metadata["max_reg"] = {}
     metadata["max_reg"]["nongrouped"] = max_lam
     # Solve the GLM path
-    max_sparsity = measure_level[-1] / num_concepts
+    max_sparsity = feasible_measure_level[-1] / num_concepts
     output_proj = glm_saga(linear, train_loader, saga_step_size, saga_n_iters, ALPHA, k=max_glm_steps, epsilon=1 / (GLM_STEP_SIZE ** max_glm_steps),
                     val_loader=val_loader, test_loader=test_concept_loader, do_zero=False, metadata=metadata, n_ex=num_samples, n_classes=num_classes,
                     max_sparsity=max_sparsity, eval_train=False, eval_val=False, eval_test=False)
@@ -69,7 +75,7 @@ def measure_acc(
     final_layer = torch.nn.Linear(num_concepts, num_classes)
     accs = []
     weights = []
-    for eff_concept_num in measure_level:
+    for eff_concept_num in feasible_measure_level:
         target_sparsity = eff_concept_num / num_concepts
         # Pick the lam with sparsity closest to target
         for i, sparsity in enumerate(sparsity_list):
@@ -102,7 +108,7 @@ def measure_acc(
         accs.append(correct.float().mean().item())
         print(f"Test Acc: {correct.float().mean():.4f}")
     print(f"Average acc: {sum(accs) / len(accs):.4f}")
-    return path, {NEC: weight for NEC, weight in zip(measure_level, weights)}, accs
+    return path, {NEC: weight for NEC, weight in zip(feasible_measure_level, weights)}, accs
 
 
 def sparsity_acc_test(load_dir, lam_max=0.1, bot_filter=0, anno=None, n_iters=None, max_glm_steps=MAX_GLM_STEP):
