@@ -1,31 +1,20 @@
-# G-CBM Release
+# G-CBM
 
-Minimal code for training and evaluating the paper CBM experiments. The public
-model name is **G-CBM**; some internal code still uses `savlg_cbm` for backward
-compatibility with trained checkpoints.
+Code for training and evaluating Grounded Concept Bottleneck Models (G-CBM) on
+CUB and ImageNet. The public model name is **G-CBM**; some internal checkpoint
+keys still use `savlg_cbm` for compatibility with trained models.
 
-## Install
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## What Is Included
-
-- CUB training for `vlg_cbm`, `lf_cbm`, `salf_cbm`, and `savlg_cbm`/G-CBM.
-- ImageNet G-CBM concept-layer training with precomputed GDINO targets.
-- Sparse GLM / NEC sweeps and final accuracy evaluation.
-- GDINO-box localization for CUB and ImageNet G-CBM.
-- CUB part-localization utilities.
-- Focused unit tests for bbox transforms, target precompute, GLM/NEC helpers,
-  CLI dispatch, and localization metrics.
-
-ImageNet baseline training for VLG/LF/SALF and Stanford Cars are not part of
-this cleaned release tree.
-
 ## Data
 
-CUB expects an ImageFolder-style split:
+### CUB
+
+CUB training expects an ImageFolder-style split:
 
 ```text
 datasets/CUB/
@@ -46,7 +35,7 @@ python datasets/split_cub_dataset.py \
 export CUB_DATASET_ROOT="$PWD/datasets/CUB"
 ```
 
-CUB G-CBM/SALF training and GDINO localization need annotation JSONs:
+CUB G-CBM/SALF training and GDINO localization use annotation JSON files:
 
 ```text
 annotations/
@@ -55,43 +44,42 @@ annotations/
   ...
 ```
 
-ImageNet G-CBM training expects:
+### ImageNet
 
-- ImageFolder train root or a JSONL manifest with `path`, `class_id`,
-  `sample_index`.
-- GDINO annotation directory.
-- Precomputed GDINO target store matching the training set, or a larger target
-  store addressed by manifest `sample_index`.
+ImageNet G-CBM training supports either an ImageFolder train root or a JSONL
+manifest with `path`, `class_id`, and `sample_index`. The release code also
+expects GDINO annotations and precomputed GDINO target tensors for concept-layer
+training.
+
+For ImageNet validation, `eval_imagenet_nec.py` supports a flat validation
+directory when the official devkit metadata is supplied.
 
 ## Unified CLI
 
-Train CUB models:
+The unified entry point supports CUB training for G-CBM, SALF-CBM, VLG-CBM, and
+LF-CBM, plus ImageNet G-CBM training.
 
 ```bash
 python scripts/cbm.py train --dataset cub --model gcbm --config configs/cub_gcbm.json
 python scripts/cbm.py train --dataset cub --model salf --config configs/cub_salf.json
 python scripts/cbm.py train --dataset cub --model vlg --config configs/cub_gcbm.json
 python scripts/cbm.py train --dataset cub --model lf --config configs/cub_gcbm.json
-```
 
-Run sparse GLM / NEC accuracy evaluation for CUB checkpoints:
-
-```bash
-python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
-```
-
-Train ImageNet G-CBM:
-
-```bash
 python scripts/cbm.py train \
   --dataset imagenet \
   --model gcbm \
   --config configs/imagenet_gcbm.yaml
 ```
 
-## ImageNet Commands
+Run sparse GLM / NEC evaluation for a trained CUB checkpoint:
 
-Concept-layer training:
+```bash
+python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
+```
+
+## ImageNet
+
+Train the G-CBM concept layer:
 
 ```bash
 python scripts/train_imagenet_gcbm.py \
@@ -106,7 +94,7 @@ python scripts/train_imagenet_gcbm.py \
   --mask_w 14
 ```
 
-Sparse GLM path and NEC accuracy:
+Train sparse GLM heads and evaluate NEC accuracy:
 
 ```bash
 python scripts/run_glm_path.py --artifact_dir /path/to/gcbm_run
@@ -118,7 +106,7 @@ python scripts/eval_imagenet_nec.py \
   --nec_values 1,5,10,20,50,4309
 ```
 
-GDINO localization:
+Evaluate GDINO-box localization:
 
 ```bash
 python scripts/eval_gdino_localization.py \
@@ -131,12 +119,12 @@ python scripts/eval_gdino_localization.py \
   --activation_thresholds 0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9
 ```
 
-For official paper-number reproduction, use the checkpoint configuration saved
-with the run. The ImageNet-v1 G-CBM checkpoint uses `resnet50_weights=v1`.
+For ImageNet-v1 checkpoint reproduction, keep the saved checkpoint
+configuration, including `resnet50_weights=v1`.
 
-## CUB Commands
+## CUB
 
-Dedicated wrappers:
+Dedicated training and NEC wrappers:
 
 ```bash
 python scripts/train_cub_gcbm.py --config configs/cub_gcbm.json
@@ -145,7 +133,7 @@ python scripts/train_cub_savlg.py --config configs/cub_gcbm.json
 python scripts/eval_cub_nec.py --load_path /path/to/cub_run
 ```
 
-GDINO localization for G-CBM:
+Evaluate GDINO-box localization:
 
 ```bash
 python scripts/eval_gdino_localization.py \
@@ -157,7 +145,7 @@ python scripts/eval_gdino_localization.py \
   --activation_thresholds 0.3,0.5,0.7,0.9
 ```
 
-CUB localization across SAVLG/SALF/VLG/LF checkpoints:
+Evaluate CUB localization across model variants:
 
 ```bash
 python scripts/eval_cub_localization.py \
@@ -170,7 +158,7 @@ python scripts/eval_cub_localization.py \
   --mapping_json /path/to/cub_concept_part_mapping.json
 ```
 
-CUB part-point localization:
+Evaluate CUB part-point localization:
 
 ```bash
 python scripts/precompute_cub_part_annotation_cache.py \
@@ -189,41 +177,17 @@ python scripts/eval_cub_part_localization.py \
   --output results/cub_part_localization.json
 ```
 
-Concept accuracy on a common concept set:
+Evaluate concept accuracy on a common concept set:
 
 ```bash
 python scripts/eval_concept_accuracy.py \
-  --load_paths /path/to/savlg_run /path/to/salf_run /path/to/vlg_run /path/to/lf_run
+  --load_paths /path/to/gcbm_run /path/to/salf_run /path/to/vlg_run /path/to/lf_run
 ```
 
-## Smoke Tests
+## Notes
 
-Static checks:
-
-```bash
-python -m py_compile $(find . -name '*.py' -not -path './.git/*')
-python -m unittest discover -s tests -v
-```
-
-ImageNet training smoke tested on a GTX 1080 pod:
-
-```bash
-python scripts/train_imagenet_gcbm.py \
-  --train_root /workspace/imagenet_100k_balanced/train \
-  --train_manifest /workspace/imagenet_100k_balanced_index/train_present_timing_manifest.jsonl \
-  --annotation_dir /workspace/imagenet_annotations \
-  --precomputed_target_dir /workspace/imagenet_100k_balanced_precomputed \
-  --save_dir artifacts/imagenet_train_smoke \
-  --run_name gcbm_imagenet_smoke \
-  --epochs 1 \
-  --max_train_images 8 \
-  --max_val_images 0 \
-  --eval_every 0 \
-  --batch_size 1 \
-  --workers 0 \
-  --device cuda \
-  --amp fp16 \
-  --resnet50_weights v1 \
-  --mask_h 14 \
-  --mask_w 14
-```
+- User-facing scripts use `G-CBM`; checkpoint internals may still use `SAVLG`.
+- ImageNet release training is for G-CBM concept-layer training.
+- Sparse GLM / NEC evaluation uses the trained concept-layer checkpoint and GLM
+  sweep outputs.
+- Localization evaluation uses concept-layer checkpoints, not sparse GLM heads.
