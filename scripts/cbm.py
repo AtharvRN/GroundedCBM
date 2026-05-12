@@ -192,7 +192,7 @@ def cmd_train(argv: list[str]) -> None:
             _append_option(forwarded, f"--{name}", getattr(args, name))
         if args.train_glm_after_cbl:
             forwarded.append("--train_glm_after_cbl")
-        _run_script("scripts/train_imagenet_gcbm.py", [*forwarded, *passthrough])
+        _run_script("train_cbm.py", ["--dataset", "imagenet", "--model", "sgcbm", *forwarded, *passthrough])
         return
 
     if dataset != "cub":

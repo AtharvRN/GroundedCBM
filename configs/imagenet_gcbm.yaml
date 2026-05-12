@@ -1,3 +1,5 @@
+dataset: imagenet
+model: sgcbm
 train_root: /path/to/imagenet/train
 annotation_dir: /path/to/imagenet_annotations
 precomputed_target_dir: /path/to/precomputed_targets

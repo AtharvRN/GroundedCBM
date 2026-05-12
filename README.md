@@ -54,21 +54,18 @@ For ImageNet validation, `eval_imagenet_nec.py` supports a flat validation
 directory when the official devkit metadata is supplied. Localization supports
 either an extracted validation directory or the official validation tar.
 
-## Unified CLI
+## Training
 
-The unified entry point supports CUB training for SG-CBM, SALF-CBM, VLG-CBM,
-and LF-CBM, plus ImageNet SG-CBM training.
+`train_cbm.py` is the unified training entry point. It supports CUB training for
+SG-CBM, SALF-CBM, VLG-CBM, and LF-CBM, plus ImageNet SG-CBM training.
 
 ```bash
-python scripts/cbm.py train --dataset cub --model sgcbm --config configs/cub_gcbm.json
-python scripts/cbm.py train --dataset cub --model salf --config configs/cub_salf.json
-python scripts/cbm.py train --dataset cub --model vlg --config configs/cub_gcbm.json
-python scripts/cbm.py train --dataset cub --model lf --config configs/cub_gcbm.json
+python train_cbm.py --config configs/cub_gcbm.json
+python train_cbm.py --config configs/cub_salf.json
+python train_cbm.py --config configs/cub_gcbm.json --model_name vlg_cbm
+python train_cbm.py --config configs/cub_gcbm.json --model_name lf_cbm
 
-python scripts/cbm.py train \
-  --dataset imagenet \
-  --model sgcbm \
-  --config configs/imagenet_gcbm.yaml
+python train_cbm.py --config configs/imagenet_gcbm.yaml
 ```
 
 Run sparse GLM / NEC evaluation for a trained CUB checkpoint:
@@ -82,7 +79,8 @@ python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
 Train the SG-CBM concept layer:
 
 ```bash
-python scripts/train_imagenet_gcbm.py \
+python train_cbm.py \
+  --dataset imagenet \
   --train_root /path/to/imagenet/train \
   --train_manifest /path/to/train_manifest.jsonl \
   --annotation_dir /path/to/imagenet_annotations \
@@ -133,8 +131,8 @@ configuration, including `resnet50_weights=v1`.
 Dedicated training and NEC wrappers:
 
 ```bash
-python scripts/train_cub_gcbm.py --config configs/cub_gcbm.json
-python scripts/train_cub_salf.py --config configs/cub_salf.json
+python train_cbm.py --config configs/cub_gcbm.json
+python train_cbm.py --config configs/cub_salf.json
 python scripts/eval_cub_nec.py --load_path /path/to/cub_run
 ```
 

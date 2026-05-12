@@ -5,35 +5,162 @@ import os
 import random
 import sys
 
-import numpy as np
-import torch
-import torch.nn as nn
-from loguru import logger
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
-import model.utils as utils
-from data import utils as data_utils
-from data.concept_dataset import (
-    get_concept_dataloader,
-    get_filtered_concepts_and_counts,
-    get_final_layer_dataset,
-    get_or_create_backbone_embedding_cache,
-)
-from loss import get_loss
-from model.cbm import (
-    Backbone,
-    BackboneCLIP,
-    ConceptLayer,
-    FinalLayer,
-    per_class_accuracy,
-    test_model,
-    train_cbl,
-    train_dense_final,
-    train_sparse_final,
-)
-from methods.common import get_model_name, write_artifacts
-from methods.registry import get_train_handler, SUPPORTED_MODELS
+IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "sg_cbm", "gcbm", "g-cbm", "savlg", "savlg_cbm"}
+
+
+def _parse_scalar(value: str):
+    value = value.strip()
+    if value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    if value.lower() in {"none", "null"}:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value.strip("\"'")
+
+
+def _load_flat_config(path: str | None) -> dict:
+    if not path:
+        return {}
+    if path.endswith(".json"):
+        with open(path, "r") as handle:
+            return json.load(handle)
+    if path.endswith((".yaml", ".yml")):
+        config = {}
+        with open(path, "r") as handle:
+            for raw_line in handle:
+                line = raw_line.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if ":" not in line:
+                    raise SystemExit(f"Unsupported config line in {path!r}: {raw_line.rstrip()!r}")
+                key, value = line.split(":", 1)
+                config[key.strip()] = _parse_scalar(value)
+        return config
+    raise SystemExit("--config must be a flat JSON/YAML file")
+
+
+def _option_value(argv: list[str], *names: str):
+    for idx, token in enumerate(argv):
+        if token in names and idx + 1 < len(argv):
+            return argv[idx + 1]
+        for name in names:
+            prefix = name + "="
+            if token.startswith(prefix):
+                return token[len(prefix):]
+    return None
+
+
+def _dataset_from_argv_or_config(argv: list[str]) -> str | None:
+    config = _load_flat_config(_option_value(argv, "--config"))
+    dataset = _option_value(argv, "--dataset") or config.get("dataset")
+    return str(dataset).lower() if dataset else None
+
+
+def _model_from_argv_or_config(argv: list[str], config: dict) -> str:
+    model = _option_value(argv, "--model", "--model_name") or config.get("model") or config.get("model_name") or "sgcbm"
+    return str(model).lower().replace("_", "-")
+
+
+def _append_option(argv: list[str], name: str, value) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool):
+        if value:
+            argv.append(name)
+        return
+    argv.extend([name, str(value)])
+
+
+def _config_to_argv(config: dict) -> list[str]:
+    forwarded: list[str] = []
+    for key, value in config.items():
+        if key in {"dataset", "model", "model_name", "config_json"}:
+            continue
+        _append_option(forwarded, f"--{key}", value)
+    return forwarded
+
+
+def _strip_dispatcher_args(argv: list[str]) -> list[str]:
+    stripped: list[str] = []
+    skip_next = False
+    dispatcher_options = {"--config", "--dataset", "--model", "--model_name"}
+    for token in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in dispatcher_options:
+            skip_next = True
+            continue
+        if any(token.startswith(option + "=") for option in dispatcher_options):
+            continue
+        stripped.append(token)
+    return stripped
+
+
+def _run_imagenet_training(argv: list[str]) -> None:
+    config = _load_flat_config(_option_value(argv, "--config"))
+    model = _model_from_argv_or_config(argv, config)
+    if model not in IMAGENET_MODEL_ALIASES:
+        raise SystemExit("ImageNet training in this repository supports SG-CBM only.")
+
+    from gcbm.train_imagenet import main as imagenet_main
+
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "train_cbm.py",
+            *_config_to_argv(config),
+            *_strip_dispatcher_args(argv),
+        ]
+        imagenet_main()
+    finally:
+        sys.argv = old_argv
+
+
+def _load_cub_dependencies() -> None:
+    global np, torch, nn, logger, SummaryWriter, tqdm
+    global utils, data_utils, get_concept_dataloader, get_filtered_concepts_and_counts
+    global get_final_layer_dataset, get_or_create_backbone_embedding_cache
+    global get_loss, Backbone, BackboneCLIP, ConceptLayer, FinalLayer
+    global per_class_accuracy, test_model, train_cbl, train_dense_final, train_sparse_final
+    global get_model_name, write_artifacts, get_train_handler, SUPPORTED_MODELS
+
+    import numpy as np
+    import torch
+    import torch.nn as nn
+    from loguru import logger
+    from torch.utils.tensorboard import SummaryWriter
+    from tqdm import tqdm
+
+    import model.utils as utils
+    from data import utils as data_utils
+    from data.concept_dataset import (
+        get_concept_dataloader,
+        get_filtered_concepts_and_counts,
+        get_final_layer_dataset,
+        get_or_create_backbone_embedding_cache,
+    )
+    from loss import get_loss
+    from model.cbm import (
+        Backbone,
+        BackboneCLIP,
+        ConceptLayer,
+        FinalLayer,
+        per_class_accuracy,
+        test_model,
+        train_cbl,
+        train_dense_final,
+        train_sparse_final,
+    )
+    from methods.common import get_model_name, write_artifacts
+    from methods.registry import get_train_handler, SUPPORTED_MODELS
 
 
 class LoggerWriter:
@@ -410,6 +537,11 @@ def train_cbm_and_save(args):
 
 
 def main():
+    if _dataset_from_argv_or_config(sys.argv[1:]) == "imagenet":
+        _run_imagenet_training(sys.argv[1:])
+        return
+
+    _load_cub_dependencies()
     sys.stdout = LoggerWriter("INFO")
     sys.stderr = LoggerWriter("DEBUG")
 
