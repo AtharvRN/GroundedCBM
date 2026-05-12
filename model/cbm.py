@@ -14,7 +14,6 @@ from tqdm import tqdm
 import clip
 from data import utils as data_utils
 from glm_saga.elasticnet import glm_saga
-from model.sam import SAM
 
 
 class CBM_model(torch.nn.Module):
@@ -470,9 +469,6 @@ def train_cbl(
     data_parallel=False,
     cached_val_embeddings: Optional[torch.Tensor] = None,
     cached_val_concepts: Optional[torch.Tensor] = None,
-    use_sam: bool = False,
-    sam_rho: float = 0.05,
-    sam_adaptive: bool = False,
 ):
     # setup optimizer
     base_optimizer_cls = None
@@ -484,16 +480,7 @@ def train_cbl(
         optimizer_kwargs = dict(lr=lr, weight_decay=weight_decay)
     else:
         raise ValueError
-    if use_sam:
-        optimizer = SAM(
-            cbl.parameters(),
-            base_optimizer_cls=base_optimizer_cls,
-            rho=sam_rho,
-            adaptive=sam_adaptive,
-            **optimizer_kwargs,
-        )
-    else:
-        optimizer = base_optimizer_cls(cbl.parameters(), **optimizer_kwargs)
+    optimizer = base_optimizer_cls(cbl.parameters(), **optimizer_kwargs)
     if finetune:
         optimizer.add_param_group({"params": backbone.parameters(), "lr": backbone_lr})
 
@@ -532,13 +519,7 @@ def train_cbl(
             # backprop
             optimizer.zero_grad()
             batch_loss.backward()
-            if use_sam:
-                optimizer.first_step(zero_grad=True)
-                second_loss = compute_batch_loss()
-                second_loss.backward()
-                optimizer.second_step(zero_grad=True)
-            else:
-                optimizer.step()
+            optimizer.step()
 
             # print batch stats
             if (batch_idx + 1) % 1000 == 0:

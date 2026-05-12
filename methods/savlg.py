@@ -28,7 +28,6 @@ from methods.salf import (
     build_spatial_concept_layer,
 )
 from model.cbm import Backbone, BackboneCLIP, ConceptLayer, train_dense_final, train_sparse_final
-from model.sam import SAM
 from PIL import Image
 
 
@@ -2112,16 +2111,7 @@ def train_concept_head(
         )
     else:
         raise ValueError(f"Unsupported SAVLG optimizer: {args.cbl_optimizer}")
-    if bool(getattr(args, "cbl_use_sam", False)):
-        optimizer = SAM(
-            trainable_params,
-            base_optimizer_cls=base_optimizer_cls,
-            rho=float(getattr(args, "cbl_sam_rho", 0.05)),
-            adaptive=bool(getattr(args, "cbl_sam_adaptive", False)),
-            **optimizer_kwargs,
-        )
-    else:
-        optimizer = base_optimizer_cls(trainable_params, **optimizer_kwargs)
+    optimizer = base_optimizer_cls(trainable_params, **optimizer_kwargs)
     scheduler = None
     if args.cbl_scheduler == "cosine":
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -2258,13 +2248,7 @@ def train_concept_head(
             loss = compute_train_loss()
             optimizer.zero_grad()
             loss.backward()
-            if bool(getattr(args, "cbl_use_sam", False)):
-                optimizer.first_step(zero_grad=True)
-                second_loss = compute_train_loss()
-                second_loss.backward()
-                optimizer.second_step(zero_grad=True)
-            else:
-                optimizer.step()
+            optimizer.step()
             running += float(loss.item()) * global_concepts.size(0)
 
         train_loss = running / max(len(train_loader.dataset), 1)

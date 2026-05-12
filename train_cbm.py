@@ -265,9 +265,6 @@ def train_cbm_and_save(args):
             data_parallel=args.data_parallel,
             cached_val_embeddings=cached_val_embeddings,
             cached_val_concepts=cached_val_concepts,
-            use_sam=args.cbl_use_sam,
-            sam_rho=args.cbl_sam_rho,
-            sam_adaptive=args.cbl_sam_adaptive,
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
@@ -584,22 +581,6 @@ def main():
         choices=["adam", "sgd"],
         default="sgd",
         help="Optimizer used in CBL training.",
-    )
-    parser.add_argument(
-        "--cbl_use_sam",
-        action="store_true",
-        help="Wrap the CBL optimizer with Sharpness-Aware Minimization.",
-    )
-    parser.add_argument(
-        "--cbl_sam_rho",
-        type=float,
-        default=0.05,
-        help="Neighborhood size rho for Sharpness-Aware Minimization.",
-    )
-    parser.add_argument(
-        "--cbl_sam_adaptive",
-        action="store_true",
-        help="Use the adaptive SAM variant that scales perturbations by weight magnitude.",
     )
     parser.add_argument(
         "--cbl_scheduler",

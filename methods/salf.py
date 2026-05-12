@@ -39,7 +39,6 @@ from methods.lf import (
     use_original_label_free_protocol,
 )
 from model.cbm import train_dense_final, train_sparse_final
-from model.sam import SAM
 
 
 class RawSubset(Dataset):
@@ -864,16 +863,7 @@ def train_spatial_cbl(
         parameter.requires_grad = False
 
     concept_layer.train()
-    if getattr(args, "cbl_use_sam", False):
-        optimizer = SAM(
-            concept_layer.parameters(),
-            base_optimizer_cls=torch.optim.Adam,
-            rho=float(getattr(args, "cbl_sam_rho", 0.05)),
-            adaptive=bool(getattr(args, "cbl_sam_adaptive", False)),
-            lr=args.cbl_lr,
-        )
-    else:
-        optimizer = torch.optim.Adam(concept_layer.parameters(), lr=args.cbl_lr)
+    optimizer = torch.optim.Adam(concept_layer.parameters(), lr=args.cbl_lr)
     best_loss = float("inf")
     best_state = None
 
@@ -905,13 +895,7 @@ def train_spatial_cbl(
 
             optimizer.zero_grad()
             loss.backward()
-            if getattr(args, "cbl_use_sam", False):
-                optimizer.first_step(zero_grad=True)
-                second_loss = compute_loss()
-                second_loss.backward()
-                optimizer.second_step(zero_grad=True)
-            else:
-                optimizer.step()
+            optimizer.step()
             running += float(loss.item()) * images.size(0)
 
         train_loss = running / max(len(train_loader.dataset), 1)
