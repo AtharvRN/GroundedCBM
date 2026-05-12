@@ -542,8 +542,6 @@ def main():
         return
 
     _load_cub_dependencies()
-    sys.stdout = LoggerWriter("INFO")
-    sys.stderr = LoggerWriter("DEBUG")
 
     parser = argparse.ArgumentParser(description="Settings for creating CBM")
     parser.add_argument(
