@@ -128,7 +128,18 @@ CUB NEC / sparse evaluation:
 python scripts/eval_cub_nec.py --load_path /path/to/cub_run
 ```
 
-CUB localization across any subset of SAVLG, SALF, VLG, LF:
+CUB G-CBM localization against GDINO pseudo boxes:
+
+```bash
+python scripts/eval_cub_gdino_localization.py \
+  --gcbm_path /path/to/gcbm_run \
+  --annotation_dir annotations \
+  --output results/cub_gdino_localization.json \
+  --activation_thresholds 0.3,0.5,0.7,0.9,meanthr \
+  --compute_distribution_metrics
+```
+
+CUB70 localization across any subset of SAVLG, SALF, VLG, LF:
 
 ```bash
 python scripts/eval_cub_localization.py \
