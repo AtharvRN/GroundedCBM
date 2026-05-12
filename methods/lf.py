@@ -260,8 +260,11 @@ def train_projection_layer(
 
 def create_splits(args):
     base_train = data_utils.get_data(f"{args.dataset}_train", None)
-    total = len(base_train)
+    max_train = int(getattr(args, "max_train_images", 0) or 0)
+    total = min(len(base_train), max_train) if max_train > 0 else len(base_train)
     n_val = int(args.val_split * total)
+    if args.val_split > 0 and n_val == 0 and total > 1:
+        n_val = 1
     n_train = total - n_val
     generator = torch.Generator().manual_seed(args.seed)
     train_subset, val_subset = torch.utils.data.random_split(
@@ -298,9 +301,11 @@ def create_splits(args):
         clip_preprocess,
     )
     base_test = data_utils.get_data(f"{args.dataset}_val", None)
+    max_test = int(getattr(args, "max_test_images", 0) or 0)
+    test_total = min(len(base_test), max_test) if max_test > 0 else len(base_test)
     test_dataset = TransformedSubset(
         base_test,
-        list(range(len(base_test))),
+        list(range(test_total)),
         backbone.preprocess,
     )
     return train_dataset, val_dataset, test_dataset, backbone, clip_model

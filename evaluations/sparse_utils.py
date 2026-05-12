@@ -111,13 +111,30 @@ def measure_acc(
     return path, {NEC: weight for NEC, weight in zip(feasible_measure_level, weights)}, accs
 
 
-def sparsity_acc_test(load_dir, lam_max=0.1, bot_filter=0, anno=None, n_iters=None, max_glm_steps=MAX_GLM_STEP):
+def sparsity_acc_test(
+    load_dir,
+    lam_max=0.1,
+    bot_filter=0,
+    anno=None,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    max_images=None,
+):
     # Load arguments
     with open(os.path.join(load_dir, "args.txt"), "r") as f:
         args = json.load(f)
         args = argparse.Namespace(**args)
     if anno is not None:
         args.annotation_dir = anno
+    if cbl_batch_size is not None:
+        args.cbl_batch_size = cbl_batch_size
+    if saga_batch_size is not None:
+        args.saga_batch_size = saga_batch_size
+    if num_workers is not None:
+        args.num_workers = num_workers
     with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
         concepts = f.read().split("\n")
     classes = data_utils.get_classes(args.dataset)
@@ -146,6 +163,7 @@ def sparsity_acc_test(load_dir, lam_max=0.1, bot_filter=0, anno=None, n_iters=No
         val_split=args.val_split,
         seed=args.seed,
         label_dir=anno,
+        max_images=max_images or 0,
     )
     val_cbl_loader = get_concept_dataloader(
         args.dataset,
@@ -158,6 +176,7 @@ def sparsity_acc_test(load_dir, lam_max=0.1, bot_filter=0, anno=None, n_iters=No
         val_split=args.val_split,
         seed=args.seed,
         label_dir=anno,
+        max_images=max_images or 0,
     )
     test_cbl_loader = get_concept_dataloader(
         args.dataset,
@@ -170,6 +189,7 @@ def sparsity_acc_test(load_dir, lam_max=0.1, bot_filter=0, anno=None, n_iters=No
         val_split=None,
         seed=args.seed,
         label_dir=anno,
+        max_images=max_images or 0,
     )
     # Calculating test features
     train_concept_loader, val_concept_loader, _ = get_final_layer_dataset(
@@ -228,7 +248,16 @@ def sparsity_acc_test(load_dir, lam_max=0.1, bot_filter=0, anno=None, n_iters=No
     return accs
 
 
-def sparsity_acc_test_lf_cbm(load_dir, lam_max=0.1, n_iters=None, max_glm_steps=MAX_GLM_STEP):
+def sparsity_acc_test_lf_cbm(
+    load_dir,
+    lam_max=0.1,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    max_images=None,
+):
     # Load arguments
     with open(os.path.join(load_dir, "args.txt"), "r") as f:
         args = json.load(f)
@@ -239,6 +268,12 @@ def sparsity_acc_test_lf_cbm(load_dir, lam_max=0.1, n_iters=None, max_glm_steps=
         args.n_iters = getattr(args, "saga_n_iters", 500)
     if not hasattr(args, "saga_batch_size"):
         args.saga_batch_size = getattr(args, "batch_size", 256)
+    if cbl_batch_size is not None:
+        args.batch_size = cbl_batch_size
+    if saga_batch_size is not None:
+        args.saga_batch_size = saga_batch_size
+    if num_workers is not None:
+        args.num_workers = num_workers
     with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
         concepts = f.read().split("\n")
     classes = data_utils.get_classes(args.dataset)
@@ -248,12 +283,17 @@ def sparsity_acc_test_lf_cbm(load_dir, lam_max=0.1, n_iters=None, max_glm_steps=
     cbm.eval()
     train_dataset = data_utils.get_data(args.dataset + "_train", preprocess=cbm.preprocess)
     test_dataset = data_utils.get_data(args.dataset + "_val", preprocess=cbm.preprocess)
+    if max_images is not None:
+        keep_train = min(int(max_images), len(train_dataset))
+        keep_test = min(int(max_images), len(test_dataset))
+        train_dataset = torch.utils.data.Subset(train_dataset, list(range(keep_train)))
+        test_dataset = torch.utils.data.Subset(test_dataset, list(range(keep_test)))
     # Calculating test features
     train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, shuffle=True, num_workers=8, batch_size=args.batch_size
+        train_dataset, shuffle=True, num_workers=args.num_workers, batch_size=args.batch_size
     )
     test_dataloader = torch.utils.data.DataLoader(
-        test_dataset, shuffle=False, num_workers=8, batch_size=args.batch_size
+        test_dataset, shuffle=False, num_workers=args.num_workers, batch_size=args.batch_size
     )
     with torch.no_grad():
         final_loaders = []
@@ -520,12 +560,27 @@ def _normalize_savlg_final_concepts(load_dir, train_concepts, val_concepts, test
     return train_concepts, val_concepts, test_concepts
 
 
-def sparsity_acc_test_salf_cbm(load_dir, lam_max=0.1, n_iters=None, max_glm_steps=MAX_GLM_STEP):
+def sparsity_acc_test_salf_cbm(
+    load_dir,
+    lam_max=0.1,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    max_images=None,
+):
     with open(os.path.join(load_dir, "args.txt"), "r") as f:
         args = json.load(f)
         args = argparse.Namespace(**args)
     with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
         concepts = f.read().split("\n")
+    if cbl_batch_size is not None:
+        args.cbl_batch_size = cbl_batch_size
+    if saga_batch_size is not None:
+        args.saga_batch_size = saga_batch_size
+    if num_workers is not None:
+        args.num_workers = num_workers
     classes = data_utils.get_classes(args.dataset)
 
     backbone = SpatialBackbone(args.backbone, device=args.device)
@@ -541,10 +596,19 @@ def sparsity_acc_test_salf_cbm(load_dir, lam_max=0.1, n_iters=None, max_glm_step
         test_dataset = data_utils.get_data(
             f"{args.dataset}_val", preprocess=backbone.preprocess
         )
+        if max_images is not None:
+            keep_train = min(int(max_images), len(train_dataset))
+            keep_test = min(int(max_images), len(test_dataset))
+            train_dataset = torch.utils.data.Subset(train_dataset, list(range(keep_train)))
+            test_dataset = torch.utils.data.Subset(test_dataset, list(range(keep_test)))
     else:
         base_train = data_utils.get_data(f"{args.dataset}_train", preprocess=None)
         total = len(base_train)
+        if max_images is not None:
+            total = min(total, int(max_images))
         n_val = int(args.val_split * total)
+        if args.val_split > 0 and n_val == 0 and total > 1:
+            n_val = 1
         n_train = total - n_val
         generator = torch.Generator().manual_seed(args.seed)
         train_subset, _ = torch.utils.data.random_split(
@@ -556,8 +620,11 @@ def sparsity_acc_test_salf_cbm(load_dir, lam_max=0.1, n_iters=None, max_glm_step
             base_train, train_subset.indices, backbone.preprocess
         )
         base_test = data_utils.get_data(f"{args.dataset}_val", preprocess=None)
+        test_total = len(base_test)
+        if max_images is not None:
+            test_total = min(test_total, int(max_images))
         test_dataset = TransformedSubset(
-            base_test, list(range(len(base_test))), backbone.preprocess
+            base_test, list(range(test_total)), backbone.preprocess
         )
 
     train_loader = DataLoader(

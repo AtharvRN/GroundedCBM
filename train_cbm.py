@@ -119,6 +119,7 @@ def train_cbm_and_save(args):
                 label_dir=args.annotation_dir,
                 use_allones=args.allones_concept,
                 seed=args.seed,
+                max_images=args.max_train_images,
             )
 
             # save concept counts
@@ -159,6 +160,7 @@ def train_cbm_and_save(args):
         label_dir=args.annotation_dir,
         use_allones=args.allones_concept,
         seed=args.seed,
+        max_images=args.max_train_images,
     )
     train_cbl_loader = get_concept_dataloader(
         args.dataset,
@@ -174,6 +176,7 @@ def train_cbm_and_save(args):
         label_dir=args.annotation_dir,
         use_allones=args.allones_concept,
         seed=args.seed,
+        max_images=args.max_train_images,
     )  # no shuffle to match labels
     val_cbl_loader = get_concept_dataloader(
         args.dataset,
@@ -189,6 +192,7 @@ def train_cbm_and_save(args):
         label_dir=args.annotation_dir,
         use_allones=args.allones_concept,
         seed=args.seed,
+        max_images=args.max_train_images,
     )
     test_cbl_loader = get_concept_dataloader(
         args.dataset,
@@ -204,6 +208,7 @@ def train_cbm_and_save(args):
         label_dir=args.annotation_dir,
         use_allones=args.allones_concept,
         seed=args.seed,
+        max_images=args.max_test_images,
     )
 
     ##############################################
@@ -763,8 +768,10 @@ def main():
         action="store_true",
         help="Use the original LF-style official train/test split semantics when supported",
     )
-    parser.add_argument("--grid_h", type=int, default=7, help="Spatial grid height for SALF/SAVLG")
-    parser.add_argument("--grid_w", type=int, default=7, help="Spatial grid width for SALF/SAVLG")
+    parser.add_argument("--grid_h", type=int, default=7, help="Spatial grid height for SALF.")
+    parser.add_argument("--grid_w", type=int, default=7, help="Spatial grid width for SALF.")
+    parser.add_argument("--mask_h", type=int, default=7, help="Spatial supervision mask height for G-CBM/SAVLG.")
+    parser.add_argument("--mask_w", type=int, default=7, help="Spatial supervision mask width for G-CBM/SAVLG.")
     parser.add_argument(
         "--prompt_radius",
         type=int,
@@ -1139,6 +1146,10 @@ def main():
     if config_arg.config is not None:
         with open(config_arg.config, "r") as f:
             config_arg = json.load(f)
+        if "mask_h" in config_arg and "grid_h" not in config_arg:
+            config_arg["grid_h"] = config_arg["mask_h"]
+        if "mask_w" in config_arg and "grid_w" not in config_arg:
+            config_arg["grid_w"] = config_arg["mask_w"]
         parser.set_defaults(**config_arg)
     
     # run the training

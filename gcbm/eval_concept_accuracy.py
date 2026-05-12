@@ -143,6 +143,9 @@ def eval_model(load_dir, common_concepts, image_indices, device_override=None):
                 flush=True,
             )
             args.skip_test_eval = False
+        # Concept-accuracy eval samples arbitrary indices from the full held-out
+        # split, so do not inherit smoke-run test caps from training.
+        args.max_test_images = 0
         _, _, _, _, test_ds, backbone = create_savlg_splits(args)
         concept_layer = build_savlg_concept_layer(args, backbone, len(model_concepts))
         concept_layer.load_state_dict(torch.load(os.path.join(load_dir, "concept_layer.pt"), map_location=args.device))
@@ -222,9 +225,16 @@ def eval_model(load_dir, common_concepts, image_indices, device_override=None):
         logits_norm_full = logits_full
 
     elif model_name in ("vlg_cbm", "cub_cbm"):
-        from model.cbm import Backbone, ConceptLayer
+        from model.cbm import Backbone, BackboneCLIP, ConceptLayer
 
-        backbone_model = Backbone.from_args(load_dir, device=args.device)
+        if str(args.backbone).startswith("clip_"):
+            backbone_model = BackboneCLIP(
+                args.backbone,
+                use_penultimate=getattr(args, "use_clip_penultimate", False),
+                device=args.device,
+            )
+        else:
+            backbone_model = Backbone.from_args(load_dir, device=args.device)
         backbone_model.eval()
         cbl = ConceptLayer.from_pretrained(load_dir, device=args.device)
         cbl.eval()

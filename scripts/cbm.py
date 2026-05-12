@@ -195,7 +195,7 @@ def cmd_train(argv: list[str]) -> None:
     if dataset != "cub":
         raise SystemExit(f"Unsupported dataset for basic training: {dataset}")
 
-    forwarded: list[str] = []
+    forwarded: list[str] = ["--dataset", dataset]
     train_config = config.get("config_json", args.config)
     if train_config:
         forwarded.extend(["--config", str(train_config)])

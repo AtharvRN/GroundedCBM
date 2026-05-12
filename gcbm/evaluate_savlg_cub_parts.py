@@ -34,16 +34,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from methods.savlg import build_savlg_concept_layer, create_savlg_splits, forward_savlg_backbone, forward_savlg_concept_layer
-from gcbm.evaluate_savlg_native_maps import (
-    _mask_confusion_counts,
-    _mask_dice,
-    _mask_iou,
-    _normalize_map_with_mode,
-    _parse_csv_floats,
-)
-from gcbm.savlg_eval_common import _load_args, _load_concepts
-
 
 class IndexedDataset(Dataset):
     def __init__(self, base):
@@ -70,6 +60,25 @@ def format_concept(s: str) -> str:
 
 def canonicalize_concept_label(s: str) -> str:
     return format_concept(s)
+
+
+def _parse_csv_floats(x: str):
+    return [float(v.strip()) for v in x.split(",") if v.strip()]
+
+
+def _normalize_map_with_mode(maps: torch.Tensor, mode: str) -> torch.Tensor:
+    maps = maps.detach().float()
+    if mode == "sigmoid":
+        return torch.sigmoid(maps)
+    if mode == "concept_zscore_minmax":
+        mean = maps.flatten(1).mean(dim=1).view(-1, 1, 1)
+        std = maps.flatten(1).std(dim=1, unbiased=False).view(-1, 1, 1).clamp_min(1e-6)
+        maps = (maps - mean) / std
+    elif mode != "minmax":
+        raise ValueError(f"Unsupported map normalization mode: {mode}")
+    mins = maps.flatten(1).min(dim=1).values.view(-1, 1, 1)
+    maxs = maps.flatten(1).max(dim=1).values.view(-1, 1, 1)
+    return (maps - mins) / (maxs - mins).clamp_min(1e-6)
 
 
 def resolve_base_index(ds: Dataset, idx: int) -> int:
@@ -250,6 +259,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args_ns = parse_args()
+    from gcbm.savlg_eval_common import _load_args, _load_concepts
+    from methods.savlg import (
+        build_savlg_concept_layer,
+        create_savlg_splits,
+        forward_savlg_backbone,
+        forward_savlg_concept_layer,
+    )
+
     args = _load_args(args_ns.load_path, args_ns.device, args_ns.annotation_dir)
     if getattr(args, "skip_test_eval", False):
         print(

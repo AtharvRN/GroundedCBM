@@ -680,8 +680,12 @@ def create_salf_splits(args):
     if use_original_label_free_protocol(args):
         base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
         base_val_raw = data_utils.get_data(f"{args.dataset}_val", None)
-        train_indices = list(range(len(base_train_raw)))
-        val_indices = list(range(len(base_val_raw)))
+        max_train = int(getattr(args, "max_train_images", 0) or 0)
+        max_test = int(getattr(args, "max_test_images", 0) or 0)
+        train_total = min(len(base_train_raw), max_train) if max_train > 0 else len(base_train_raw)
+        val_total = min(len(base_val_raw), max_test) if max_test > 0 else len(base_val_raw)
+        train_indices = list(range(train_total))
+        val_indices = list(range(val_total))
         train_raw = RawSubset(base_train_raw, train_indices)
         val_raw = RawSubset(base_val_raw, val_indices)
         train_dataset = TransformedSubset(base_train_raw, train_indices, backbone.preprocess)
@@ -690,8 +694,11 @@ def create_salf_splits(args):
         return train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone, clip_model, clip_preprocess
 
     base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
-    total = len(base_train_raw)
+    max_train = int(getattr(args, "max_train_images", 0) or 0)
+    total = min(len(base_train_raw), max_train) if max_train > 0 else len(base_train_raw)
     n_val = int(args.val_split * total)
+    if args.val_split > 0 and n_val == 0 and total > 1:
+        n_val = 1
     n_train = total - n_val
     generator = torch.Generator().manual_seed(args.seed)
     train_subset, val_subset = torch.utils.data.random_split(
@@ -704,7 +711,9 @@ def create_salf_splits(args):
     train_dataset = TransformedSubset(base_train_raw, train_subset.indices, backbone.preprocess)
     val_dataset = TransformedSubset(base_train_raw, val_subset.indices, backbone.preprocess)
     base_test = data_utils.get_data(f"{args.dataset}_val", None)
-    test_dataset = TransformedSubset(base_test, list(range(len(base_test))), backbone.preprocess)
+    max_test = int(getattr(args, "max_test_images", 0) or 0)
+    test_total = min(len(base_test), max_test) if max_test > 0 else len(base_test)
+    test_dataset = TransformedSubset(base_test, list(range(test_total)), backbone.preprocess)
     return train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone, clip_model, clip_preprocess
 
 

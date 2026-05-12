@@ -7,8 +7,8 @@
   "save_dir": "artifacts/cub",
   "device": "cuda",
   "num_workers": 10,
-  "mask_h": 7,
-  "mask_w": 7,
+  "mask_h": 14,
+  "mask_w": 14,
   "seed": 6885,
   "cbl_epochs": 10,
   "cbl_batch_size": 32,
@@ -23,6 +23,6 @@
   "savlg_target_mode": "soft_box",
   "savlg_residual_spatial_alpha": 0.2,
   "savlg_residual_spatial_pooling": "lse",
-  "savlg_outside_penalty_w": 0.25,
+  "savlg_outside_penalty_w": 0.0,
   "skip_test_eval": false
 }

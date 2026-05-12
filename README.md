@@ -132,13 +132,32 @@ CUB localization across any subset of SAVLG, SALF, VLG, LF:
 
 ```bash
 python scripts/eval_cub_localization.py \
-  --savlg_path /path/to/savlg_run \
+  --gcbm_path /path/to/gcbm_run \
   --salf_path /path/to/salf_run \
   --vlg_path /path/to/vlg_run \
   --lf_path /path/to/lf_run \
   --cub70_root /path/to/CUB70-PartSegmentationDataset \
   --cub_root /path/to/CUB_200_2011 \
   --mapping_json /path/to/cub_concept_part_mapping.json
+```
+
+G-CBM CUB part-point localization using the official CUB part annotations:
+
+```bash
+python scripts/precompute_cub_part_annotation_cache.py \
+  --load_path /path/to/gcbm_run \
+  --annotation_dir annotations \
+  --cub_root /path/to/CUB_200_2011 \
+  --mapping_json /path/to/cub_concept_part_mapping.json \
+  --output artifacts/cub_part_annotation_cache.json
+
+python scripts/eval_cub_part_localization.py \
+  --load_path /path/to/gcbm_run \
+  --annotation_dir annotations \
+  --annotation_cache_json artifacts/cub_part_annotation_cache.json \
+  --cub_root /path/to/CUB_200_2011 \
+  --mapping_json /path/to/cub_concept_part_mapping.json \
+  --output results/cub_part_localization.json
 ```
 
 Concept accuracy evaluation on the common concept set:

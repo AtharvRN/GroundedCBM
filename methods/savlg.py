@@ -81,6 +81,8 @@ def create_savlg_splits(args):
     if max_train > 0:
         total = min(total, max_train)
     n_val = int(args.val_split * total)
+    if args.val_split > 0 and n_val == 0 and total > 1:
+        n_val = 1
     n_train = total - n_val
     generator = torch.Generator().manual_seed(args.seed)
     train_subset, val_subset = torch.utils.data.random_split(

@@ -385,7 +385,8 @@ def get_concept_dataloader(
     label_dir="outputs",
     use_allones=False,
     seed: int = 42,
-    concept_only=False
+    concept_only=False,
+    max_images: int = 0,
 ):
     dataset = ConceptDataset if not use_allones else partial(AllOneConceptDataset, get_classes(dataset_name))
     if split == "test":
@@ -400,6 +401,8 @@ def get_concept_dataloader(
             label_dir=label_dir,
             concept_only=concept_only
         )
+        if max_images and max_images > 0:
+            dataset = torch.utils.data.Subset(dataset, list(range(min(int(max_images), len(dataset)))))
         logger.info(f"Test dataset size: {len(dataset)}")
     else:
         assert val_split is not None
@@ -414,9 +417,13 @@ def get_concept_dataloader(
             label_dir=label_dir,
             concept_only=concept_only
         )
+        if max_images and max_images > 0:
+            dataset = torch.utils.data.Subset(dataset, list(range(min(int(max_images), len(dataset)))))
 
         # get split indices
         n_val = int(val_split * len(dataset))
+        if val_split > 0 and n_val == 0 and len(dataset) > 1:
+            n_val = 1
         n_train = len(dataset) - n_val
         train_dataset, val_dataset = torch.utils.data.random_split(
             dataset, [n_train, n_val], generator=torch.Generator().manual_seed(seed)
@@ -444,6 +451,7 @@ def get_filtered_concepts_and_counts(
     label_dir="outputs",
     use_allones: bool = False,
     seed: int = 42,
+    max_images: int = 0,
 ):
     # remove concepts that are not present in the dataset
     dataloader = get_concept_dataloader(
@@ -460,7 +468,8 @@ def get_filtered_concepts_and_counts(
         label_dir=label_dir,
         use_allones=use_allones,
         seed=seed,
-        concept_only=True
+        concept_only=True,
+        max_images=max_images,
     )
     # get concept counts
     raw_concepts_count = torch.zeros(len(raw_concepts))

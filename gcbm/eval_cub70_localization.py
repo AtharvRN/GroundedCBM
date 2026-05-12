@@ -50,10 +50,25 @@ EASY_GROUP_TO_CUB70 = {
 }
 
 
+def format_concept(s: str) -> str:
+    s = s.lower()
+    for token in ["-", ",", ".", "(", ")"]:
+        s = s.replace(token, " ")
+    if s.startswith("a "):
+        s = s[2:]
+    elif s.startswith("an "):
+        s = s[3:]
+    return " ".join(s.split())
+
+
+def canonicalize_concept_label(s: str) -> str:
+    return format_concept(s)
+
+
 def load_concept_part_mapping(mapping_path, model_concepts):
     """Returns {concept_idx: part_group} for concepts in the model's concept list."""
-    from data.utils import canonicalize_concept_label
-    d = json.load(open(mapping_path))
+    with open(mapping_path, "r", encoding="utf-8") as handle:
+        d = json.load(handle)
     concept_to_idx = {canonicalize_concept_label(c): i for i, c in enumerate(model_concepts)}
     mapping = {}  # concept_idx -> part_group
     for entry in d["mappings"]:
@@ -75,19 +90,21 @@ def find_cub70_images(cub70_root, cub_root, split="test"):
     split_file = os.path.join(cub_root, "train_test_split.txt")
     images_file = os.path.join(cub_root, "images.txt")
     test_ids = set()
-    for line in open(split_file):
-        img_id, is_train = line.strip().split()
-        if (split == "test" and is_train == "0") or (split == "train" and is_train == "1"):
-            test_ids.add(int(img_id))
+    with open(split_file, "r", encoding="utf-8") as handle:
+        for line in handle:
+            img_id, is_train = line.strip().split()
+            if (split == "test" and is_train == "0") or (split == "train" and is_train == "1"):
+                test_ids.add(int(img_id))
 
     # Build image_id -> (class_id, image_stem)
     id_to_info = {}
-    for line in open(images_file):
-        img_id, rel_path = line.strip().split(" ", 1)
-        class_folder = rel_path.split("/")[0]
-        class_id = class_folder.split(".")[0]  # "001" from "001.Black_footed_Albatross"
-        stem = os.path.splitext(rel_path.split("/")[1])[0]
-        id_to_info[int(img_id)] = (class_id, stem, rel_path)
+    with open(images_file, "r", encoding="utf-8") as handle:
+        for line in handle:
+            img_id, rel_path = line.strip().split(" ", 1)
+            class_folder = rel_path.split("/")[0]
+            class_id = class_folder.split(".")[0]  # "001" from "001.Black_footed_Albatross"
+            stem = os.path.splitext(rel_path.split("/")[1])[0]
+            id_to_info[int(img_id)] = (class_id, stem, rel_path)
 
     # Find CUB70 mask directories
     mask_root = os.path.join(cub70_root, "AnnotationMasksPerclass")
@@ -524,6 +541,7 @@ def evaluate_model(model_type, load_dir, cub70_images, concept_part_map, device,
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--gcbm_path", default=None, help="Path to a G-CBM/SAVLG run directory. Alias for --savlg_path.")
     parser.add_argument("--savlg_path", default=None)
     parser.add_argument("--salf_path", default=None)
     parser.add_argument("--vlg_path", default=None)
@@ -553,8 +571,9 @@ def main():
 
     results = {}
     models_to_eval = []
-    if cli.savlg_path:
-        models_to_eval.append(("SAVLG", "savlg", cli.savlg_path))
+    savlg_path = cli.gcbm_path or cli.savlg_path
+    if savlg_path:
+        models_to_eval.append(("G-CBM", "savlg", savlg_path))
     if cli.salf_path:
         models_to_eval.append(("SALF", "salf", cli.salf_path))
     if cli.vlg_path:
@@ -623,11 +642,11 @@ def main():
 
     # Final comparison
     print("\n" + "="*60, flush=True)
-    print("SAVLG vs SALF — CUB70 Part Localization (IoU)", flush=True)
-    print(f"{'Part':<10} {'SAVLG IoU':>12} {'SALF IoU':>12} {'Delta':>10}", flush=True)
+    print("G-CBM vs SALF — CUB70 Part Localization (IoU)", flush=True)
+    print(f"{'Part':<10} {'G-CBM IoU':>12} {'SALF IoU':>12} {'Delta':>10}", flush=True)
     print("-"*46, flush=True)
     for part in ["beak", "wing", "tail", "body", "overall"]:
-        savlg_iou = results.get("SAVLG", {}).get(part, {}).get("best_iou", 0)
+        savlg_iou = results.get("G-CBM", {}).get(part, {}).get("best_iou", 0)
         salf_iou  = results.get("SALF", {}).get(part, {}).get("best_iou", 0)
         delta = savlg_iou - salf_iou
         print(f"{part:<10} {savlg_iou:>12.4f} {salf_iou:>12.4f} {delta:>+10.4f}", flush=True)

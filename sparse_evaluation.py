@@ -42,6 +42,10 @@ def main() -> None:
             lam_max=args.lam,
             n_iters=args.n_iters,
             max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
+            cbl_batch_size=args.cbl_batch_size,
+            saga_batch_size=args.saga_batch_size,
+            num_workers=args.num_workers,
+            max_images=args.max_images,
         )
     elif model_name == "vlg_cbm":
         accs = sparsity_acc_test(
@@ -51,6 +55,10 @@ def main() -> None:
             anno=args.annotation_dir,
             n_iters=args.n_iters,
             max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
+            cbl_batch_size=args.cbl_batch_size,
+            saga_batch_size=args.saga_batch_size,
+            num_workers=args.num_workers,
+            max_images=args.max_images,
         )
     elif model_name == "salf_cbm":
         accs = sparsity_acc_test_salf_cbm(
@@ -58,6 +66,10 @@ def main() -> None:
             lam_max=args.lam,
             n_iters=args.n_iters,
             max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
+            cbl_batch_size=args.cbl_batch_size,
+            saga_batch_size=args.saga_batch_size,
+            num_workers=args.num_workers,
+            max_images=args.max_images,
         )
     elif model_name == "savlg_cbm":
         accs = sparsity_acc_test_savlg_cbm(
