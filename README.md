@@ -100,14 +100,20 @@ python scripts/run_glm_path.py --artifact_dir /path/to/run_dir
 python scripts/eval_imagenet_nec.py --artifact_dir /path/to/run_dir --val_root /path/to/imagenet_val
 ```
 
+GDINO-box localization has a shared entry point for CUB and ImageNet. CUB uses
+the paper-style native-map evaluator with `gt_present` concepts; ImageNet uses
+the validation GDINO annotations with filename-based annotation mapping.
+
 ImageNet localization:
 
 ```bash
-python scripts/eval_imagenet_localization.py \
-  --artifact_dir /path/to/run_dir \
+python scripts/eval_gdino_localization.py \
+  --dataset imagenet \
+  --gcbm_path /path/to/run_dir \
   --val_tar /path/to/ILSVRC2012_img_val.tar \
   --devkit_dir /path/to/ILSVRC2012_devkit_t12 \
-  --annotation_dir /path/to/imagenet_annotations
+  --annotation_dir /path/to/imagenet_annotations \
+  --output results/imagenet_gdino_localization.json
 ```
 
 CUB SAVLG / G-CBM training:
@@ -131,12 +137,12 @@ python scripts/eval_cub_nec.py --load_path /path/to/cub_run
 CUB G-CBM localization against GDINO pseudo boxes:
 
 ```bash
-python scripts/eval_cub_gdino_localization.py \
+python scripts/eval_gdino_localization.py \
+  --dataset cub \
   --gcbm_path /path/to/gcbm_run \
   --annotation_dir annotations \
   --output results/cub_gdino_localization.json \
-  --activation_thresholds 0.3,0.5,0.7,0.9,meanthr \
-  --compute_distribution_metrics
+  --activation_thresholds 0.3,0.5,0.7,0.9
 ```
 
 CUB70 localization across any subset of SAVLG, SALF, VLG, LF:
