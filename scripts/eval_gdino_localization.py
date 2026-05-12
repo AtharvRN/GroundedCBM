@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 import tarfile
@@ -35,6 +36,7 @@ from gcbm.imagenet_annotation_index import (  # noqa: E402
     resolve_val_annotation_dir,
 )
 from gcbm.imagenet_core import (  # noqa: E402
+    Config,
     build_gdino_targets,
     build_model,
     configure_runtime,
@@ -557,7 +559,29 @@ def eval_imagenet(args: argparse.Namespace, thresholds: Sequence[float], keys: S
         raise SystemExit("ImageNet GDINO localization requires one of --val_root or --val_tar.")
     artifact_dir = Path(args.gcbm_path).resolve()
     source_run_dir = resolve_source_run_dir(artifact_dir)
-    cfg = load_run_config(source_run_dir, argparse.Namespace(**vars(args), workers=int(args.num_workers)))
+    try:
+        cfg = load_run_config(source_run_dir, argparse.Namespace(**vars(args), workers=int(args.num_workers)))
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        payload = json.loads((source_run_dir / "config.json").read_text(encoding="utf-8"))
+        valid_fields = {field.name for field in dataclasses.fields(Config)}
+        payload = {key: value for key, value in payload.items() if key in valid_fields}
+        payload.setdefault("feature_storage_dtype", "fp16")
+        payload.setdefault("saga_table_device", "cpu")
+        payload.setdefault("dense_lr", 1e-3)
+        payload.setdefault("dense_n_iters", 20)
+        payload.setdefault("train_random_transforms", True)
+        payload.setdefault("learn_spatial_residual_scale", False)
+        payload["device"] = args.device
+        payload["batch_size"] = int(args.batch_size)
+        payload["workers"] = int(args.num_workers)
+        payload["prefetch_factor"] = int(args.prefetch_factor)
+        payload["persistent_workers"] = bool(args.persistent_workers)
+        payload["pin_memory"] = bool(args.pin_memory)
+        payload["skip_final_layer"] = True
+        payload["print_config"] = False
+        cfg = Config(**payload)
     configure_runtime(cfg)
     concepts = load_concepts(str(source_run_dir / "concepts.txt"))
     concept_to_idx = {name: idx for idx, name in enumerate(concepts)}
