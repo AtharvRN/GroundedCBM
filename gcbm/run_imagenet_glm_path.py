@@ -109,10 +109,10 @@ def load_config(config_dir: Path, device: str) -> Config:
 def infer_n_classes(*target_paths: Path) -> int:
     max_class_id = -1
     for target_path in target_paths:
-        targets = torch.from_numpy(np.load(target_path, mmap_mode="r"))
+        targets = np.load(target_path, mmap_mode="r")
         if int(targets.shape[0]) == 0:
             continue
-        max_class_id = max(max_class_id, int(targets.max().item()))
+        max_class_id = max(max_class_id, int(np.max(targets).item()))
     if max_class_id < 0:
         raise RuntimeError("Could not infer class count from target files")
     return max_class_id + 1

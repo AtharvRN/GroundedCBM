@@ -19,8 +19,12 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from interpretability.cam import ScoreCAM
-from interpretability.visualize import visualize
+try:
+    from interpretability.cam import ScoreCAM  # type: ignore
+    from interpretability.visualize import visualize  # type: ignore
+except Exception:  # pragma: no cover
+    ScoreCAM = None  # type: ignore
+    visualize = None  # type: ignore
 
 PM_SUFFIX = {"max": "_max", "avg": ""}
 
@@ -389,6 +393,11 @@ def display_top_activated_images(concept_idx, concepts_logits, model, target_lay
     if plt is None:
         raise ImportError(
             "display_top_activated_images() requires matplotlib, but it is not installed in this environment."
+        )
+    if ScoreCAM is None or visualize is None:
+        raise ImportError(
+            "display_top_activated_images() requires the optional interpretability package, "
+            "which is not included in the minimal release."
         )
     concept_logit = concepts_logits[:, concept_idx]
 

@@ -8,7 +8,79 @@ Minimal training/evaluation release tree for reproducing the final G-CBM paper r
 pip install -r requirements.txt
 ```
 
+## Data Setup
+
+CUB training expects an ImageFolder-style split:
+
+```text
+datasets/CUB/
+  train/<class_name>/*.jpg
+  test/<class_name>/*.jpg
+```
+
+Download the official CUB-200-2011 archive from CaltechDATA:
+
+```bash
+mkdir -p datasets
+curl -L "https://data.caltech.edu/records/65de6-vp158/files/CUB_200_2011.tgz?download=1" \
+  -o datasets/CUB_200_2011.tgz
+tar -xzf datasets/CUB_200_2011.tgz -C datasets
+python datasets/split_cub_dataset.py \
+  --cub_root datasets/CUB_200_2011 \
+  --output_root datasets/CUB
+```
+
+Then point the code at the split:
+
+```bash
+export CUB_DATASET_ROOT="$PWD/datasets/CUB"
+```
+
+CUB G-CBM/SALF training also needs concept annotation JSONs. Place or unpack the
+released annotation files with this layout:
+
+```text
+annotations/
+  cub_train/0.json
+  cub_train/1.json
+  ...
+  cub_val/0.json
+  cub_val/1.json
+  ...
+```
+
+Then update `annotation_dir` in `configs/cub_gcbm.json` and
+`configs/cub_salf.json`, or override it on the command line:
+
+```bash
+python scripts/cbm.py train \
+  --dataset cub \
+  --model gcbm \
+  --config configs/cub_gcbm.json \
+  --annotation_dir annotations
+```
+
+For CUB localization, download or place the CUB-70 part segmentation dataset
+and pass it via `--cub70_root`.
+
 ## Reproduce
+
+Basic unified train/test entrypoint:
+
+```bash
+python scripts/cbm.py train --dataset cub --model gcbm --config configs/cub_gcbm.json
+python scripts/cbm.py train --dataset cub --model salf --config configs/cub_salf.json
+python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
+```
+
+ImageNet G-CBM can also be launched through the same entrypoint:
+
+```bash
+python scripts/cbm.py train --dataset imagenet --model gcbm --config configs/imagenet_gcbm.yaml
+```
+
+The commands below are the lower-level task-specific wrappers preserved for
+paper reproduction.
 
 ImageNet concept-layer training:
 

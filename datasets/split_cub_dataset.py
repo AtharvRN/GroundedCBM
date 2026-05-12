@@ -1,58 +1,99 @@
-from __future__ import absolute_import
-from __future__ import print_function
-import matplotlib.pyplot as plt
-import os
+#!/usr/bin/env python3
+"""Create ImageFolder-style CUB train/test directories from CUB_200_2011."""
+
+from __future__ import annotations
+
+import argparse
 import shutil
-from shutil import copyfile
+from pathlib import Path
 
-# Change the path to your dataset folder:
-base_folder = 'CUB_200_2011/'
-
-# These path should be fine
-images_txt_path = base_folder+ 'images.txt'
-train_test_split_path =  base_folder+ 'train_test_split.txt'
-images_path =  base_folder+ 'images/'
-
-# Here declare where you want to place the train/test folders
-# You don't need to create them!
-test_folder = 'CUB/test/'
-train_folder = 'CUB/train/'
+from PIL import Image, UnidentifiedImageError
 
 
-def ignore_files(dir,files): return [f for f in files if os.path.isfile(os.path.join(dir,f))]
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Split CUB_200_2011 into CUB/train and CUB/test directories using the official split file."
+    )
+    parser.add_argument(
+        "--cub_root",
+        default="CUB_200_2011",
+        help="Directory containing images.txt, train_test_split.txt, and images/.",
+    )
+    parser.add_argument(
+        "--output_root",
+        default="CUB",
+        help="Output directory. Creates train/ and test/ subdirectories under this path.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Remove existing output_root before writing the split.",
+    )
+    return parser.parse_args()
 
-shutil.copytree(images_path,test_folder,ignore=ignore_files)
-shutil.copytree(images_path,train_folder,ignore=ignore_files)
 
-with open(images_txt_path) as f:
-  images_lines = f.readlines()
+def is_rgb_image(path: Path) -> bool:
+    try:
+        with Image.open(path) as image:
+            return image.mode == "RGB" or image.convert("RGB").mode == "RGB"
+    except (UnidentifiedImageError, OSError):
+        return False
 
-with open(train_test_split_path) as f:
-  split_lines = f.readlines()
 
-test_images, train_images = 0,0
+def copy_split(cub_root: Path, output_root: Path, overwrite: bool = False) -> tuple[int, int]:
+    images_txt = cub_root / "images.txt"
+    split_txt = cub_root / "train_test_split.txt"
+    images_dir = cub_root / "images"
+    if not images_txt.exists() or not split_txt.exists() or not images_dir.is_dir():
+        raise FileNotFoundError(
+            f"Expected CUB files at {cub_root}: images.txt, train_test_split.txt, images/"
+        )
 
-for image_line,split_line in zip(images_lines,split_lines):
+    if output_root.exists():
+        if not overwrite:
+            raise FileExistsError(f"{output_root} already exists; pass --overwrite to replace it")
+        shutil.rmtree(output_root)
 
-  image_line = (image_line.strip()).split(' ')
-  split_line = (split_line.strip()).split(' ')
+    train_root = output_root / "train"
+    test_root = output_root / "test"
+    train_root.mkdir(parents=True)
+    test_root.mkdir(parents=True)
 
-  image = plt.imread(images_path + image_line[1])
+    image_lines = images_txt.read_text(encoding="utf-8").splitlines()
+    split_lines = split_txt.read_text(encoding="utf-8").splitlines()
+    if len(image_lines) != len(split_lines):
+        raise ValueError("images.txt and train_test_split.txt have different lengths")
 
-  # Use only RGB images, avoid grayscale
-  if len(image.shape) == 3:
+    train_count = 0
+    test_count = 0
+    for image_line, split_line in zip(image_lines, split_lines):
+        _image_id, rel_path = image_line.strip().split(maxsplit=1)
+        _split_id, is_train = split_line.strip().split(maxsplit=1)
+        src = images_dir / rel_path
+        if not is_rgb_image(src):
+            continue
+        dst_root = train_root if int(is_train) == 1 else test_root
+        dst = dst_root / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        if int(is_train) == 1:
+            train_count += 1
+        else:
+            test_count += 1
 
-    # If test image
-    if int(split_line[1]) == 0:
-      copyfile(images_path+image_line[1],test_folder+image_line[1])
-      test_images += 1
-    else:
-      # If train image
-      copyfile(images_path+image_line[1],train_folder+image_line[1])
-      train_images += 1
+    return train_count, test_count
 
-print(train_images,test_images)
-assert train_images == 5990
-assert test_images == 5790
 
-print('Dataset succesfully splitted!')
+def main() -> None:
+    args = parse_args()
+    train_count, test_count = copy_split(
+        Path(args.cub_root),
+        Path(args.output_root),
+        overwrite=args.overwrite,
+    )
+    print(f"Created {args.output_root}/train with {train_count} RGB images")
+    print(f"Created {args.output_root}/test with {test_count} RGB images")
+
+
+if __name__ == "__main__":
+    main()
