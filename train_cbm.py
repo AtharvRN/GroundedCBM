@@ -5,109 +5,23 @@ import os
 import random
 import sys
 
+from gcbm.config import (
+    config_to_argv,
+    dataset_from_argv_or_config,
+    load_flat_config,
+    model_from_argv_or_config,
+    option_value,
+    strip_dispatcher_args,
+)
+
 
 IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "sg_cbm", "gcbm", "g-cbm", "savlg", "savlg_cbm"}
 CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
 
-def _parse_scalar(value: str):
-    value = value.strip()
-    if value.lower() in {"true", "false"}:
-        return value.lower() == "true"
-    if value.lower() in {"none", "null"}:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        return value.strip("\"'")
-
-
-def _load_flat_config(path: str | None) -> dict:
-    if not path:
-        return {}
-    if path.endswith(".json"):
-        with open(path, "r") as handle:
-            return json.load(handle)
-    if path.endswith((".yaml", ".yml")):
-        config = {}
-        with open(path, "r") as handle:
-            for raw_line in handle:
-                line = raw_line.split("#", 1)[0].strip()
-                if not line:
-                    continue
-                if ":" not in line:
-                    raise SystemExit(f"Unsupported config line in {path!r}: {raw_line.rstrip()!r}")
-                key, value = line.split(":", 1)
-                config[key.strip()] = _parse_scalar(value)
-        return config
-    raise SystemExit("--config must be a flat JSON/YAML file")
-
-
-def _option_value(argv: list[str], *names: str):
-    for idx, token in enumerate(argv):
-        if token in names and idx + 1 < len(argv):
-            return argv[idx + 1]
-        for name in names:
-            prefix = name + "="
-            if token.startswith(prefix):
-                return token[len(prefix):]
-    return None
-
-
-def _dataset_from_argv_or_config(argv: list[str]) -> str | None:
-    config = _load_flat_config(_option_value(argv, "--config"))
-    dataset = _option_value(argv, "--dataset") or config.get("dataset")
-    return str(dataset).lower() if dataset else None
-
-
-def _model_from_argv_or_config(argv: list[str], config: dict) -> str:
-    model = _option_value(argv, "--model", "--model_name") or config.get("model") or config.get("model_name") or "sgcbm"
-    return str(model).lower().replace("_", "-")
-
-
-def _append_option(argv: list[str], name: str, value) -> None:
-    if value is None:
-        return
-    if isinstance(value, bool):
-        if value:
-            argv.append(name)
-        return
-    argv.extend([name, str(value)])
-
-
-def _config_to_argv(config: dict) -> list[str]:
-    forwarded: list[str] = []
-    for key, value in config.items():
-        if key in {"dataset", "model", "model_name", "config_json"}:
-            continue
-        _append_option(forwarded, f"--{key}", value)
-    return forwarded
-
-
-def _strip_dispatcher_args(argv: list[str]) -> list[str]:
-    stripped: list[str] = []
-    skip_next = False
-    dispatcher_options = {"--config", "--dataset", "--model", "--model_name"}
-    for token in argv:
-        if skip_next:
-            skip_next = False
-            continue
-        if token in dispatcher_options:
-            skip_next = True
-            continue
-        if any(token.startswith(option + "=") for option in dispatcher_options):
-            continue
-        stripped.append(token)
-    return stripped
-
-
 def _run_imagenet_training(argv: list[str]) -> None:
-    config = _load_flat_config(_option_value(argv, "--config"))
-    model = _model_from_argv_or_config(argv, config)
+    config = load_flat_config(option_value(argv, "--config"))
+    model = model_from_argv_or_config(argv, config)
     if model not in IMAGENET_MODEL_ALIASES:
         raise SystemExit("ImageNet training in this repository supports SG-CBM only.")
 
@@ -117,8 +31,8 @@ def _run_imagenet_training(argv: list[str]) -> None:
     try:
         sys.argv = [
             "train_cbm.py",
-            *_config_to_argv(config),
-            *_strip_dispatcher_args(argv),
+            *config_to_argv(config),
+            *strip_dispatcher_args(argv),
         ]
         imagenet_main()
     finally:
@@ -538,7 +452,7 @@ def train_cbm_and_save(args):
 
 
 def main():
-    if _dataset_from_argv_or_config(sys.argv[1:]) == "imagenet":
+    if dataset_from_argv_or_config(sys.argv[1:]) == "imagenet":
         _run_imagenet_training(sys.argv[1:])
         return
 
@@ -1071,14 +985,8 @@ def main():
         "--savlg_residual_spatial_pooling",
         type=str,
         default="lse",
-        choices=["lse", "avg", "topk"],
+        choices=["lse", "avg"],
         help="Pooling mode for residual SAVLG spatial logits.",
-    )
-    parser.add_argument(
-        "--savlg_residual_topk_fraction",
-        type=float,
-        default=0.2,
-        help="Patch fraction used when --savlg_residual_spatial_pooling=topk",
     )
     parser.add_argument(
         "--savlg_target_mode",
@@ -1086,25 +994,6 @@ def main():
         default="hard_iou",
         choices=["hard_iou", "soft_box"],
         help="How SAVLG rasterizes box supervision into patch targets",
-    )
-    parser.add_argument(
-        "--savlg_supervision_source",
-        type=str,
-        default="gdino",
-        choices=["gdino", "groundedsam2"],
-        help="Spatial supervision source used by SAVLG: stored GDINO boxes or cached GroundedSAM2 masks",
-    )
-    parser.add_argument(
-        "--savlg_groundedsam2_train_manifest",
-        type=str,
-        default=None,
-        help="Path to the GroundedSAM2 train manifest.json (or its containing directory) used when --savlg_supervision_source=groundedsam2",
-    )
-    parser.add_argument(
-        "--savlg_groundedsam2_val_manifest",
-        type=str,
-        default=None,
-        help="Path to the GroundedSAM2 val manifest.json (or its containing directory) used when --savlg_supervision_source=groundedsam2",
     )
     parser.add_argument(
         "--savlg_stream_supervision",

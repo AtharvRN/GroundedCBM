@@ -22,7 +22,8 @@ scripts/eval_cub_part_localization.py Evaluate localization against CUB part poi
 ```
 
 Other Python files under `gcbm/`, `methods/`, `model/`, `data/`, and
-`glm_saga/` are implementation modules used by these entry points.
+`glm_saga/` are implementation modules used by these entry points. They are not
+separate user-facing scripts.
 
 ## Data
 
@@ -49,7 +50,7 @@ python datasets/split_cub_dataset.py \
 export CUB_DATASET_ROOT="$PWD/datasets/CUB"
 ```
 
-CUB SG-CBM/SALF training and localization use annotation JSON files:
+CUB SG-CBM/SALF training and localization use GDINO annotation JSON files:
 
 ```text
 annotations/
@@ -61,9 +62,14 @@ annotations/
 ### ImageNet
 
 ImageNet SG-CBM training supports either an ImageFolder train root or a JSONL
-manifest with `path`, `class_id`, and `sample_index`. Training also expects
-GDINO annotations and precomputed GDINO target tensors for concept-layer
-supervision.
+manifest with `path`, `class_id`, and `sample_index`. For precomputed target
+training, `sample_index` must index rows in the target cache. If the cache was
+built for a subset, use the subset manifest with compact `sample_index` values,
+not the original ImageNet dataset indices.
+
+Training uses GDINO annotations. Precomputed GDINO target tensors are preferred
+for large runs; if `--precomputed_target_dir` is omitted, targets are built from
+the annotation JSON files on the fly.
 
 ImageNet NEC evaluation supports an extracted validation directory or the
 official validation tar. Supply the devkit metadata when evaluating a flat
@@ -72,7 +78,8 @@ validation directory.
 ## 1. Train CBM
 
 `train_cbm.py` is the unified training entry point. It supports CUB training for
-SG-CBM, SALF-CBM, VLG-CBM, and LF-CBM, plus ImageNet SG-CBM training.
+SG-CBM, SALF-CBM, VLG-CBM, and LF-CBM, plus ImageNet SG-CBM training. SG-CBM
+spatial supervision is GDINO-box based.
 
 ```bash
 python train_cbm.py --config configs/cub_gcbm.json
@@ -212,6 +219,7 @@ python scripts/eval_cub_part_localization.py \
 ## Notes
 
 - Public model name: SG-CBM.
+- SG-CBM training/localization in this release uses GDINO annotations.
 - Sparse GLM / NEC evaluation uses trained concept-layer checkpoints and sparse
   head outputs.
 - Localization evaluation uses concept-layer checkpoints, not sparse GLM heads.

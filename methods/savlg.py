@@ -2,7 +2,6 @@ import hashlib
 import json
 import math
 import os
-import re
 import struct
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -18,6 +17,7 @@ from tqdm import tqdm
 
 from data import utils as data_utils
 from data.concept_dataset import get_filtered_concepts_and_counts
+from gcbm.losses import sgcbm_concept_losses
 from glm_saga.elasticnet import IndexedTensorDataset
 from methods.common import build_run_dir, save_args, write_artifacts
 from methods.lf import TransformedSubset, subset_targets, use_original_label_free_protocol
@@ -151,14 +151,7 @@ def _supervision_cache_path(
     target_mode = str(getattr(args, "savlg_target_mode", "hard_iou")).lower()
     global_target_mode = _savlg_global_target_mode(args)
     patch_iou_tag = str(float(getattr(args, "patch_iou_thresh", 0.5))).replace(".", "p")
-    supervision_source = _savlg_supervision_source(args)
-    source_tag = supervision_source
-    if supervision_source == "groundedsam2":
-        manifest_path = _groundedsam2_manifest_path(args, split_name)
-        source_tag = "{}_{}".format(
-            supervision_source,
-            hashlib.sha1(os.path.abspath(manifest_path).encode("utf-8")).hexdigest()[:12],
-        )
+    source_tag = "gdino"
     cache_dir = os.path.join(getattr(args, "activation_dir", "saved_activations"), "savlg")
     os.makedirs(cache_dir, exist_ok=True)
     return os.path.join(
@@ -175,10 +168,6 @@ def _image_size_cache_path(args, split_name: str) -> str:
 
 def _savlg_global_target_mode(args) -> str:
     return str(getattr(args, "savlg_global_target_mode", "binary_threshold")).lower()
-
-
-def _savlg_supervision_source(args) -> str:
-    return str(getattr(args, "savlg_supervision_source", "gdino")).lower()
 
 
 def _savlg_concept_filter_mode(args) -> str:
@@ -217,257 +206,6 @@ def _savlg_io_workers(args) -> int:
 def _load_concepts_file(path: str) -> List[str]:
     with open(path, "r") as f:
         return [line.strip() for line in f if line.strip()]
-
-
-def _resolve_manifest_path(path_or_dir: str) -> str:
-    resolved = os.path.expanduser(path_or_dir)
-    if os.path.isdir(resolved):
-        resolved = os.path.join(resolved, "manifest.json")
-    return resolved
-
-
-def _groundedsam2_manifest_path(args, split_name: str) -> str:
-    attr = f"savlg_groundedsam2_{split_name}_manifest"
-    candidate = str(getattr(args, attr, "") or "").strip()
-    if not candidate:
-        raise ValueError(
-            f"SAVLG supervision source is groundedsam2 but --{attr} was not provided."
-        )
-    manifest_path = _resolve_manifest_path(candidate)
-    if not os.path.isfile(manifest_path):
-        raise FileNotFoundError(
-            f"Could not find GroundedSAM2 manifest for split={split_name}: {manifest_path}"
-        )
-    return manifest_path
-
-
-def _parse_manifest_image_id(value) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, int):
-        return int(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        if stripped.isdigit():
-            return int(stripped)
-        match = re.search(r"(\d+)$", stripped)
-        if match is not None:
-            return int(match.group(1))
-    return None
-
-
-def _normalize_relpath(path: Optional[str]) -> str:
-    if not path:
-        return ""
-    return Path(str(path).replace("\\", "/")).as_posix().lstrip("./").lower()
-
-
-def _path_tail(path: str, n_parts: int) -> str:
-    parts = Path(path).parts
-    if not parts:
-        return ""
-    return "/".join(parts[-n_parts:]).lower()
-
-
-def _resolve_bundle_artifact_path(manifest_path: str, bundle_path: str) -> str:
-    if os.path.isabs(bundle_path):
-        return bundle_path
-    return os.path.join(os.path.dirname(manifest_path), bundle_path)
-
-
-def _downsample_binary_mask_target(mask: np.ndarray, args) -> Optional[np.ndarray]:
-    if mask.ndim != 2:
-        return None
-    mask_bool = np.asarray(mask, dtype=np.bool_)
-    if not bool(mask_bool.any()):
-        return None
-    mask_tensor = torch.from_numpy(mask_bool.astype(np.float32))[None, None, ...]
-    downsampled = F.interpolate(
-        mask_tensor,
-        size=(int(args.mask_h), int(args.mask_w)),
-        mode="area",
-    )[0, 0]
-    return downsampled.clamp_(0.0, 1.0).numpy().astype(np.float32)
-
-
-def _groundedsam2_presence_score(record: Dict[str, object], args) -> float:
-    if _savlg_global_target_mode(args) == "binary_threshold":
-        return 1.0
-    for key in ("annotation_score", "annotation_logit", "sam2_score"):
-        value = record.get(key)
-        try:
-            if value is not None:
-                score = float(value)
-                if np.isfinite(score):
-                    return score
-        except (TypeError, ValueError):
-            continue
-    return 1.0
-
-
-def _load_groundedsam2_spatial_supervision(
-    raw_dataset: Dataset,
-    concepts: Sequence[str],
-    args,
-    split_name: str,
-    keep_idx: Optional[Sequence[int]] = None,
-) -> Tuple[np.ndarray, List[Dict[int, np.ndarray]], List[int]]:
-    manifest_path = _groundedsam2_manifest_path(args, split_name)
-    logger.info(
-        "Building SAVLG {} supervision from GroundedSAM2 manifest {}",
-        split_name,
-        manifest_path,
-    )
-    with open(manifest_path, "r") as f:
-        manifest = json.load(f)
-    records = manifest.get("records", [])
-
-    concept_to_idx = {concept: idx for idx, concept in enumerate(concepts)}
-    row_to_ann_idx = (
-        list(raw_dataset.indices)
-        if hasattr(raw_dataset, "indices")
-        else list(range(len(raw_dataset)))
-    )
-    image_paths = _subset_image_paths(raw_dataset)
-
-    records_by_idx: Dict[int, List[Dict[str, object]]] = {}
-    records_by_relpath: Dict[str, List[Dict[str, object]]] = {}
-    records_by_tail2: Dict[str, List[Dict[str, object]]] = {}
-    records_by_basename: Dict[str, List[Dict[str, object]]] = {}
-    for record in records:
-        image_idx = _parse_manifest_image_id(record.get("image_id"))
-        if image_idx is not None:
-            records_by_idx.setdefault(image_idx, []).append(record)
-        relpath = _normalize_relpath(record.get("image_relpath"))
-        if relpath:
-            records_by_relpath.setdefault(relpath, []).append(record)
-            records_by_tail2.setdefault(_path_tail(relpath, 2), []).append(record)
-            records_by_basename.setdefault(Path(relpath).name.lower(), []).append(record)
-
-    def _records_for_row(row_idx: int, ann_idx: int) -> List[Dict[str, object]]:
-        direct = records_by_idx.get(int(ann_idx))
-        if direct:
-            return direct
-        if image_paths is None:
-            return []
-        full_path = _normalize_relpath(image_paths[row_idx])
-        if not full_path:
-            return []
-        direct_rel = records_by_relpath.get(full_path)
-        if direct_rel:
-            return direct_rel
-        tail2 = _path_tail(full_path, 2)
-        tail2_matches = records_by_tail2.get(tail2, [])
-        if len(tail2_matches) == 1:
-            return tail2_matches
-        basename_matches = records_by_basename.get(Path(full_path).name.lower(), [])
-        if len(basename_matches) == 1:
-            return basename_matches
-        return []
-
-    global_concept_scores = np.zeros((len(raw_dataset), len(concepts)), dtype=np.float32)
-    mask_entries: List[Dict[int, np.ndarray]] = [dict() for _ in range(len(raw_dataset))]
-    bundle_cache: Dict[str, np.ndarray] = {}
-    bundle_failures = 0
-
-    for row_idx, ann_idx in tqdm(
-        list(enumerate(row_to_ann_idx)),
-        total=len(row_to_ann_idx),
-        desc=f"SAVLG {split_name} GroundedSAM2",
-    ):
-        row_records = _records_for_row(row_idx, ann_idx)
-        if not row_records:
-            continue
-        masks_by_bundle: Dict[str, np.ndarray] = {}
-        for record in row_records:
-            bundle_npz = record.get("bundle_npz")
-            if not isinstance(bundle_npz, str) or not bundle_npz:
-                continue
-            bundle_path = _resolve_bundle_artifact_path(manifest_path, bundle_npz)
-            masks = masks_by_bundle.get(bundle_path)
-            if masks is None:
-                masks = bundle_cache.get(bundle_path)
-                if masks is None:
-                    try:
-                        with np.load(bundle_path, allow_pickle=False) as payload:
-                            masks = payload["masks"]
-                    except Exception as exc:
-                        bundle_failures += 1
-                        logger.warning(
-                            "Failed to load GroundedSAM2 bundle {}: {}",
-                            bundle_path,
-                            exc,
-                        )
-                        continue
-                    bundle_cache[bundle_path] = masks
-                masks_by_bundle[bundle_path] = masks
-
-            label = record.get("label")
-            if not isinstance(label, str):
-                continue
-            cidx = concept_to_idx.get(data_utils.canonicalize_concept_label(label))
-            if cidx is None:
-                continue
-
-            try:
-                mask_index = int(record.get("mask_index"))
-            except (TypeError, ValueError):
-                continue
-            if mask_index < 0 or mask_index >= int(masks.shape[0]):
-                continue
-
-            mask_area = record.get("mask_area")
-            if mask_area is not None:
-                try:
-                    if float(mask_area) <= 0.0:
-                        continue
-                except (TypeError, ValueError):
-                    pass
-            mask_target = _downsample_binary_mask_target(masks[mask_index], args)
-            if mask_target is None:
-                continue
-
-            global_concept_scores[row_idx, cidx] = max(
-                global_concept_scores[row_idx, cidx],
-                _groundedsam2_presence_score(record, args),
-            )
-            existing = mask_entries[row_idx].get(cidx)
-            if existing is None:
-                mask_entries[row_idx][cidx] = mask_target
-            else:
-                np.maximum(existing, mask_target, out=existing)
-
-    if bundle_failures > 0:
-        logger.warning(
-            "GroundedSAM2 supervision skipped {} bundle loads due to NPZ read failures",
-            bundle_failures,
-        )
-
-    threshold = float(getattr(args, "cbl_confidence_threshold", 0.15))
-    if keep_idx is None:
-        keep_mask = global_concept_scores.max(axis=0) >= threshold
-        if not bool(keep_mask.any()):
-            raise RuntimeError("All SAVLG concepts were removed after GroundedSAM2 supervision filtering.")
-        keep_idx_array = np.where(keep_mask)[0]
-    else:
-        keep_idx_array = np.asarray(list(keep_idx), dtype=np.int64)
-        if keep_idx_array.size == 0:
-            raise RuntimeError("SAVLG keep_idx is empty.")
-
-    filtered_scores = global_concept_scores[:, keep_idx_array]
-    global_concept_targets = _build_global_concept_targets(filtered_scores, args)
-    old_to_new = {old: new for new, old in enumerate(keep_idx_array.tolist())}
-    filtered_entries: List[Dict[int, np.ndarray]] = []
-    for entry in mask_entries:
-        new_entry = {}
-        for old_idx, mask in entry.items():
-            if old_idx in old_to_new:
-                new_entry[old_to_new[old_idx]] = mask
-        filtered_entries.append(new_entry)
-
-    return global_concept_targets, filtered_entries, keep_idx_array.tolist()
 
 
 def _subset_image_paths(raw_dataset: Dataset) -> Optional[List[str]]:
@@ -714,38 +452,6 @@ def load_spatial_supervision(
         if cache_ok:
             return cached_global_targets, cached_mask_entries, cached_keep_idx
         logger.info("Ignoring cached SAVLG supervision at {} due to {}", cache_path, reason)
-
-    supervision_source = _savlg_supervision_source(args)
-    if supervision_source == "groundedsam2":
-        global_concept_targets, filtered_entries, keep_idx_list = _load_groundedsam2_spatial_supervision(
-            raw_dataset,
-            concepts,
-            args,
-            split_name,
-            keep_idx=keep_idx,
-        )
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        torch.save(
-            {
-                "global_concept_targets": global_concept_targets,
-                "mask_entries": filtered_entries,
-                "keep_idx": keep_idx_list,
-                "source": supervision_source,
-            },
-            cache_path,
-        )
-        logger.info(
-            "Saved SAVLG {} supervision cache to {} (kept {}/{})",
-            supervision_source,
-            cache_path,
-            int(len(keep_idx_list)),
-            len(concepts),
-        )
-        return global_concept_targets, filtered_entries, keep_idx_list
-    if supervision_source != "gdino":
-        raise ValueError(
-            f"Unsupported SAVLG supervision source: {supervision_source}. Expected one of ['gdino', 'groundedsam2']."
-        )
 
     threshold = float(getattr(args, "cbl_confidence_threshold", 0.15))
     concept_to_idx = {concept: idx for idx, concept in enumerate(concepts)}
@@ -1626,22 +1332,9 @@ def pool_residual_spatial_logits(map_logits: torch.Tensor, args) -> torch.Tensor
         return pooled - temperature * math.log(max(num_patches, 1))
     if pooling == "avg":
         return flat.mean(dim=-1)
-    if pooling == "topk":
-        num_patches = flat.shape[-1]
-        topk_fraction = float(
-            getattr(
-                args,
-                "savlg_residual_topk_fraction",
-                getattr(args, "savlg_mil_topk_fraction", 0.2),
-            )
-        )
-        topk_fraction = min(max(topk_fraction, 0.0), 1.0)
-        k = max(1, int(math.ceil(num_patches * topk_fraction)))
-        values, _ = flat.topk(k=k, dim=-1)
-        return values.mean(dim=-1)
     raise ValueError(
         f"Unsupported SAVLG residual spatial pooling mode: {pooling}. "
-        "Supported modes are lse, avg, and topk."
+        "Supported modes are lse and avg."
     )
 
 
@@ -1683,19 +1376,6 @@ def compute_local_trust_weights(
     return floor + (1.0 - floor) * normalized.pow(power)
 
 
-def _soft_box_distribution_targets(mask_targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    target_mass = mask_targets.clamp(min=0.0)
-    target_mass_sum = target_mass.sum(dim=1, keepdim=True)
-    valid = target_mass_sum.squeeze(1) > 0.0
-    target_dist = torch.zeros_like(target_mass)
-    if bool(valid.any()):
-        target_dist[valid] = target_mass[valid] / torch.clamp(
-            target_mass_sum[valid],
-            min=1e-6,
-        )
-    return target_dist, valid
-
-
 def compute_spatial_losses(
     pooled_logits: torch.Tensor,
     map_logits: torch.Tensor,
@@ -1707,56 +1387,16 @@ def compute_spatial_losses(
     local_trust_weights: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Global concept BCE plus spatial soft-align KL for positive boxed concepts."""
-    global_concept_bce = F.binary_cross_entropy_with_logits(
-        pooled_logits, global_concept_targets, reduction="none"
-    )
-    global_pos_w = torch.where(
-        global_concept_targets > 0.5,
-        torch.full_like(global_concept_targets, float(global_bce_pos_weight)),
-        torch.ones_like(global_concept_targets),
-    )
-    loss_global_concept = (global_concept_bce * global_pos_w).sum() / torch.clamp(
-        global_pos_w.sum(), min=1.0
-    )
-    map_logits = F.interpolate(
+    return sgcbm_concept_losses(
+        pooled_logits,
         map_logits,
-        size=mask_targets.shape[-2:],
-        mode="bilinear",
-        align_corners=False,
+        global_concept_targets,
+        mask_indices,
+        mask_targets,
+        mask_valid,
+        global_pos_weight=global_bce_pos_weight,
+        local_trust_weights=local_trust_weights,
     )
-    batch_mask_losses = []
-    for b in range(map_logits.shape[0]):
-        valid = mask_valid[b]
-        if not bool(valid.any()):
-            continue
-        cidx = mask_indices[b][valid]
-        pred = map_logits[b].index_select(0, cidx)
-        tgt = mask_targets[b][valid].to(pred.dtype)
-        concept_weights = torch.ones((pred.shape[0],), device=pred.device, dtype=pred.dtype)
-        if local_trust_weights is not None:
-            concept_weights = local_trust_weights[b].index_select(0, cidx).to(pred.dtype)
-        pred_flat = pred.flatten(1)
-        tgt_flat = tgt.flatten(1).clamp(min=0.0)
-        tgt_dist, valid_targets = _soft_box_distribution_targets(tgt_flat)
-        per_concept_mask_loss = torch.zeros(
-            (pred_flat.shape[0],),
-            device=pred.device,
-            dtype=pred.dtype,
-        )
-        if bool(valid_targets.any()):
-            pred_log_dist = F.log_softmax(pred_flat[valid_targets], dim=1)
-            per_concept_mask_loss[valid_targets] = F.kl_div(
-                pred_log_dist,
-                tgt_dist[valid_targets],
-                reduction="none",
-            ).sum(dim=1)
-        mask_loss = (per_concept_mask_loss * concept_weights).sum() / torch.clamp(
-            concept_weights.sum(),
-            min=1.0,
-        )
-        batch_mask_losses.append(mask_loss)
-    loss_mask = torch.stack(batch_mask_losses).mean() if batch_mask_losses else map_logits.sum() * 0.0
-    return loss_global_concept, loss_mask
 
 
 def train_concept_head(
@@ -2012,18 +1652,12 @@ def train_savlg_cbm(args):
     classes = data_utils.get_classes(args.dataset)
     raw_concepts = data_utils.get_concepts(args.concept_set, args.filter_set)
     train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone = create_savlg_splits(args)
-    supervision_source = _savlg_supervision_source(args)
-    if supervision_source == "gdino":
-        train_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "train")
-        # When we use a train/val split from the *train* images, the spatial supervision
-        # must come from the train annotations for both splits (ConceptDataset does the same).
-        if use_original_label_free_protocol(args):
-            val_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "val")
-        else:
-            val_ann_dir = train_ann_dir
+    train_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "train")
+    # When train/val are split from the training images, both splits use train annotations.
+    if use_original_label_free_protocol(args):
+        val_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "val")
     else:
-        train_ann_dir = args.annotation_dir
-        val_ann_dir = args.annotation_dir
+        val_ann_dir = train_ann_dir
 
     filter_mode = _savlg_concept_filter_mode(args)
     if filter_mode == "vlg_global":
@@ -2058,9 +1692,6 @@ def train_savlg_cbm(args):
         )
 
     stream_supervision = bool(getattr(args, "savlg_stream_supervision", False))
-    if stream_supervision and _savlg_supervision_source(args) != "gdino":
-        raise ValueError("--savlg_stream_supervision currently supports only --savlg_supervision_source=gdino.")
-
     if stream_supervision:
         if keep_idx is None:
             keep_idx = list(range(len(raw_concepts)))

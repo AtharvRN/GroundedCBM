@@ -25,12 +25,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from gcbm.losses import sgcbm_concept_losses  # noqa: E402
 from gcbm.imagenet_core import (  # noqa: E402
     Config,
     DatasetView,
@@ -317,51 +317,15 @@ def compute_cbl_losses(
     cfg: Config,
 ) -> Dict[str, torch.Tensor]:
     """Global weighted BCE plus soft-align KL over precomputed target masks."""
-    final_logits = outputs["final_logits"]
-    spatial_maps = F.interpolate(
+    loss_global, loss_mask = sgcbm_concept_losses(
+        outputs["final_logits"],
         outputs["spatial_maps"],
-        size=mask_targets.shape[-2:],
-        mode="bilinear",
-        align_corners=False,
+        global_targets,
+        mask_indices,
+        mask_targets,
+        mask_valid,
+        global_pos_weight=float(cfg.global_pos_weight),
     )
-
-    global_loss_raw = F.binary_cross_entropy_with_logits(final_logits, global_targets, reduction="none")
-    global_pos_w = torch.where(
-        global_targets > 0.5,
-        torch.full_like(global_targets, float(cfg.global_pos_weight)),
-        torch.ones_like(global_targets),
-    )
-    loss_global = (global_loss_raw * global_pos_w).sum() / torch.clamp(global_pos_w.sum(), min=1.0)
-
-    per_sample_mask_losses: List[torch.Tensor] = []
-    for batch_index in range(spatial_maps.shape[0]):
-        valid = mask_valid[batch_index]
-        if not bool(valid.any()):
-            continue
-        concept_ids = mask_indices[batch_index][valid]
-        pred = spatial_maps[batch_index].index_select(0, concept_ids)
-        pred_flat = pred.flatten(1).float()
-
-        target_mass = mask_targets[batch_index][valid].flatten(1).float().clamp(min=0.0)
-        target_mass_sum = target_mass.sum(dim=1, keepdim=True)
-        valid_targets = target_mass_sum.squeeze(1) > 0.0
-        if not bool(valid_targets.any()):
-            continue
-
-        target_dist = torch.zeros_like(target_mass)
-        target_dist[valid_targets] = target_mass[valid_targets] / torch.clamp(
-            target_mass_sum[valid_targets],
-            min=1e-6,
-        )
-        pred_log_dist = F.log_softmax(pred_flat[valid_targets], dim=1)
-        per_concept_mask = F.kl_div(
-            pred_log_dist,
-            target_dist[valid_targets],
-            reduction="none",
-        ).sum(dim=1)
-        per_sample_mask_losses.append(per_concept_mask.mean())
-
-    loss_mask = torch.stack(per_sample_mask_losses).mean() if per_sample_mask_losses else spatial_maps.sum() * 0.0
     total = cfg.loss_global_w * loss_global + cfg.loss_mask_w * loss_mask
     return {
         "total": total,
