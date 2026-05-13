@@ -7,7 +7,6 @@ import sys
 
 from gcbm.config import (
     config_to_argv,
-    dataset_from_argv_or_config,
     load_flat_config,
     model_from_argv_or_config,
     option_value,
@@ -15,12 +14,13 @@ from gcbm.config import (
 )
 
 
-IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "sg_cbm", "gcbm", "g-cbm", "savlg", "savlg_cbm"}
+IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "gcbm", "g-cbm", "savlg", "savlg-cbm"}
 CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
 
-def _run_imagenet_training(argv: list[str]) -> None:
-    config = load_flat_config(option_value(argv, "--config"))
+def _run_imagenet_training(argv: list[str], config=None) -> None:
+    if config is None:
+        config = load_flat_config(option_value(argv, "--config"))
     model = model_from_argv_or_config(argv, config)
     if model not in IMAGENET_MODEL_ALIASES:
         raise SystemExit("ImageNet training in this repository supports SG-CBM only.")
@@ -76,18 +76,6 @@ def _load_cub_dependencies() -> None:
     )
     from methods.common import get_model_name, write_artifacts
     from methods.registry import get_train_handler, SUPPORTED_MODELS
-
-
-class LoggerWriter:
-    def __init__(self, level):
-        self.level = level
-
-    def write(self, message):
-        if message.rstrip() != "":
-            logger.log(self.level, message.rstrip())
-
-    def flush(self):
-        pass
 
 
 def train_cbm_and_save(args):
@@ -452,8 +440,11 @@ def train_cbm_and_save(args):
 
 
 def main():
-    if dataset_from_argv_or_config(sys.argv[1:]) == "imagenet":
-        _run_imagenet_training(sys.argv[1:])
+    argv = sys.argv[1:]
+    config = load_flat_config(option_value(argv, "--config"))
+    dataset = option_value(argv, "--dataset") or config.get("dataset")
+    if dataset is not None and str(dataset).lower() == "imagenet":
+        _run_imagenet_training(argv, config)
         return
 
     parser = argparse.ArgumentParser(description="Settings for creating CBM")

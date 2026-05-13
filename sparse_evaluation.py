@@ -91,15 +91,11 @@ def main() -> None:
         raise NotImplementedError(
             f"Sparse evaluation for model_name={model_name} is not implemented yet."
         )
-    nec_levels = [
-        int(level)
-        for level in DEFAULT_MEASURE_LEVEL
-        if os.path.exists(os.path.join(args.load_path, f"W_g@NEC={int(level)}.pt"))
-    ]
-    nec_rows = [
-        {"NEC": nec, "Accuracy": float(acc)}
-        for nec, acc in zip(nec_levels, accs)
-    ]
+    nec_rows = []
+    for level, acc in zip(DEFAULT_MEASURE_LEVEL, accs):
+        nec = int(level)
+        if os.path.exists(os.path.join(args.load_path, f"W_g@NEC={nec}.pt")):
+            nec_rows.append({"NEC": nec, "Accuracy": float(acc)})
     with open(os.path.join(args.load_path, "nec_metrics.json"), "w", encoding="utf-8") as handle:
         json.dump(
             {
