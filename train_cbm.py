@@ -5,47 +5,77 @@ import os
 import random
 import sys
 
-import numpy as np
-import torch
-import torch.nn as nn
-from loguru import logger
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-
-import model.utils as utils
-from data import utils as data_utils
-from data.concept_dataset import (
-    get_concept_dataloader,
-    get_filtered_concepts_and_counts,
-    get_final_layer_dataset,
-    get_or_create_backbone_embedding_cache,
+from gcbm.config import (
+    config_to_argv,
+    load_flat_config,
+    model_from_argv_or_config,
+    option_value,
+    strip_dispatcher_args,
 )
-from loss import get_loss
-from model.cbm import (
-    Backbone,
-    BackboneCLIP,
-    ConceptLayer,
-    FinalLayer,
-    per_class_accuracy,
-    test_model,
-    train_cbl,
-    train_dense_final,
-    train_sparse_final,
-)
-from methods.common import get_model_name, write_artifacts
-from methods.registry import get_train_handler, SUPPORTED_MODELS
 
 
-class LoggerWriter:
-    def __init__(self, level):
-        self.level = level
+IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "gcbm", "g-cbm", "savlg", "savlg-cbm"}
+CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
-    def write(self, message):
-        if message.rstrip() != "":
-            logger.log(self.level, message.rstrip())
 
-    def flush(self):
-        pass
+def _run_imagenet_training(argv: list[str], config=None) -> None:
+    if config is None:
+        config = load_flat_config(option_value(argv, "--config"))
+    model = model_from_argv_or_config(argv, config)
+    if model not in IMAGENET_MODEL_ALIASES:
+        raise SystemExit("ImageNet training in this repository supports SG-CBM only.")
+
+    from gcbm.train_imagenet import main as imagenet_main
+
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "train_cbm.py",
+            *config_to_argv(config),
+            *strip_dispatcher_args(argv),
+        ]
+        imagenet_main()
+    finally:
+        sys.argv = old_argv
+
+
+def _load_cub_dependencies() -> None:
+    global np, torch, nn, logger, SummaryWriter, tqdm
+    global utils, data_utils, get_concept_dataloader, get_filtered_concepts_and_counts
+    global get_final_layer_dataset, get_or_create_backbone_embedding_cache
+    global get_loss, Backbone, BackboneCLIP, ConceptLayer, FinalLayer
+    global per_class_accuracy, test_model, train_cbl, train_dense_final, train_sparse_final
+    global get_model_name, write_artifacts, get_train_handler, SUPPORTED_MODELS
+
+    import numpy as np
+    import torch
+    import torch.nn as nn
+    from loguru import logger
+    from torch.utils.tensorboard import SummaryWriter
+    from tqdm import tqdm
+
+    import model.utils as utils
+    from data import utils as data_utils
+    from data.concept_dataset import (
+        get_concept_dataloader,
+        get_filtered_concepts_and_counts,
+        get_final_layer_dataset,
+        get_or_create_backbone_embedding_cache,
+    )
+    from loss import get_loss
+    from model.cbm import (
+        Backbone,
+        BackboneCLIP,
+        ConceptLayer,
+        FinalLayer,
+        per_class_accuracy,
+        test_model,
+        train_cbl,
+        train_dense_final,
+        train_sparse_final,
+    )
+    from methods.common import get_model_name, write_artifacts
+    from methods.registry import get_train_handler, SUPPORTED_MODELS
 
 
 def train_cbm_and_save(args):
@@ -410,15 +440,19 @@ def train_cbm_and_save(args):
 
 
 def main():
-    sys.stdout = LoggerWriter("INFO")
-    sys.stderr = LoggerWriter("DEBUG")
+    argv = sys.argv[1:]
+    config = load_flat_config(option_value(argv, "--config"))
+    dataset = option_value(argv, "--dataset") or config.get("dataset")
+    if dataset is not None and str(dataset).lower() == "imagenet":
+        _run_imagenet_training(argv, config)
+        return
 
     parser = argparse.ArgumentParser(description="Settings for creating CBM")
     parser.add_argument(
         "--model_name",
         type=str,
         default="vlg_cbm",
-        choices=SUPPORTED_MODELS,
+        choices=CUB_MODEL_CHOICES,
         help="Which CBM variant to train",
     )
     parser.add_argument("--dataset", type=str, default="cifar10")
@@ -818,31 +852,13 @@ def main():
         "--loss_mask_w",
         type=float,
         default=1.0,
-        help="Weight for SAVLG local patch-mask BCE loss",
-    )
-    parser.add_argument(
-        "--loss_dice_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG local Dice loss on valid boxed concepts",
+        help="Weight for SAVLG spatial soft-align KL loss",
     )
     parser.add_argument(
         "--global_bce_pos_weight",
         type=float,
         default=1.0,
         help="Positive-class weight for SAVLG global concept BCE",
-    )
-    parser.add_argument(
-        "--patch_bce_pos_weight",
-        type=float,
-        default=1.0,
-        help="Positive-class weight for SAVLG local patch-mask BCE",
-    )
-    parser.add_argument(
-        "--local_bce_pos_weight",
-        type=float,
-        default=1.0,
-        help="Positive-class weight for SAVLG local MIL BCE",
     )
     parser.add_argument(
         "--savlg_global_target_mode",
@@ -857,12 +873,6 @@ def main():
         default="spatial_threshold",
         choices=["spatial_threshold", "vlg_global"],
         help="How SAVLG filters concepts before training. 'vlg_global' reuses the same concept-dataset filtering path as VLG-CBM.",
-    )
-    parser.add_argument(
-        "--loss_local_mil_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG auxiliary local MIL loss",
     )
     parser.add_argument(
         "--savlg_local_weight_mode",
@@ -957,30 +967,6 @@ def main():
         help="Patch fraction used when --savlg_pooling=topk",
     )
     parser.add_argument(
-        "--savlg_use_local_mil",
-        action="store_true",
-        help="Enable an auxiliary local MIL objective for SAVLG",
-    )
-    parser.add_argument(
-        "--savlg_local_pooling",
-        type=str,
-        default="lse",
-        choices=["lse", "topk"],
-        help="Pooling mode for SAVLG local MIL logits",
-    )
-    parser.add_argument(
-        "--savlg_mil_temperature",
-        type=float,
-        default=1.0,
-        help="Temperature for SAVLG LSE local MIL pooling",
-    )
-    parser.add_argument(
-        "--savlg_mil_topk_fraction",
-        type=float,
-        default=0.2,
-        help="Patch fraction used when --savlg_local_pooling=topk",
-    )
-    parser.add_argument(
         "--savlg_residual_spatial_alpha",
         type=float,
         default=0.0,
@@ -990,26 +976,8 @@ def main():
         "--savlg_residual_spatial_pooling",
         type=str,
         default="lse",
-        choices=["lse", "avg", "topk"],
+        choices=["lse", "avg"],
         help="Pooling mode for residual SAVLG spatial logits.",
-    )
-    parser.add_argument(
-        "--savlg_residual_topk_fraction",
-        type=float,
-        default=0.2,
-        help="Patch fraction used when --savlg_residual_spatial_pooling=topk",
-    )
-    parser.add_argument(
-        "--savlg_global_spatial_consistency_w",
-        type=float,
-        default=0.0,
-        help="Weight for detached spatial-to-global SAVLG concept consistency on positive concept-image pairs",
-    )
-    parser.add_argument(
-        "--savlg_global_spatial_consistency_warmup_epochs",
-        type=int,
-        default=0,
-        help="Number of SAVLG concept-head epochs to wait before enabling spatial-to-global consistency",
     )
     parser.add_argument(
         "--savlg_target_mode",
@@ -1017,25 +985,6 @@ def main():
         default="hard_iou",
         choices=["hard_iou", "soft_box"],
         help="How SAVLG rasterizes box supervision into patch targets",
-    )
-    parser.add_argument(
-        "--savlg_supervision_source",
-        type=str,
-        default="gdino",
-        choices=["gdino", "groundedsam2"],
-        help="Spatial supervision source used by SAVLG: stored GDINO boxes or cached GroundedSAM2 masks",
-    )
-    parser.add_argument(
-        "--savlg_groundedsam2_train_manifest",
-        type=str,
-        default=None,
-        help="Path to the GroundedSAM2 train manifest.json (or its containing directory) used when --savlg_supervision_source=groundedsam2",
-    )
-    parser.add_argument(
-        "--savlg_groundedsam2_val_manifest",
-        type=str,
-        default=None,
-        help="Path to the GroundedSAM2 val manifest.json (or its containing directory) used when --savlg_supervision_source=groundedsam2",
     )
     parser.add_argument(
         "--savlg_stream_supervision",
@@ -1047,59 +996,10 @@ def main():
         ),
     )
     parser.add_argument(
-        "--savlg_local_loss_mode",
-        type=str,
-        default="bce",
-        choices=["bce", "containment", "soft_align"],
-        help="How SAVLG applies local box supervision once patch targets are built",
-    )
-    parser.add_argument(
-        "--savlg_outside_penalty_w",
-        type=float,
-        default=0.0,
-        help="Weight for penalizing normalized SAVLG spatial activation mass outside the GT box",
-    )
-    parser.add_argument(
-        "--savlg_absent_topk_w",
-        type=float,
-        default=0.0,
-        help="Weight for penalizing top-k spatial activation on concept-absent maps",
-    )
-    parser.add_argument(
-        "--savlg_absent_topk_fraction",
-        type=float,
-        default=0.1,
-        help="Fraction of highest-activation spatial locations to penalize for absent concepts",
-    )
-    parser.add_argument(
         "--patch_iou_thresh",
         type=float,
         default=0.5,
         help="IoU threshold used for SAVLG hard patch targets",
-    )
-    parser.add_argument(
-        "--savlg_teacher_load_path",
-        type=str,
-        default=None,
-        help="Optional VLG-CBM teacher checkpoint directory for SAVLG distillation",
-    )
-    parser.add_argument(
-        "--savlg_distill_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG teacher-distillation loss on pooled concept logits",
-    )
-    parser.add_argument(
-        "--savlg_refine_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG OICR-style detached patch refinement loss",
-    )
-    parser.add_argument(
-        "--savlg_refine_warmup_epochs",
-        type=int,
-        default=0,
-        help="Number of SAVLG concept-head epochs to train before enabling refinement",
     )
     parser.add_argument(
         "--clip_score_mode",
@@ -1121,7 +1021,7 @@ def main():
         help="Quantile used when --clip_score_mode=quantile",
     )
 
-    config_parser = argparse.ArgumentParser()
+    config_parser = argparse.ArgumentParser(add_help=False)
     config_parser.add_argument("--config", type=str, default=None)
     config_arg, remaining_args = config_parser.parse_known_args()
     if config_arg.config is not None:
@@ -1135,6 +1035,7 @@ def main():
     
     # run the training
     args = parser.parse_args(remaining_args)
+    _load_cub_dependencies()
     args.use_activation_cache = not args.disable_activation_cache
     logger.info(args)
     

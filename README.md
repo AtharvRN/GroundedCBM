@@ -9,6 +9,23 @@ Code for training and evaluating Spatially Grounded Concept Bottleneck Models
 pip install -r requirements.txt
 ```
 
+## Public Scripts
+
+The release has six user-facing entry points:
+
+```text
+train_cbm.py                         Train CBM concept layers.
+scripts/precompute_imagenet_targets.py Precompute ImageNet GDINO target tensors.
+scripts/train_sparse_nec.py          Train sparse GLM heads with an NEC sweep.
+scripts/eval_nec.py                  Evaluate/report CBM+sparse accuracy at NEC values.
+scripts/eval_gdino_localization.py   Evaluate localization against GDINO pseudo-GT boxes.
+scripts/eval_cub_part_localization.py Evaluate localization against CUB part points.
+```
+
+Other Python files under `gcbm/`, `methods/`, `model/`, `data/`, and
+`glm_saga/` are implementation modules used by these entry points. They are not
+separate user-facing scripts.
+
 ## Data
 
 ### CUB
@@ -34,7 +51,7 @@ python datasets/split_cub_dataset.py \
 export CUB_DATASET_ROOT="$PWD/datasets/CUB"
 ```
 
-CUB SG-CBM/SALF training and GDINO localization use annotation JSON files:
+CUB SG-CBM/SALF training and localization use GDINO annotation JSON files:
 
 ```text
 annotations/
@@ -43,184 +60,116 @@ annotations/
   ...
 ```
 
+The original [VLG-CBM release](https://github.com/Trustworthy-ML-Lab/VLG-CBM)
+links the CUB annotation archive in its README.
+Place that archive at `annotations/` with the structure above. CUB part
+localization uses the included mapping file:
+`data/cub_concept_part_mapping_gpt54.json`.
+
 ### ImageNet
 
 ImageNet SG-CBM training supports either an ImageFolder train root or a JSONL
-manifest with `path`, `class_id`, and `sample_index`. Training also expects
-GDINO annotations and precomputed GDINO target tensors for concept-layer
-supervision.
+manifest with `path`, `class_id`, and `sample_index`. For precomputed target
+training, `sample_index` must index rows in the target cache. If the cache was
+built for a subset, use the subset manifest with compact `sample_index` values,
+not the original ImageNet dataset indices.
 
-For ImageNet validation, `eval_imagenet_nec.py` supports a flat validation
-directory when the official devkit metadata is supplied. Localization supports
-either an extracted validation directory or the official validation tar.
+Training uses GDINO annotations. Precomputed GDINO target tensors are preferred
+for large runs; if `--precomputed_target_dir` is omitted, targets are built from
+the annotation JSON files on the fly.
 
-## Unified CLI
-
-The unified entry point supports CUB training for SG-CBM, SALF-CBM, VLG-CBM,
-and LF-CBM, plus ImageNet SG-CBM training.
+To regenerate a valid ImageNet precomputed target cache:
 
 ```bash
-python scripts/cbm.py train --dataset cub --model sgcbm --config configs/cub_gcbm.json
-python scripts/cbm.py train --dataset cub --model salf --config configs/cub_salf.json
-python scripts/cbm.py train --dataset cub --model vlg --config configs/cub_gcbm.json
-python scripts/cbm.py train --dataset cub --model lf --config configs/cub_gcbm.json
-
-python scripts/cbm.py train \
-  --dataset imagenet \
-  --model sgcbm \
-  --config configs/imagenet_gcbm.yaml
-```
-
-Run sparse GLM / NEC evaluation for a trained CUB checkpoint:
-
-```bash
-python scripts/cbm.py test --load_path /path/to/cub_run --lam 0.1
-```
-
-## ImageNet
-
-Train the SG-CBM concept layer:
-
-```bash
-python scripts/train_imagenet_gcbm.py \
-  --train_root /path/to/imagenet/train \
-  --train_manifest /path/to/train_manifest.jsonl \
+python scripts/precompute_imagenet_targets.py \
+  --image_root /path/to/imagenet/train \
   --annotation_dir /path/to/imagenet_annotations \
-  --precomputed_target_dir /path/to/precomputed_targets \
   --concept_file concept_files/imagenet_filtered.txt \
-  --save_dir artifacts/imagenet \
-  --resnet50_weights v1 \
+  --output_dir /path/to/precomputed_targets \
+  --split train \
   --mask_h 14 \
-  --mask_w 14
+  --mask_w 14 \
+  --spatial_target_mode soft_box
 ```
 
-Train sparse GLM heads and evaluate NEC accuracy:
+If you precompute from a subset manifest, train with the compact manifest
+written by the script, for example
+`/path/to/precomputed_targets/train_manifest.jsonl`. That manifest keeps target
+cache rows compact while preserving the original `annotation_index`.
+
+ImageNet NEC evaluation supports an extracted validation directory or the
+official validation tar. Supply the devkit metadata when evaluating a flat
+validation directory.
+
+## 1. Train CBM
+
+`train_cbm.py` is the unified training entry point. It supports CUB training for
+SG-CBM, SALF-CBM, VLG-CBM, and LF-CBM, plus ImageNet SG-CBM training. SG-CBM
+spatial supervision is GDINO-box based.
 
 ```bash
-python scripts/run_glm_path.py --artifact_dir /path/to/gcbm_run
+python train_cbm.py --config configs/cub_gcbm.json
+python train_cbm.py --config configs/cub_salf.json
+python train_cbm.py --config configs/cub_gcbm.json --model_name vlg_cbm
+python train_cbm.py --config configs/cub_gcbm.json --model_name lf_cbm
 
-python scripts/eval_imagenet_nec.py \
-  --artifact_dir /path/to/gcbm_run \
-  --val_root /path/to/imagenet_val \
-  --devkit_dir /path/to/ILSVRC2012_devkit_t12 \
-  --nec_values 1,5,10,20,50,4309
+python train_cbm.py --config configs/imagenet_gcbm.yaml
 ```
-
-Evaluate GDINO-box localization:
-
-```bash
-python scripts/eval_gdino_localization.py \
-  --dataset imagenet \
-  --gcbm_path /path/to/gcbm_run \
-  --annotation_dir /path/to/imagenet_annotations \
-  --val_root /path/to/imagenet_val \
-  --output results/imagenet_gdino_localization.json \
-  --map_normalization concept_zscore_minmax \
-  --activation_thresholds 0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9
-```
-
-The ImageNet localization evaluator maps validation annotations by filename.
-Use the extracted `val_root` when available; otherwise pass `--val_tar`. The
-script reports distribution metrics such as mass inside GT and pointing
-accuracy, plus thresholded mask/box IoU and LocAcc at the requested box IoU
-thresholds.
 
 For ImageNet-v1 checkpoint reproduction, keep the saved checkpoint
 configuration, including `resnet50_weights=v1`.
 
-## CUB
+## 2. Train Sparse NEC Heads
 
-Dedicated training and NEC wrappers:
-
-```bash
-python scripts/train_cub_gcbm.py --config configs/cub_gcbm.json
-python scripts/train_cub_salf.py --config configs/cub_salf.json
-python scripts/eval_cub_nec.py --load_path /path/to/cub_run
-```
-
-Evaluate GDINO-box localization:
+CUB:
 
 ```bash
-python scripts/eval_gdino_localization.py \
+python scripts/train_sparse_nec.py \
   --dataset cub \
-  --gcbm_path /path/to/gcbm_run \
-  --annotation_dir annotations \
-  --output results/cub_gdino_localization.json \
-  --map_normalization concept_zscore_minmax \
-  --activation_thresholds 0.3,0.5,0.7,0.9
+  --load_path /path/to/cub_run \
+  --lam 0.1
 ```
 
-For CUB GDINO localization, `--annotation_dir` should contain the CUB GDINO JSON
-files used during SG-CBM concept-layer training/evaluation. The evaluator uses
-the trained concept-layer checkpoint and saved concept statistics from
-`--gcbm_path`; sparse GLM weights are not used for native localization metrics.
-The `--gcbm_path` flag is kept as the checkpoint-directory argument name.
-
-Evaluate CUB localization across model variants:
+ImageNet:
 
 ```bash
-python scripts/eval_cub_localization.py \
-  --gcbm_path /path/to/gcbm_run \
-  --salf_path /path/to/salf_run \
-  --vlg_path /path/to/vlg_run \
-  --lf_path /path/to/lf_run \
-  --cub70_root /path/to/CUB70-PartSegmentationDataset \
-  --cub_root /path/to/CUB_200_2011 \
-  --mapping_json /path/to/cub_concept_part_mapping.json
+python scripts/train_sparse_nec.py \
+  --dataset imagenet \
+  --artifact_dir /path/to/imagenet_run \
+  --nec_values 1,5,10,15,20,25,30
 ```
 
-Evaluate CUB part-point localization:
+## 3. Evaluate NEC Accuracy
+
+CUB reads the `nec_metrics.json` written by the sparse sweep:
 
 ```bash
-python scripts/precompute_cub_part_annotation_cache.py \
-  --load_path /path/to/gcbm_run \
-  --annotation_dir annotations \
-  --cub_root /path/to/CUB_200_2011 \
-  --mapping_json /path/to/cub_concept_part_mapping.json \
-  --output artifacts/cub_part_annotation_cache.json
-
-python scripts/eval_cub_part_localization.py \
-  --load_path /path/to/gcbm_run \
-  --annotation_dir annotations \
-  --annotation_cache_json artifacts/cub_part_annotation_cache.json \
-  --cub_root /path/to/CUB_200_2011 \
-  --mapping_json /path/to/cub_concept_part_mapping.json \
-  --output results/cub_part_localization.json
+python scripts/eval_nec.py \
+  --dataset cub \
+  --load_path /path/to/cub_run \
+  --nec_values 5,10,20,50 \
+  --output_json results/cub_nec.json
 ```
 
-Evaluate concept accuracy on a common concept set:
+ImageNet evaluates the requested NEC values on validation images:
 
 ```bash
-python scripts/eval_concept_accuracy.py \
-  --load_paths /path/to/gcbm_run /path/to/salf_run /path/to/vlg_run /path/to/lf_run
+python scripts/eval_nec.py \
+  --dataset imagenet \
+  --artifact_dir /path/to/imagenet_run_or_sparse_sweep \
+  --val_root /path/to/imagenet_val \
+  --devkit_dir /path/to/ILSVRC2012_devkit_t12 \
+  --nec_values 1,5,10,20,50,4309 \
+  --output_json results/imagenet_nec.json
 ```
 
-## Localization Details
+## 4. Evaluate GDINO Localization
 
-`scripts/eval_gdino_localization.py` is the shared GDINO pseudo-GT localization
-entry point for CUB and ImageNet. Dataset loading differs, but the metric code is
-shared once images, annotations, and native spatial maps are built.
+This script is shared by CUB and ImageNet. Dataset loading differs, but the
+metric code is shared once images, annotations, and native spatial maps are
+built. Localization uses the concept-layer checkpoint, not sparse GLM heads.
 
-Required inputs:
-
-- `--dataset cub|imagenet`
-- `--gcbm_path`: SG-CBM concept-layer run directory.
-- `--annotation_dir`: GDINO annotation JSON directory.
-- `--output`: destination JSON file.
-- ImageNet only: `--val_root` for extracted validation images or `--val_tar` for
-  the official validation tar.
-
-Recommended normalization:
-
-```bash
---map_normalization concept_zscore_minmax
-```
-
-This is the recommended evaluation normalization. On CUB it uses saved
-`proj_mean.pt` and `proj_std.pt` when present; on ImageNet it applies per-map
-z-score followed by min-max scaling.
-
-Common full-split commands:
+CUB:
 
 ```bash
 python scripts/eval_gdino_localization.py \
@@ -232,7 +181,11 @@ python scripts/eval_gdino_localization.py \
   --map_normalization concept_zscore_minmax \
   --activation_thresholds 0.3,0.5,0.7,0.9 \
   --box_iou_thresholds 0.1,0.3,0.5
+```
 
+ImageNet:
+
+```bash
 python scripts/eval_gdino_localization.py \
   --dataset imagenet \
   --gcbm_path /path/to/imagenet_sgcbm_run \
@@ -251,11 +204,50 @@ The output JSON includes `distribution_metrics` and `threshold_metrics`.
 `threshold_metrics[*].box_acc` contains LocAcc at each requested box IoU
 threshold.
 
+Recommended normalization:
+
+```bash
+--map_normalization concept_zscore_minmax
+```
+
+On CUB this uses saved `proj_mean.pt` and `proj_std.pt`; on ImageNet it applies
+per-map z-score followed by min-max scaling.
+
+## 5. Evaluate CUB Part Localization
+
+This evaluates CUB part-point localization using official CUB part annotations
+and a concept-to-part mapping.
+
+```bash
+python scripts/eval_cub_part_localization.py \
+  --load_path /path/to/cub_sgcbm_run \
+  --annotation_dir annotations \
+  --cub_root /path/to/CUB_200_2011 \
+  --mapping_json data/cub_concept_part_mapping_gpt54.json \
+  --output results/cub_part_localization.json \
+  --map_normalization concept_zscore_minmax
+```
+
+To report the concept oracle, where all concept maps are evaluated for each
+part target and the best concept is selected per metric:
+
+```bash
+python scripts/eval_cub_part_localization.py \
+  --load_path /path/to/cub_sgcbm_run \
+  --annotation_dir annotations \
+  --cub_root /path/to/CUB_200_2011 \
+  --mapping_json data/cub_concept_part_mapping_gpt54.json \
+  --output results/cub_part_localization_oracle.json \
+  --map_normalization concept_zscore_minmax \
+  --compute_concept_oracle
+```
+
 ## Notes
 
-- ImageNet training in this repository is SG-CBM concept-layer training.
-- Sparse GLM / NEC evaluation uses the trained concept-layer checkpoint and GLM
-  sweep outputs.
+- Public model name: SG-CBM.
+- SG-CBM training/localization in this release uses GDINO annotations.
+- Sparse GLM / NEC evaluation uses trained concept-layer checkpoints and sparse
+  head outputs.
 - Localization evaluation uses concept-layer checkpoints, not sparse GLM heads.
-- Some file names and flags still contain `gcbm` because they refer to existing
-  checkpoint directory conventions.
+- Some internal class and function names still contain `savlg` or `gcbm` for
+  checkpoint compatibility.

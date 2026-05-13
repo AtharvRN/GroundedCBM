@@ -1,9 +1,7 @@
-import argparse
 import json
 import math
 import os
 import random
-import shutil
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -41,164 +39,6 @@ IMAGENET_LABEL_ALIASES = {
     "ski": "a pair of skis",
     "metal nail": "nails",
 }
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Standalone ImageNet SAVLG trainer optimized for A10 throughput."
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["train", "profile", "glm_only", "dense_only", "precompute_targets"],
-        default="train",
-    )
-    parser.add_argument("--train_root", default="")
-    parser.add_argument(
-        "--train_manifest",
-        default="",
-        help="Optional JSONL manifest with path/class_id/sample_index entries to avoid ImageFolder full-tree scans.",
-    )
-    parser.add_argument("--annotation_dir", default="")
-    parser.add_argument("--concept_file", default="concept_files/imagenet_filtered.txt")
-    parser.add_argument("--val_root", default="")
-    parser.add_argument("--save_dir", default="saved_models/imagenet_standalone")
-    parser.add_argument("--run_name", default="")
-    parser.add_argument("--reuse_run_dir", default="")
-    parser.add_argument("--feature_dir", default="")
-    parser.add_argument("--precomputed_target_dir", default="")
-    parser.add_argument("--persist_feature_copy", action="store_true")
-    parser.add_argument("--max_train_images", type=int, default=0)
-    parser.add_argument("--max_val_images", type=int, default=0)
-    parser.add_argument("--val_split", type=float, default=0.1)
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--workers", type=int, default=12)
-    parser.add_argument("--prefetch_factor", type=int, default=4)
-    parser.add_argument("--persistent_workers", action="store_true", default=True)
-    parser.add_argument("--disable_persistent_workers", action="store_true")
-    parser.add_argument("--pin_memory", action="store_true", default=True)
-    parser.add_argument("--disable_pin_memory", action="store_true")
-    parser.add_argument("--device", default="cuda")
-    parser.add_argument(
-        "--resnet50_weights",
-        choices=["v1", "v2"],
-        default="v2",
-        help="Torchvision ResNet-50 ImageNet weights. Use v1 for released SG-CBM checkpoints trained with the original VLG-CBM backbone.",
-    )
-    parser.add_argument("--amp", choices=["fp16", "bf16", "none"], default="fp16")
-    parser.add_argument("--channels_last", action="store_true", default=True)
-    parser.add_argument("--disable_channels_last", action="store_true")
-    parser.add_argument("--tf32", action="store_true", default=True)
-    parser.add_argument("--disable_tf32", action="store_true")
-    parser.add_argument("--cudnn_benchmark", action="store_true", default=True)
-    parser.add_argument("--disable_cudnn_benchmark", action="store_true")
-    parser.add_argument("--seed", type=int, default=6885)
-    parser.add_argument("--min_image_bytes", type=int, default=2048)
-    parser.add_argument("--input_size", type=int, default=224)
-    transform_group = parser.add_mutually_exclusive_group()
-    transform_group.add_argument(
-        "--enable_train_random_transforms",
-        action="store_true",
-        help="Use RandomResizedCrop+RandomHorizontalFlip for the train split. Disabled by default because static bbox masks are not transform-aware.",
-    )
-    transform_group.add_argument(
-        "--disable_train_random_transforms",
-        action="store_true",
-        help="Use deterministic Resize+CenterCrop for the train split. This is the default and is kept as an explicit job-level guard.",
-    )
-    parser.add_argument("--mask_h", type=int, default=7)
-    parser.add_argument("--mask_w", type=int, default=7)
-    parser.add_argument("--patch_iou_thresh", type=float, default=0.5)
-    parser.add_argument("--concept_threshold", type=float, default=0.15)
-    parser.add_argument(
-        "--spatial_target_mode",
-        choices=["hard_iou", "soft_box"],
-        default="soft_box",
-        help="How box supervision is rasterized into spatial targets.",
-    )
-    parser.add_argument(
-        "--spatial_loss_mode",
-        choices=["bce", "soft_align"],
-        default="soft_align",
-        help="Spatial alignment loss: hard/soft BCE or KL alignment to target spatial distribution.",
-    )
-    parser.add_argument(
-        "--filter_concepts_by_count",
-        action="store_true",
-        help="Filter concepts by train-set target frequency before building the concept head.",
-    )
-    parser.add_argument(
-        "--concept_min_count",
-        type=int,
-        default=1,
-        help="Minimum train-set positive count when --filter_concepts_by_count is enabled.",
-    )
-    parser.add_argument(
-        "--concept_min_frequency",
-        type=float,
-        default=0.0,
-        help="Minimum train-set positive fraction when --filter_concepts_by_count is enabled.",
-    )
-    parser.add_argument(
-        "--concept_max_frequency",
-        type=float,
-        default=1.0,
-        help="Maximum train-set positive fraction when --filter_concepts_by_count is enabled.",
-    )
-    parser.add_argument("--optimizer", choices=["sgd", "adamw"], default="sgd")
-    parser.add_argument("--lr", type=float, default=5e-4)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
-    parser.add_argument("--momentum", type=float, default=0.9)
-    parser.add_argument("--global_pos_weight", type=float, default=1.0)
-    parser.add_argument("--patch_pos_weight", type=float, default=1.0)
-    parser.add_argument("--loss_global_w", type=float, default=1.0)
-    parser.add_argument("--loss_mask_w", type=float, default=1.0)
-    parser.add_argument("--loss_dice_w", type=float, default=0.0)
-    parser.add_argument("--branch_arch", choices=["shared", "dual"], default="shared")
-    parser.add_argument(
-        "--spatial_branch_mode", choices=["shared_stage", "multiscale_conv45"], default="shared_stage"
-    )
-    parser.add_argument("--spatial_stage", choices=["conv4", "conv5"], default="conv5")
-    parser.add_argument("--residual_alpha", type=float, default=0.8)
-    parser.add_argument(
-        "--residual_spatial_pooling",
-        choices=["avg", "lse"],
-        default="lse",
-        help="Pooling for residual spatial logits. lse matches the CUB SAVLG residual branch.",
-    )
-    parser.add_argument(
-        "--learn_spatial_residual_scale",
-        action="store_true",
-        help="Learn a positive exp(log_scale) multiplier on the spatial residual branch.",
-    )
-    parser.add_argument("--profile_steps", type=int, default=20)
-    parser.add_argument("--warmup_steps", type=int, default=5)
-    parser.add_argument("--log_every", type=int, default=20)
-    parser.add_argument("--save_every", type=int, default=1)
-    parser.add_argument("--skip_final_layer", action="store_true")
-    parser.add_argument(
-        "--final_layer_type",
-        choices=["sparse", "dense"],
-        default="sparse",
-        help="Final classifier to train after CBL feature extraction in train mode.",
-    )
-    parser.add_argument("--saga_batch_size", type=int, default=512)
-    parser.add_argument("--saga_workers", type=int, default=0)
-    parser.add_argument("--saga_prefetch_factor", type=int, default=2)
-    parser.add_argument("--saga_step_size", type=float, default=0.1)
-    parser.add_argument("--saga_lam", type=float, default=5e-4)
-    parser.add_argument("--saga_n_iters", type=int, default=80)
-    parser.add_argument("--saga_verbose_every", type=int, default=10)
-    parser.add_argument("--dense_lr", type=float, default=1e-3)
-    parser.add_argument("--dense_n_iters", type=int, default=20)
-    parser.add_argument("--feature_storage_dtype", choices=["fp16", "fp32"], default="fp16")
-    parser.add_argument("--saga_table_device", choices=["cpu", "cuda"], default="cpu")
-    parser.add_argument("--vlg_init_path", default="")
-    parser.add_argument("--vlg_concepts_path", default="")
-    parser.add_argument("--freeze_global_head", action="store_true")
-    parser.add_argument("--scheduler", choices=["none", "cosine"], default="none")
-    parser.add_argument("--print_config", action="store_true")
-    return parser.parse_args()
 
 
 @dataclass
@@ -252,7 +92,6 @@ class Config:
     patch_pos_weight: float
     loss_global_w: float
     loss_mask_w: float
-    loss_dice_w: float
     branch_arch: str
     spatial_branch_mode: str
     spatial_stage: str
@@ -288,89 +127,6 @@ class Config:
     feature_prefetch_factor: int = 2
 
 
-def build_config(args: argparse.Namespace) -> Config:
-    return Config(
-        mode=args.mode,
-        train_root=args.train_root,
-        train_manifest=args.train_manifest,
-        annotation_dir=args.annotation_dir,
-        concept_file=args.concept_file,
-        val_root=args.val_root,
-        save_dir=args.save_dir,
-        run_name=args.run_name,
-        reuse_run_dir=args.reuse_run_dir,
-        feature_dir=args.feature_dir,
-        precomputed_target_dir=args.precomputed_target_dir,
-        persist_feature_copy=bool(args.persist_feature_copy),
-        max_train_images=args.max_train_images,
-        max_val_images=args.max_val_images,
-        val_split=args.val_split,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        workers=args.workers,
-        prefetch_factor=max(1, int(args.prefetch_factor)),
-        persistent_workers=bool(args.persistent_workers and not args.disable_persistent_workers),
-        pin_memory=bool(args.pin_memory and not args.disable_pin_memory),
-        device=args.device,
-        amp=args.amp,
-        channels_last=bool(args.channels_last and not args.disable_channels_last),
-        tf32=bool(args.tf32 and not args.disable_tf32),
-        cudnn_benchmark=bool(args.cudnn_benchmark and not args.disable_cudnn_benchmark),
-        seed=args.seed,
-        min_image_bytes=args.min_image_bytes,
-        input_size=args.input_size,
-        resnet50_weights=str(args.resnet50_weights),
-        train_random_transforms=bool(args.enable_train_random_transforms),
-        mask_h=args.mask_h,
-        mask_w=args.mask_w,
-        patch_iou_thresh=args.patch_iou_thresh,
-        concept_threshold=args.concept_threshold,
-        spatial_target_mode=args.spatial_target_mode,
-        spatial_loss_mode=args.spatial_loss_mode,
-        filter_concepts_by_count=bool(args.filter_concepts_by_count),
-        concept_min_count=max(0, int(args.concept_min_count)),
-        concept_min_frequency=float(args.concept_min_frequency),
-        concept_max_frequency=float(args.concept_max_frequency),
-        optimizer=args.optimizer,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        momentum=args.momentum,
-        global_pos_weight=args.global_pos_weight,
-        patch_pos_weight=args.patch_pos_weight,
-        loss_global_w=args.loss_global_w,
-        loss_mask_w=args.loss_mask_w,
-        loss_dice_w=args.loss_dice_w,
-        branch_arch=args.branch_arch,
-        spatial_branch_mode=args.spatial_branch_mode,
-        spatial_stage=args.spatial_stage,
-        residual_alpha=args.residual_alpha,
-        profile_steps=args.profile_steps,
-        warmup_steps=args.warmup_steps,
-        log_every=args.log_every,
-        save_every=args.save_every,
-        skip_final_layer=bool(args.skip_final_layer),
-        final_layer_type=args.final_layer_type,
-        saga_batch_size=args.saga_batch_size,
-        saga_workers=max(0, int(args.saga_workers)),
-        saga_prefetch_factor=max(1, int(args.saga_prefetch_factor)),
-        saga_step_size=args.saga_step_size,
-        saga_lam=args.saga_lam,
-        saga_n_iters=args.saga_n_iters,
-        saga_verbose_every=max(1, int(args.saga_verbose_every)),
-        dense_lr=args.dense_lr,
-        dense_n_iters=max(1, int(args.dense_n_iters)),
-        feature_storage_dtype=args.feature_storage_dtype,
-        saga_table_device=args.saga_table_device,
-        vlg_init_path=str(args.vlg_init_path or ""),
-        vlg_concepts_path=str(args.vlg_concepts_path or ""),
-        freeze_global_head=bool(args.freeze_global_head),
-        scheduler=str(args.scheduler or "none"),
-        print_config=bool(args.print_config),
-        residual_spatial_pooling=str(args.residual_spatial_pooling),
-        learn_spatial_residual_scale=bool(args.learn_spatial_residual_scale),
-    )
-
-
 def configure_runtime(cfg: Config) -> None:
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -384,30 +140,6 @@ def configure_runtime(cfg: Config) -> None:
         torch.set_float32_matmul_precision("high")
     except AttributeError:
         pass
-
-
-def validate_config(cfg: Config) -> None:
-    if cfg.mode in {"train", "profile", "precompute_targets"}:
-        if not cfg.train_root:
-            raise ValueError("--train_root is required for train/profile mode")
-        if not cfg.annotation_dir:
-            raise ValueError("--annotation_dir is required for train/profile mode")
-    if cfg.mode in {"glm_only", "dense_only"} and not cfg.reuse_run_dir:
-        raise ValueError("--reuse_run_dir is required for glm_only/dense_only mode")
-    if cfg.mode == "precompute_targets" and not cfg.precomputed_target_dir:
-        raise ValueError("--precomputed_target_dir is required for precompute_targets mode")
-    if not 0.0 <= cfg.concept_min_frequency <= 1.0:
-        raise ValueError("--concept_min_frequency must be in [0, 1]")
-    if not 0.0 <= cfg.concept_max_frequency <= 1.0:
-        raise ValueError("--concept_max_frequency must be in [0, 1]")
-    if cfg.concept_min_frequency > cfg.concept_max_frequency:
-        raise ValueError("--concept_min_frequency cannot exceed --concept_max_frequency")
-    if cfg.freeze_global_head and not cfg.vlg_init_path:
-        raise ValueError("--freeze_global_head requires --vlg_init_path")
-    if cfg.vlg_init_path and not cfg.vlg_concepts_path:
-        raise ValueError("--vlg_concepts_path is required when --vlg_init_path is set")
-    if getattr(cfg, "residual_spatial_pooling", "avg") not in {"avg", "lse"}:
-        raise ValueError("--residual_spatial_pooling must be one of: avg, lse")
 
 
 def amp_dtype(name: str) -> Optional[torch.dtype]:
@@ -503,6 +235,7 @@ class SafeImageFolderWithAnnotations(Dataset):
         self.concepts = list(concepts)
         self.concept_to_idx = {name: idx for idx, name in enumerate(self.concepts)}
         self.sample_indices: Optional[List[int]] = None
+        self.annotation_indices: Optional[List[int]] = None
         if manifest:
             self.dataset = self._load_manifest(manifest, split)
         else:
@@ -512,6 +245,7 @@ class SafeImageFolderWithAnnotations(Dataset):
     def _load_manifest(self, manifest: str, split: str) -> Any:
         samples: List[Tuple[str, int]] = []
         sample_indices: List[int] = []
+        annotation_indices: List[int] = []
         class_names: Dict[int, str] = {}
         with open(manifest, "r") as handle:
             for line_number, line in enumerate(handle, start=1):
@@ -522,8 +256,10 @@ class SafeImageFolderWithAnnotations(Dataset):
                 path = str(payload["path"])
                 class_id = int(payload["class_id"])
                 sample_index = int(payload.get("sample_index", len(samples)))
+                annotation_index = int(payload.get("annotation_index", sample_index))
                 samples.append((path, class_id))
                 sample_indices.append(sample_index)
+                annotation_indices.append(annotation_index)
                 class_names[class_id] = str(payload.get("class_name", class_id))
         if not samples:
             raise ValueError(f"Manifest has no samples: {manifest}")
@@ -541,6 +277,7 @@ class SafeImageFolderWithAnnotations(Dataset):
         dataset.classes = classes
         dataset.transform = self._transform(split)
         self.sample_indices = sample_indices
+        self.annotation_indices = annotation_indices
         return dataset
 
     def attach_precomputed_targets(self, root: str, cfg: Optional[Config] = None) -> None:
@@ -631,12 +368,20 @@ class SafeImageFolderWithAnnotations(Dataset):
             return payload
         return payload.get("concepts", [])
 
+    def annotation_index_for_row(self, row_index: int) -> int:
+        if self.annotation_indices is not None:
+            return int(self.annotation_indices[row_index])
+        if self.sample_indices is not None:
+            return int(self.sample_indices[row_index])
+        return int(row_index)
+
     def __len__(self) -> int:
         return len(self.dataset.samples)
 
     def __getitem__(self, index: int):
         path, class_id = self.dataset.samples[index]
         sample_index = int(self.sample_indices[index]) if self.sample_indices is not None else int(index)
+        annotation_index = self.annotation_index_for_row(index)
         with self._safe_loader(path) as raw_image:
             image_size = (int(raw_image.size[0]), int(raw_image.size[1]))
             image = self.dataset.transform(raw_image) if self.dataset.transform is not None else raw_image
@@ -649,7 +394,7 @@ class SafeImageFolderWithAnnotations(Dataset):
         if self.precomputed_targets is not None:
             item.update(self.precomputed_targets.get(sample_index))
         else:
-            item["annotation"] = self._load_annotation(sample_index)
+            item["annotation"] = self._load_annotation(annotation_index)
         return item
 
 
@@ -884,11 +629,7 @@ def count_concept_targets(dataset: Dataset, cfg: Config) -> Tuple[np.ndarray, in
     start_time = time.perf_counter()
     for position, sample_index in enumerate(indices, start=1):
         path, _ = base_dataset.dataset.samples[sample_index]
-        annotation_index = (
-            int(base_dataset.sample_indices[sample_index])
-            if base_dataset.sample_indices is not None
-            else int(sample_index)
-        )
+        annotation_index = base_dataset.annotation_index_for_row(sample_index)
         image_size = get_image_size(path, base_dataset.input_size, base_dataset.min_image_bytes)
         annotations = base_dataset._load_annotation(annotation_index)
         global_target, _, _ = build_gdino_target_sample(
@@ -1458,11 +1199,7 @@ def precompute_target_store(
     start_time = time.perf_counter()
     for sample_index in range(total_examples):
         path, _ = dataset.dataset.samples[sample_index]
-        annotation_index = (
-            int(dataset.sample_indices[sample_index])
-            if dataset.sample_indices is not None
-            else sample_index
-        )
+        annotation_index = dataset.annotation_index_for_row(sample_index)
         image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
         annotations = dataset._load_annotation(annotation_index)
         global_target, concept_ids, _ = build_gdino_target_sample(
@@ -1504,11 +1241,7 @@ def precompute_target_store(
     second_start = time.perf_counter()
     for sample_index in range(total_examples):
         path, _ = dataset.dataset.samples[sample_index]
-        annotation_index = (
-            int(dataset.sample_indices[sample_index])
-            if dataset.sample_indices is not None
-            else sample_index
-        )
+        annotation_index = dataset.annotation_index_for_row(sample_index)
         image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
         annotations = dataset._load_annotation(annotation_index)
         _, concept_ids, masks = build_gdino_target_sample(
@@ -1779,97 +1512,6 @@ def prepare_images(images: torch.Tensor, cfg: Config) -> torch.Tensor:
     return images.to(cfg.device, non_blocking=cfg.pin_memory)
 
 
-def compute_losses(
-    outputs: Dict[str, torch.Tensor],
-    global_targets: torch.Tensor,
-    mask_indices: torch.Tensor,
-    mask_targets: torch.Tensor,
-    mask_valid: torch.Tensor,
-    cfg: Config,
-) -> Dict[str, torch.Tensor]:
-    final_logits = outputs["final_logits"]
-    spatial_maps = F.interpolate(
-        outputs["spatial_maps"],
-        size=mask_targets.shape[-2:],
-        mode="bilinear",
-        align_corners=False,
-    )
-
-    global_loss_raw = F.binary_cross_entropy_with_logits(final_logits, global_targets, reduction="none")
-    global_pos_w = torch.where(
-        global_targets > 0.5,
-        torch.full_like(global_targets, float(cfg.global_pos_weight)),
-        torch.ones_like(global_targets),
-    )
-    loss_global = (global_loss_raw * global_pos_w).sum() / torch.clamp(global_pos_w.sum(), min=1.0)
-
-    per_sample_mask_losses: List[torch.Tensor] = []
-    per_sample_dice_losses: List[torch.Tensor] = []
-    for batch_index in range(spatial_maps.shape[0]):
-        valid = mask_valid[batch_index]
-        if not bool(valid.any()):
-            continue
-        concept_ids = mask_indices[batch_index][valid]
-        pred = spatial_maps[batch_index].index_select(0, concept_ids)
-        tgt = mask_targets[batch_index][valid].to(pred.dtype)
-
-        if cfg.spatial_loss_mode == "bce":
-            bce_raw = F.binary_cross_entropy_with_logits(pred, tgt, reduction="none")
-            patch_pos_w = torch.where(
-                tgt > 0.5,
-                torch.full_like(tgt, float(cfg.patch_pos_weight)),
-                torch.ones_like(tgt),
-            )
-            patch_pos_w_flat = patch_pos_w.flatten(1)
-            per_concept_mask = (bce_raw.flatten(1) * patch_pos_w_flat).sum(dim=1) / torch.clamp(
-                patch_pos_w_flat.sum(dim=1),
-                min=1.0,
-            )
-        elif cfg.spatial_loss_mode == "soft_align":
-            pred_flat = pred.flatten(1).float()
-            target_mass = mask_targets[batch_index][valid].flatten(1).float().clamp(min=0.0)
-            target_mass_sum = target_mass.sum(dim=1, keepdim=True)
-            valid_targets = target_mass_sum.squeeze(1) > 0.0
-            per_concept_mask = torch.zeros((pred_flat.shape[0],), device=pred.device, dtype=torch.float32)
-            if bool(valid_targets.any()):
-                target_dist = torch.zeros_like(target_mass)
-                target_dist[valid_targets] = target_mass[valid_targets] / torch.clamp(
-                    target_mass_sum[valid_targets],
-                    min=1e-6,
-                )
-                pred_log_dist = F.log_softmax(pred_flat[valid_targets], dim=1)
-                per_concept_mask[valid_targets] = F.kl_div(
-                    pred_log_dist,
-                    target_dist[valid_targets],
-                    reduction="none",
-                ).sum(dim=1)
-        else:
-            raise ValueError(f"Unsupported spatial_loss_mode: {cfg.spatial_loss_mode}")
-        per_sample_mask_losses.append(per_concept_mask.mean())
-
-        if cfg.loss_dice_w > 0.0:
-            pred_prob = torch.sigmoid(pred).flatten(1)
-            tgt_flat = tgt.flatten(1)
-            intersection = (pred_prob * tgt_flat).sum(dim=1)
-            denom = pred_prob.sum(dim=1) + tgt_flat.sum(dim=1)
-            per_concept_dice = 1.0 - ((2.0 * intersection + 1e-6) / (denom + 1e-6))
-            per_sample_dice_losses.append(per_concept_dice.mean())
-
-    loss_mask = (
-        torch.stack(per_sample_mask_losses).mean() if per_sample_mask_losses else spatial_maps.sum() * 0.0
-    )
-    loss_dice = (
-        torch.stack(per_sample_dice_losses).mean() if per_sample_dice_losses else spatial_maps.sum() * 0.0
-    )
-    total = cfg.loss_global_w * loss_global + cfg.loss_mask_w * loss_mask + cfg.loss_dice_w * loss_dice
-    return {
-        "total": total,
-        "global": loss_global.detach(),
-        "mask": loss_mask.detach(),
-        "dice": loss_dice.detach(),
-    }
-
-
 def make_optimizer(head: nn.Module, cfg: Config) -> torch.optim.Optimizer:
     parameters = [parameter for parameter in head.parameters() if parameter.requires_grad]
     print(f"[training] trainable parameters={sum(p.numel() for p in parameters)}", flush=True)
@@ -1896,140 +1538,6 @@ def make_scheduler(
             eta_min=1e-6,
         )
     raise ValueError(f"Unsupported scheduler: {cfg.scheduler}")
-
-
-def train_one_epoch(
-    backbone: nn.Module,
-    head: nn.Module,
-    loader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    scaler: Optional[torch.cuda.amp.GradScaler],
-    cfg: Config,
-    concept_to_idx: Dict[str, int],
-    n_concepts: int,
-    epoch: int,
-) -> Dict[str, float]:
-    head.train()
-    totals = {"total": 0.0, "global": 0.0, "mask": 0.0, "dice": 0.0, "count": 0}
-    start_time = time.perf_counter()
-    reset_cuda_peak_stats_if_needed(cfg)
-    for step, batch in enumerate(loader, start=1):
-        images = prepare_images(batch["images"], cfg)
-        if "global_targets" in batch:
-            global_targets, idx_pad, mask_pad, valid_pad = batch_targets_to_device(batch, cfg)
-        else:
-            global_targets, idx_pad, mask_pad, valid_pad = build_gdino_targets(
-                batch["annotations"],
-                batch["image_sizes"],
-                concept_to_idx,
-                n_concepts,
-                cfg,
-                cfg.device,
-            )
-        optimizer.zero_grad(set_to_none=True)
-        with torch.no_grad():
-            feats = backbone(images)
-        with autocast_context(cfg):
-            outputs = head(feats)
-            losses = compute_losses(outputs, global_targets, idx_pad, mask_pad, valid_pad, cfg)
-            loss = losses["total"]
-        if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
-            optimizer.step()
-
-        batch_size = int(images.shape[0])
-        totals["total"] += float(loss.detach().item()) * batch_size
-        totals["global"] += float(losses["global"].item()) * batch_size
-        totals["mask"] += float(losses["mask"].item()) * batch_size
-        totals["dice"] += float(losses["dice"].item()) * batch_size
-        totals["count"] += batch_size
-        if step % cfg.log_every == 0:
-            elapsed = time.perf_counter() - start_time
-            images_per_second = totals["count"] / max(elapsed, 1e-6)
-            print(
-                f"[train] epoch={epoch} step={step}/{len(loader)} "
-                f"loss={totals['total']/totals['count']:.4f} "
-                f"global={totals['global']/totals['count']:.4f} "
-                f"mask={totals['mask']/totals['count']:.4f} "
-                f"ips={images_per_second:.2f}",
-                flush=True,
-            )
-    count = max(totals["count"], 1)
-    elapsed = time.perf_counter() - start_time
-    metrics = {
-        "loss": totals["total"] / count,
-        "loss_global": totals["global"] / count,
-        "loss_mask": totals["mask"] / count,
-        "loss_dice": totals["dice"] / count,
-        "images_per_second": totals["count"] / max(elapsed, 1e-6),
-        "elapsed_sec": elapsed,
-    }
-    metrics.update(cuda_peak_stats_mb(cfg))
-    return metrics
-
-
-@torch.no_grad()
-def evaluate_one_epoch(
-    backbone: nn.Module,
-    head: nn.Module,
-    loader: DataLoader,
-    cfg: Config,
-    concept_to_idx: Dict[str, int],
-    n_concepts: int,
-    split_name: str,
-) -> Dict[str, float]:
-    head.eval()
-    totals = {"total": 0.0, "global": 0.0, "mask": 0.0, "dice": 0.0, "count": 0}
-    start_time = time.perf_counter()
-    reset_cuda_peak_stats_if_needed(cfg)
-    for step, batch in enumerate(loader, start=1):
-        images = prepare_images(batch["images"], cfg)
-        if "global_targets" in batch:
-            global_targets, idx_pad, mask_pad, valid_pad = batch_targets_to_device(batch, cfg)
-        else:
-            global_targets, idx_pad, mask_pad, valid_pad = build_gdino_targets(
-                batch["annotations"],
-                batch["image_sizes"],
-                concept_to_idx,
-                n_concepts,
-                cfg,
-                cfg.device,
-            )
-        with autocast_context(cfg):
-            feats = backbone(images)
-            outputs = head(feats)
-            losses = compute_losses(outputs, global_targets, idx_pad, mask_pad, valid_pad, cfg)
-        batch_size = int(images.shape[0])
-        totals["total"] += float(losses["total"].item()) * batch_size
-        totals["global"] += float(losses["global"].item()) * batch_size
-        totals["mask"] += float(losses["mask"].item()) * batch_size
-        totals["dice"] += float(losses["dice"].item()) * batch_size
-        totals["count"] += batch_size
-        if step % cfg.log_every == 0:
-            elapsed = time.perf_counter() - start_time
-            images_per_second = totals["count"] / max(elapsed, 1e-6)
-            print(
-                f"[{split_name}] step={step}/{len(loader)} "
-                f"loss={totals['total']/totals['count']:.4f} "
-                f"ips={images_per_second:.2f}",
-                flush=True,
-            )
-    count = max(totals["count"], 1)
-    elapsed = time.perf_counter() - start_time
-    metrics = {
-        "loss": totals["total"] / count,
-        "loss_global": totals["global"] / count,
-        "loss_mask": totals["mask"] / count,
-        "loss_dice": totals["dice"] / count,
-        "images_per_second": totals["count"] / max(elapsed, 1e-6),
-        "elapsed_sec": elapsed,
-    }
-    metrics.update(cuda_peak_stats_mb(cfg))
-    return metrics
 
 
 def build_run_dir(cfg: Config) -> Path:
@@ -2168,31 +1676,6 @@ def compute_feature_stats_memmap(
         "elapsed_sec": time.perf_counter() - start_time,
     }
     return torch.from_numpy(mean), torch.from_numpy(std), summary
-
-
-def copy_feature_artifacts_to_persist(
-    source_dir: Path,
-    persist_dir: Path,
-    filenames: Sequence[str],
-) -> Dict[str, Any]:
-    persist_dir.mkdir(parents=True, exist_ok=True)
-    start_time = time.perf_counter()
-    total_bytes = 0
-    copied = []
-    for name in filenames:
-        src = source_dir / name
-        dst = persist_dir / name
-        if not src.exists():
-            raise FileNotFoundError(f"Missing feature artifact for persistent copy: {src}")
-        shutil.copyfile(src, dst)
-        total_bytes += int(dst.stat().st_size)
-        copied.append(str(dst))
-    return {
-        "stage": "feature_persist_copy_summary",
-        "elapsed_sec": time.perf_counter() - start_time,
-        "total_bytes": total_bytes,
-        "files": copied,
-    }
 
 
 def topk_accuracy(logits: torch.Tensor, targets: torch.Tensor, k: int) -> float:
@@ -2479,567 +1962,3 @@ def train_dense_final_layer(
     )
     (run_dir / "final_layer_dense_summary.json").write_text(json.dumps(payload, indent=2))
     return payload
-
-
-def profile_pipeline(cfg: Config) -> Dict[str, Any]:
-    concepts = load_run_concepts(cfg)
-    dataset = SafeImageFolderWithAnnotations(
-        root=cfg.train_root,
-        annotation_dir=cfg.annotation_dir,
-        concepts=concepts,
-        input_size=cfg.input_size,
-        min_image_bytes=cfg.min_image_bytes,
-        split="train",
-        manifest=cfg.train_manifest,
-        train_random_transforms=cfg.train_random_transforms,
-    )
-    dataset.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
-    indices = select_subset_indices(
-        dataset,
-        list(range(len(dataset))),
-        max_images=cfg.max_train_images,
-        seed=cfg.seed,
-        stratify=True,
-    )
-    dataset_view = DatasetView(dataset, indices)
-    concept_filter_summary = apply_count_concept_filter(cfg, dataset_view, [dataset_view])
-    concepts = list(dataset_view.concepts)
-    loader = build_loader(dataset_view, cfg, shuffle=False, drop_last=False)
-    backbone, head = build_model(cfg, n_concepts=len(concepts))
-    init_global_head_from_vlg(head, cfg, concepts)
-    iterator = iter(loader)
-    data_seconds = 0.0
-    h2d_seconds = 0.0
-    target_seconds = 0.0
-    forward_seconds = 0.0
-    profiled_steps = 0
-    first_shapes: Optional[Dict[str, Any]] = None
-    total_steps = cfg.warmup_steps + cfg.profile_steps
-    for step in range(total_steps):
-        t0 = time.perf_counter()
-        batch = next(iterator)
-        t1 = time.perf_counter()
-        images = prepare_images(batch["images"], cfg)
-        t2 = time.perf_counter()
-        if "global_targets" in batch:
-            global_targets, idx_pad, mask_pad, valid_pad = batch_targets_to_device(batch, cfg)
-        else:
-            global_targets, idx_pad, mask_pad, valid_pad = build_gdino_targets(
-                batch["annotations"],
-                batch["image_sizes"],
-                dataset.concept_to_idx,
-                len(concepts),
-                cfg,
-                cfg.device,
-            )
-        t3 = time.perf_counter()
-        with torch.no_grad():
-            with autocast_context(cfg):
-                feats = backbone(images)
-                outputs = head(feats)
-                _ = compute_losses(outputs, global_targets, idx_pad, mask_pad, valid_pad, cfg)
-        if str(cfg.device).startswith("cuda"):
-            torch.cuda.synchronize()
-        t4 = time.perf_counter()
-        if first_shapes is None:
-            first_shapes = {
-                "images": list(batch["images"].shape),
-                "conv4": list(feats["conv4"].shape),
-                "conv5": list(feats["conv5"].shape),
-                "final_logits": list(outputs["final_logits"].shape),
-                "idx_pad": list(idx_pad.shape),
-                "mask_pad": list(mask_pad.shape),
-            }
-        if step >= cfg.warmup_steps:
-            profiled_steps += 1
-            data_seconds += t1 - t0
-            h2d_seconds += t2 - t1
-            target_seconds += t3 - t2
-            forward_seconds += t4 - t3
-    total_images = profiled_steps * cfg.batch_size
-    total_seconds = data_seconds + h2d_seconds + target_seconds + forward_seconds
-    return {
-        "config": asdict(cfg),
-        "n_concepts": len(concepts),
-        "concept_filter": concept_filter_summary,
-        "profiled_steps": profiled_steps,
-        "images_profiled": total_images,
-        "timing_seconds": {
-            "data": data_seconds,
-            "h2d": h2d_seconds,
-            "targets": target_seconds,
-            "forward_plus_loss": forward_seconds,
-            "total": total_seconds,
-        },
-        "throughput": {
-            "images_per_second_total": total_images / max(total_seconds, 1e-6),
-            "images_per_second_compute": total_images / max(forward_seconds, 1e-6),
-        },
-        "shapes": first_shapes,
-    }
-
-
-def run_precompute_targets(cfg: Config) -> Dict[str, Any]:
-    concepts = load_concepts(cfg.concept_file)
-    train_dataset = SafeImageFolderWithAnnotations(
-        root=cfg.train_root,
-        annotation_dir=cfg.annotation_dir,
-        concepts=concepts,
-        input_size=cfg.input_size,
-        min_image_bytes=cfg.min_image_bytes,
-        split="train",
-        manifest=cfg.train_manifest,
-        train_random_transforms=cfg.train_random_transforms,
-    )
-    val_dataset: Optional[SafeImageFolderWithAnnotations] = None
-    if cfg.val_root:
-        val_dataset = SafeImageFolderWithAnnotations(
-            root=cfg.val_root,
-            annotation_dir=cfg.annotation_dir,
-            concepts=concepts,
-            input_size=cfg.input_size,
-            min_image_bytes=cfg.min_image_bytes,
-            split="val",
-            train_random_transforms=cfg.train_random_transforms,
-        )
-    datasets: List[Dataset] = [train_dataset]
-    if val_dataset is not None:
-        datasets.append(val_dataset)
-    concept_filter_summary = apply_count_concept_filter(cfg, train_dataset, datasets)
-
-    output_root = Path(cfg.precomputed_target_dir).resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
-    train_summary = precompute_target_store(train_dataset, output_root, cfg)
-    result: Dict[str, Any] = {
-        "mode": "precompute_targets",
-        "output_root": str(output_root),
-        "concept_filter": concept_filter_summary,
-        "n_concepts": len(train_dataset.concepts),
-        "train": train_summary,
-    }
-    if val_dataset is not None:
-        result["val"] = precompute_target_store(val_dataset, output_root, cfg)
-    (output_root / "precompute_summary.json").write_text(json.dumps(result, indent=2))
-    (output_root / "concepts.txt").write_text("\n".join(train_dataset.concepts))
-    if concept_filter_summary is not None:
-        (output_root / "concept_filter_summary.json").write_text(json.dumps(concept_filter_summary, indent=2))
-    return result
-
-
-def run_training(cfg: Config) -> Dict[str, Any]:
-    concepts = load_run_concepts(cfg)
-    train_dataset_full = SafeImageFolderWithAnnotations(
-        root=cfg.train_root,
-        annotation_dir=cfg.annotation_dir,
-        concepts=concepts,
-        input_size=cfg.input_size,
-        min_image_bytes=cfg.min_image_bytes,
-        split="train",
-        manifest=cfg.train_manifest,
-        train_random_transforms=cfg.train_random_transforms,
-    )
-    train_dataset_full.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
-    if cfg.val_root:
-        val_dataset_full = SafeImageFolderWithAnnotations(
-            root=cfg.val_root,
-            annotation_dir=cfg.annotation_dir,
-            concepts=concepts,
-            input_size=cfg.input_size,
-            min_image_bytes=cfg.min_image_bytes,
-            split="val",
-            train_random_transforms=cfg.train_random_transforms,
-        )
-        val_dataset_full.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
-        train_indices = select_subset_indices(
-            train_dataset_full,
-            list(range(len(train_dataset_full))),
-            max_images=cfg.max_train_images,
-            seed=cfg.seed,
-            stratify=True,
-        )
-        val_indices = select_subset_indices(
-            val_dataset_full,
-            list(range(len(val_dataset_full))),
-            max_images=cfg.max_val_images,
-            seed=cfg.seed + 1,
-            stratify=True,
-        )
-        train_dataset = DatasetView(train_dataset_full, train_indices)
-        val_dataset = DatasetView(val_dataset_full, val_indices)
-    else:
-        train_dataset, val_dataset = split_train_val(
-            train_dataset_full,
-            val_split=cfg.val_split,
-            max_train_images=cfg.max_train_images,
-            max_val_images=cfg.max_val_images,
-            seed=cfg.seed,
-        )
-
-    concept_filter_summary = apply_count_concept_filter(cfg, train_dataset, [train_dataset, val_dataset])
-    concepts = list(train_dataset.concepts)
-    train_loader = build_loader(train_dataset, cfg, shuffle=True, drop_last=True)
-    val_loader = build_loader(val_dataset, cfg, shuffle=False, drop_last=False)
-    backbone, head = build_model(cfg, n_concepts=len(concepts))
-    init_global_head_from_vlg(head, cfg, concepts)
-    optimizer = make_optimizer(head, cfg)
-    scheduler = make_scheduler(optimizer, cfg)
-    scaler = None
-    if cfg.amp == "fp16" and str(cfg.device).startswith("cuda"):
-        scaler = torch.cuda.amp.GradScaler()
-    run_dir = build_run_dir(cfg)
-    (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
-    (run_dir / "concepts.txt").write_text("\n".join(concepts))
-    if concept_filter_summary is not None:
-        (run_dir / "concept_filter_summary.json").write_text(json.dumps(concept_filter_summary, indent=2))
-
-    best_val = float("inf")
-    best_path = run_dir / "concept_head_best.pt"
-    history: List[Dict[str, Any]] = []
-    for epoch in range(1, cfg.epochs + 1):
-        train_metrics = train_one_epoch(
-            backbone,
-            head,
-            train_loader,
-            optimizer,
-            scaler,
-            cfg,
-            concept_to_idx=train_dataset.concept_to_idx,
-            n_concepts=len(concepts),
-            epoch=epoch,
-        )
-        val_metrics = evaluate_one_epoch(
-            backbone,
-            head,
-            val_loader,
-            cfg,
-            concept_to_idx=val_dataset.concept_to_idx,
-            n_concepts=len(concepts),
-            split_name="val",
-        )
-        summary = {"epoch": epoch, "train": train_metrics, "val": val_metrics}
-        if scheduler is not None:
-            summary["lr"] = float(scheduler.get_last_lr()[0])
-        history.append(summary)
-        epoch_message = (
-            f"[epoch] {epoch} "
-            f"train_loss={train_metrics['loss']:.4f} train_ips={train_metrics['images_per_second']:.2f} "
-            f"val_loss={val_metrics['loss']:.4f} val_ips={val_metrics['images_per_second']:.2f}"
-        )
-        if scheduler is not None:
-            epoch_message += f" lr={scheduler.get_last_lr()[0]:.6f}"
-        print(
-            epoch_message,
-            flush=True,
-        )
-        if val_metrics["loss"] < best_val:
-            best_val = val_metrics["loss"]
-            torch.save(head.state_dict(), best_path)
-        if epoch % cfg.save_every == 0:
-            save_checkpoint(run_dir, head, optimizer, epoch, cfg, train_metrics, val_metrics)
-        if scheduler is not None:
-            scheduler.step()
-
-    final_layer_summary: Optional[Dict[str, Any]] = None
-    if not cfg.skip_final_layer:
-        feature_dir = Path(cfg.feature_dir).resolve() if cfg.feature_dir else (run_dir / "features")
-        persist_feature_dir = run_dir / "features"
-        feature_batch_size = max(64, min(cfg.batch_size, 256))
-        feature_workers = max(1, min(cfg.workers, 4))
-        feature_prefetch = max(1, min(cfg.prefetch_factor, 2))
-        feature_train_loader = build_loader(
-            train_dataset,
-            cfg,
-            shuffle=False,
-            drop_last=False,
-            batch_size=feature_batch_size,
-            workers=feature_workers,
-            pin_memory=False,
-            persistent_workers=False,
-            prefetch_factor=feature_prefetch,
-        )
-        feature_val_loader = build_loader(
-            val_dataset,
-            cfg,
-            shuffle=False,
-            drop_last=False,
-            batch_size=feature_batch_size,
-            workers=feature_workers,
-            pin_memory=False,
-            persistent_workers=False,
-            prefetch_factor=feature_prefetch,
-        )
-        train_feature_path, train_target_path, train_extract_summary = extract_concept_features_to_memmap(
-            backbone, head, feature_train_loader, cfg, split_name="train", output_dir=feature_dir
-        )
-        val_feature_path, val_target_path, val_extract_summary = extract_concept_features_to_memmap(
-            backbone, head, feature_val_loader, cfg, split_name="val", output_dir=feature_dir
-        )
-        persist_copy_summary: Optional[Dict[str, Any]] = None
-        if cfg.persist_feature_copy and feature_dir != persist_feature_dir:
-            persist_copy_summary = copy_feature_artifacts_to_persist(
-                feature_dir,
-                persist_feature_dir,
-                [
-                    train_feature_path.name,
-                    train_target_path.name,
-                    val_feature_path.name,
-                    val_target_path.name,
-                ],
-            )
-            print(json.dumps(persist_copy_summary), flush=True)
-        feature_mean, feature_std, norm_summary = compute_feature_stats_memmap(
-            train_feature_path, cfg
-        )
-        normalization_payload = {
-            "mean": feature_mean,
-            "std": feature_std,
-            "train_extraction": train_extract_summary,
-            "val_extraction": val_extract_summary,
-            "normalization": norm_summary,
-        }
-        torch.save(
-            normalization_payload,
-            run_dir / "final_layer_normalization.pt",
-        )
-        final_layer_fn = train_dense_final_layer if cfg.final_layer_type == "dense" else train_sparse_final_layer
-        final_layer_summary = final_layer_fn(
-            train_feature_path=train_feature_path,
-            train_target_path=train_target_path,
-            val_feature_path=val_feature_path,
-            val_target_path=val_target_path,
-            feature_mean=feature_mean,
-            feature_std=feature_std,
-            cfg=cfg,
-            n_classes=len(train_dataset_full.dataset.classes),
-            run_dir=run_dir,
-        )
-        final_layer_summary["type"] = cfg.final_layer_type
-        final_layer_summary["feature_extraction"] = {
-            "train": train_extract_summary,
-            "val": val_extract_summary,
-            "normalization": norm_summary,
-        }
-        if persist_copy_summary is not None:
-            final_layer_summary["feature_extraction"]["persist_copy"] = persist_copy_summary
-        (run_dir / "final_layer_summary.json").write_text(json.dumps(final_layer_summary, indent=2))
-        print(
-            f"[final_layer:{cfg.final_layer_type}] "
-            f"train_top1={final_layer_summary['train']['top1']:.4f} "
-            f"val_top1={final_layer_summary['val']['top1']:.4f} "
-            f"sparsity={final_layer_summary['nnz']}/{final_layer_summary['total']}",
-            flush=True,
-        )
-
-    result = {
-        "run_dir": str(run_dir),
-        "best_val_loss": best_val,
-        "history": history,
-        "train_size": len(train_dataset),
-        "val_size": len(val_dataset),
-        "n_concepts": len(concepts),
-        "concept_filter": concept_filter_summary,
-        "final_layer": final_layer_summary,
-    }
-    (run_dir / "summary.json").write_text(json.dumps(result, indent=2))
-    return result
-
-
-def infer_n_classes_from_targets(*target_paths: Path) -> int:
-    max_class_id = -1
-    for target_path in target_paths:
-        targets = np.load(target_path, mmap_mode="r")
-        if int(targets.shape[0]) == 0:
-            continue
-        max_class_id = max(max_class_id, int(np.asarray(targets).max()))
-    if max_class_id < 0:
-        raise RuntimeError("Could not infer class count from target files")
-    return max_class_id + 1
-
-
-def resolve_reuse_run_context(
-    cfg: Config,
-) -> Tuple[
-    Path,
-    Path,
-    Path,
-    Path,
-    Path,
-    Path,
-    torch.Tensor,
-    torch.Tensor,
-    Dict[str, Any],
-    int,
-]:
-    source_run_dir = Path(cfg.reuse_run_dir).resolve()
-    if not source_run_dir.is_dir():
-        raise FileNotFoundError(f"Missing reuse_run_dir: {source_run_dir}")
-    original_source_run_dir = source_run_dir
-    original_source_hint = source_run_dir / "source_run_dir.txt"
-    if original_source_hint.exists():
-        hinted_source_run_dir = Path(original_source_hint.read_text().strip()).resolve()
-        if hinted_source_run_dir.is_dir():
-            original_source_run_dir = hinted_source_run_dir
-
-    train_feature_path = source_run_dir / "features" / "train_features.npy"
-    train_target_path = source_run_dir / "features" / "train_targets.npy"
-    val_feature_path = source_run_dir / "features" / "val_features.npy"
-    val_target_path = source_run_dir / "features" / "val_targets.npy"
-    for path in (train_feature_path, train_target_path, val_feature_path, val_target_path):
-        if not path.exists():
-            raise FileNotFoundError(f"Missing feature artifact: {path}")
-
-    normalization_path = source_run_dir / "final_layer_normalization.pt"
-    if normalization_path.exists():
-        normalization_payload = torch.load(normalization_path, map_location="cpu")
-        feature_mean = normalization_payload["mean"].float().cpu()
-        feature_std = normalization_payload["std"].float().cpu()
-        normalization_summary = normalization_payload.get("normalization", {})
-    else:
-        feature_mean, feature_std, normalization_summary = compute_feature_stats_memmap(train_feature_path, cfg)
-
-    n_classes = infer_n_classes_from_targets(train_target_path, val_target_path)
-    return (
-        source_run_dir,
-        original_source_run_dir,
-        train_feature_path,
-        train_target_path,
-        val_feature_path,
-        val_target_path,
-        feature_mean,
-        feature_std,
-        normalization_summary,
-        n_classes,
-    )
-
-
-def initialize_reuse_run_dir(
-    cfg: Config,
-    original_source_run_dir: Path,
-    feature_mean: torch.Tensor,
-    feature_std: torch.Tensor,
-    normalization_summary: Dict[str, Any],
-) -> Path:
-    run_dir = build_run_dir(cfg)
-    (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
-    (run_dir / "source_run_dir.txt").write_text(f"{original_source_run_dir}\n")
-    source_concepts = original_source_run_dir / "concepts.txt"
-    if source_concepts.exists():
-        (run_dir / "concepts.txt").write_text(source_concepts.read_text())
-    torch.save(
-        {
-            "mean": feature_mean,
-            "std": feature_std,
-            "source_run_dir": str(original_source_run_dir),
-            "normalization": normalization_summary,
-        },
-        run_dir / "final_layer_normalization.pt",
-    )
-    return run_dir
-
-
-def run_glm_only(cfg: Config) -> Dict[str, Any]:
-    (
-        _source_run_dir,
-        original_source_run_dir,
-        train_feature_path,
-        train_target_path,
-        val_feature_path,
-        val_target_path,
-        feature_mean,
-        feature_std,
-        normalization_summary,
-        n_classes,
-    ) = resolve_reuse_run_context(cfg)
-    run_dir = initialize_reuse_run_dir(
-        cfg,
-        original_source_run_dir,
-        feature_mean,
-        feature_std,
-        normalization_summary,
-    )
-    final_layer_summary = train_sparse_final_layer(
-        train_feature_path=train_feature_path,
-        train_target_path=train_target_path,
-        val_feature_path=val_feature_path,
-        val_target_path=val_target_path,
-        feature_mean=feature_mean,
-        feature_std=feature_std,
-        cfg=cfg,
-        n_classes=n_classes,
-        run_dir=run_dir,
-    )
-
-    result = {
-        "mode": "glm_only",
-        "source_run_dir": str(original_source_run_dir),
-        "run_dir": str(run_dir),
-        "n_classes": n_classes,
-        "final_layer": final_layer_summary,
-    }
-    (run_dir / "summary.json").write_text(json.dumps(result, indent=2))
-    return result
-
-
-def run_dense_only(cfg: Config) -> Dict[str, Any]:
-    (
-        _source_run_dir,
-        original_source_run_dir,
-        train_feature_path,
-        train_target_path,
-        val_feature_path,
-        val_target_path,
-        feature_mean,
-        feature_std,
-        normalization_summary,
-        n_classes,
-    ) = resolve_reuse_run_context(cfg)
-    run_dir = initialize_reuse_run_dir(
-        cfg,
-        original_source_run_dir,
-        feature_mean,
-        feature_std,
-        normalization_summary,
-    )
-    final_layer_summary = train_dense_final_layer(
-        train_feature_path=train_feature_path,
-        train_target_path=train_target_path,
-        val_feature_path=val_feature_path,
-        val_target_path=val_target_path,
-        feature_mean=feature_mean,
-        feature_std=feature_std,
-        cfg=cfg,
-        n_classes=n_classes,
-        run_dir=run_dir,
-    )
-    result = {
-        "mode": "dense_only",
-        "source_run_dir": str(original_source_run_dir),
-        "run_dir": str(run_dir),
-        "n_classes": n_classes,
-        "final_layer": final_layer_summary,
-    }
-    (run_dir / "summary.json").write_text(json.dumps(result, indent=2))
-    return result
-
-
-def main() -> None:
-    cfg = build_config(parse_args())
-    validate_config(cfg)
-    configure_runtime(cfg)
-    if cfg.print_config:
-        print(json.dumps(asdict(cfg), indent=2, sort_keys=True))
-    if cfg.mode == "profile":
-        result = profile_pipeline(cfg)
-    elif cfg.mode == "glm_only":
-        result = run_glm_only(cfg)
-    elif cfg.mode == "dense_only":
-        result = run_dense_only(cfg)
-    elif cfg.mode == "precompute_targets":
-        result = run_precompute_targets(cfg)
-    else:
-        result = run_training(cfg)
-    print(json.dumps(result, indent=2))
-
-
-if __name__ == "__main__":
-    main()

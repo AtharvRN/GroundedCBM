@@ -2,7 +2,6 @@ import hashlib
 import json
 import math
 import os
-import re
 import struct
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -18,6 +17,7 @@ from tqdm import tqdm
 
 from data import utils as data_utils
 from data.concept_dataset import get_filtered_concepts_and_counts
+from gcbm.losses import sgcbm_concept_losses
 from glm_saga.elasticnet import IndexedTensorDataset
 from methods.common import build_run_dir, save_args, write_artifacts
 from methods.lf import TransformedSubset, subset_targets, use_original_label_free_protocol
@@ -151,14 +151,7 @@ def _supervision_cache_path(
     target_mode = str(getattr(args, "savlg_target_mode", "hard_iou")).lower()
     global_target_mode = _savlg_global_target_mode(args)
     patch_iou_tag = str(float(getattr(args, "patch_iou_thresh", 0.5))).replace(".", "p")
-    supervision_source = _savlg_supervision_source(args)
-    source_tag = supervision_source
-    if supervision_source == "groundedsam2":
-        manifest_path = _groundedsam2_manifest_path(args, split_name)
-        source_tag = "{}_{}".format(
-            supervision_source,
-            hashlib.sha1(os.path.abspath(manifest_path).encode("utf-8")).hexdigest()[:12],
-        )
+    source_tag = "gdino"
     cache_dir = os.path.join(getattr(args, "activation_dir", "saved_activations"), "savlg")
     os.makedirs(cache_dir, exist_ok=True)
     return os.path.join(
@@ -175,10 +168,6 @@ def _image_size_cache_path(args, split_name: str) -> str:
 
 def _savlg_global_target_mode(args) -> str:
     return str(getattr(args, "savlg_global_target_mode", "binary_threshold")).lower()
-
-
-def _savlg_supervision_source(args) -> str:
-    return str(getattr(args, "savlg_supervision_source", "gdino")).lower()
 
 
 def _savlg_concept_filter_mode(args) -> str:
@@ -217,320 +206,6 @@ def _savlg_io_workers(args) -> int:
 def _load_concepts_file(path: str) -> List[str]:
     with open(path, "r") as f:
         return [line.strip() for line in f if line.strip()]
-
-
-def _resolve_manifest_path(path_or_dir: str) -> str:
-    resolved = os.path.expanduser(path_or_dir)
-    if os.path.isdir(resolved):
-        resolved = os.path.join(resolved, "manifest.json")
-    return resolved
-
-
-def _groundedsam2_manifest_path(args, split_name: str) -> str:
-    attr = f"savlg_groundedsam2_{split_name}_manifest"
-    candidate = str(getattr(args, attr, "") or "").strip()
-    if not candidate:
-        raise ValueError(
-            f"SAVLG supervision source is groundedsam2 but --{attr} was not provided."
-        )
-    manifest_path = _resolve_manifest_path(candidate)
-    if not os.path.isfile(manifest_path):
-        raise FileNotFoundError(
-            f"Could not find GroundedSAM2 manifest for split={split_name}: {manifest_path}"
-        )
-    return manifest_path
-
-
-def _parse_manifest_image_id(value) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, int):
-        return int(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        if stripped.isdigit():
-            return int(stripped)
-        match = re.search(r"(\d+)$", stripped)
-        if match is not None:
-            return int(match.group(1))
-    return None
-
-
-def _normalize_relpath(path: Optional[str]) -> str:
-    if not path:
-        return ""
-    return Path(str(path).replace("\\", "/")).as_posix().lstrip("./").lower()
-
-
-def _path_tail(path: str, n_parts: int) -> str:
-    parts = Path(path).parts
-    if not parts:
-        return ""
-    return "/".join(parts[-n_parts:]).lower()
-
-
-def _resolve_bundle_artifact_path(manifest_path: str, bundle_path: str) -> str:
-    if os.path.isabs(bundle_path):
-        return bundle_path
-    return os.path.join(os.path.dirname(manifest_path), bundle_path)
-
-
-def _downsample_binary_mask_target(mask: np.ndarray, args) -> Optional[np.ndarray]:
-    if mask.ndim != 2:
-        return None
-    mask_bool = np.asarray(mask, dtype=np.bool_)
-    if not bool(mask_bool.any()):
-        return None
-    mask_tensor = torch.from_numpy(mask_bool.astype(np.float32))[None, None, ...]
-    downsampled = F.interpolate(
-        mask_tensor,
-        size=(int(args.mask_h), int(args.mask_w)),
-        mode="area",
-    )[0, 0]
-    return downsampled.clamp_(0.0, 1.0).numpy().astype(np.float32)
-
-
-def _groundedsam2_presence_score(record: Dict[str, object], args) -> float:
-    if _savlg_global_target_mode(args) == "binary_threshold":
-        return 1.0
-    for key in ("annotation_score", "annotation_logit", "sam2_score"):
-        value = record.get(key)
-        try:
-            if value is not None:
-                score = float(value)
-                if np.isfinite(score):
-                    return score
-        except (TypeError, ValueError):
-            continue
-    return 1.0
-
-
-def _load_groundedsam2_spatial_supervision(
-    raw_dataset: Dataset,
-    concepts: Sequence[str],
-    args,
-    split_name: str,
-    keep_idx: Optional[Sequence[int]] = None,
-) -> Tuple[np.ndarray, List[Dict[int, np.ndarray]], List[int]]:
-    manifest_path = _groundedsam2_manifest_path(args, split_name)
-    logger.info(
-        "Building SAVLG {} supervision from GroundedSAM2 manifest {}",
-        split_name,
-        manifest_path,
-    )
-    with open(manifest_path, "r") as f:
-        manifest = json.load(f)
-    records = manifest.get("records", [])
-
-    concept_to_idx = {concept: idx for idx, concept in enumerate(concepts)}
-    row_to_ann_idx = (
-        list(raw_dataset.indices)
-        if hasattr(raw_dataset, "indices")
-        else list(range(len(raw_dataset)))
-    )
-    image_paths = _subset_image_paths(raw_dataset)
-
-    records_by_idx: Dict[int, List[Dict[str, object]]] = {}
-    records_by_relpath: Dict[str, List[Dict[str, object]]] = {}
-    records_by_tail2: Dict[str, List[Dict[str, object]]] = {}
-    records_by_basename: Dict[str, List[Dict[str, object]]] = {}
-    for record in records:
-        image_idx = _parse_manifest_image_id(record.get("image_id"))
-        if image_idx is not None:
-            records_by_idx.setdefault(image_idx, []).append(record)
-        relpath = _normalize_relpath(record.get("image_relpath"))
-        if relpath:
-            records_by_relpath.setdefault(relpath, []).append(record)
-            records_by_tail2.setdefault(_path_tail(relpath, 2), []).append(record)
-            records_by_basename.setdefault(Path(relpath).name.lower(), []).append(record)
-
-    def _records_for_row(row_idx: int, ann_idx: int) -> List[Dict[str, object]]:
-        direct = records_by_idx.get(int(ann_idx))
-        if direct:
-            return direct
-        if image_paths is None:
-            return []
-        full_path = _normalize_relpath(image_paths[row_idx])
-        if not full_path:
-            return []
-        direct_rel = records_by_relpath.get(full_path)
-        if direct_rel:
-            return direct_rel
-        tail2 = _path_tail(full_path, 2)
-        tail2_matches = records_by_tail2.get(tail2, [])
-        if len(tail2_matches) == 1:
-            return tail2_matches
-        basename_matches = records_by_basename.get(Path(full_path).name.lower(), [])
-        if len(basename_matches) == 1:
-            return basename_matches
-        return []
-
-    global_concept_scores = np.zeros((len(raw_dataset), len(concepts)), dtype=np.float32)
-    mask_entries: List[Dict[int, np.ndarray]] = [dict() for _ in range(len(raw_dataset))]
-    bundle_cache: Dict[str, np.ndarray] = {}
-    bundle_failures = 0
-
-    for row_idx, ann_idx in tqdm(
-        list(enumerate(row_to_ann_idx)),
-        total=len(row_to_ann_idx),
-        desc=f"SAVLG {split_name} GroundedSAM2",
-    ):
-        row_records = _records_for_row(row_idx, ann_idx)
-        if not row_records:
-            continue
-        masks_by_bundle: Dict[str, np.ndarray] = {}
-        for record in row_records:
-            bundle_npz = record.get("bundle_npz")
-            if not isinstance(bundle_npz, str) or not bundle_npz:
-                continue
-            bundle_path = _resolve_bundle_artifact_path(manifest_path, bundle_npz)
-            masks = masks_by_bundle.get(bundle_path)
-            if masks is None:
-                masks = bundle_cache.get(bundle_path)
-                if masks is None:
-                    try:
-                        with np.load(bundle_path, allow_pickle=False) as payload:
-                            masks = payload["masks"]
-                    except Exception as exc:
-                        bundle_failures += 1
-                        logger.warning(
-                            "Failed to load GroundedSAM2 bundle {}: {}",
-                            bundle_path,
-                            exc,
-                        )
-                        continue
-                    bundle_cache[bundle_path] = masks
-                masks_by_bundle[bundle_path] = masks
-
-            label = record.get("label")
-            if not isinstance(label, str):
-                continue
-            cidx = concept_to_idx.get(data_utils.canonicalize_concept_label(label))
-            if cidx is None:
-                continue
-
-            try:
-                mask_index = int(record.get("mask_index"))
-            except (TypeError, ValueError):
-                continue
-            if mask_index < 0 or mask_index >= int(masks.shape[0]):
-                continue
-
-            mask_area = record.get("mask_area")
-            if mask_area is not None:
-                try:
-                    if float(mask_area) <= 0.0:
-                        continue
-                except (TypeError, ValueError):
-                    pass
-            mask_target = _downsample_binary_mask_target(masks[mask_index], args)
-            if mask_target is None:
-                continue
-
-            global_concept_scores[row_idx, cidx] = max(
-                global_concept_scores[row_idx, cidx],
-                _groundedsam2_presence_score(record, args),
-            )
-            existing = mask_entries[row_idx].get(cidx)
-            if existing is None:
-                mask_entries[row_idx][cidx] = mask_target
-            else:
-                np.maximum(existing, mask_target, out=existing)
-
-    if bundle_failures > 0:
-        logger.warning(
-            "GroundedSAM2 supervision skipped {} bundle loads due to NPZ read failures",
-            bundle_failures,
-        )
-
-    threshold = float(getattr(args, "cbl_confidence_threshold", 0.15))
-    if keep_idx is None:
-        keep_mask = global_concept_scores.max(axis=0) >= threshold
-        if not bool(keep_mask.any()):
-            raise RuntimeError("All SAVLG concepts were removed after GroundedSAM2 supervision filtering.")
-        keep_idx_array = np.where(keep_mask)[0]
-    else:
-        keep_idx_array = np.asarray(list(keep_idx), dtype=np.int64)
-        if keep_idx_array.size == 0:
-            raise RuntimeError("SAVLG keep_idx is empty.")
-
-    filtered_scores = global_concept_scores[:, keep_idx_array]
-    global_concept_targets = _build_global_concept_targets(filtered_scores, args)
-    old_to_new = {old: new for new, old in enumerate(keep_idx_array.tolist())}
-    filtered_entries: List[Dict[int, np.ndarray]] = []
-    for entry in mask_entries:
-        new_entry = {}
-        for old_idx, mask in entry.items():
-            if old_idx in old_to_new:
-                new_entry[old_to_new[old_idx]] = mask
-        filtered_entries.append(new_entry)
-
-    return global_concept_targets, filtered_entries, keep_idx_array.tolist()
-
-
-def _load_savlg_teacher(args, concepts: Sequence[str]) -> Optional[Dict[str, object]]:
-    teacher_path = str(getattr(args, "savlg_teacher_load_path", "") or "").strip()
-    if not teacher_path:
-        return None
-    if not os.path.isdir(teacher_path):
-        raise FileNotFoundError(f"SAVLG teacher path does not exist: {teacher_path}")
-
-    with open(os.path.join(teacher_path, "args.txt"), "r") as f:
-        teacher_args = json.load(f)
-
-    teacher_concepts = _load_concepts_file(os.path.join(teacher_path, "concepts.txt"))
-    teacher_lookup = {concept: idx for idx, concept in enumerate(teacher_concepts)}
-    missing = [concept for concept in concepts if concept not in teacher_lookup]
-    if missing:
-        raise RuntimeError(
-            "SAVLG teacher is missing {} student concepts, including: {}".format(
-                len(missing),
-                ", ".join(missing[:10]),
-            )
-        )
-    aligned_indices = torch.tensor(
-        [teacher_lookup[concept] for concept in concepts],
-        dtype=torch.long,
-        device=args.device,
-    )
-
-    backbone_path = os.path.join(teacher_path, "backbone.pt")
-    if str(teacher_args["backbone"]).startswith("clip_"):
-        if os.path.exists(backbone_path):
-            teacher_backbone = BackboneCLIP.from_pretrained(teacher_path, args.device)
-        else:
-            teacher_backbone = BackboneCLIP(
-                teacher_args["backbone"],
-                use_penultimate=bool(teacher_args.get("use_clip_penultimate", False)),
-                device=args.device,
-            )
-    else:
-        if os.path.exists(backbone_path):
-            teacher_backbone = Backbone.from_pretrained(teacher_path, args.device)
-        else:
-            teacher_backbone = Backbone.from_args(teacher_path, args.device)
-    teacher_concept_layer = ConceptLayer.from_pretrained(teacher_path, args.device)
-
-    teacher_backbone.eval()
-    for parameter in teacher_backbone.parameters():
-        parameter.requires_grad = False
-    teacher_concept_layer.eval()
-    for parameter in teacher_concept_layer.parameters():
-        parameter.requires_grad = False
-
-    logger.info(
-        "Loaded SAVLG teacher from {} with {} aligned concepts",
-        teacher_path,
-        len(concepts),
-    )
-    return {
-        "load_path": teacher_path,
-        "backbone": teacher_backbone,
-        "concept_layer": teacher_concept_layer,
-        "indices": aligned_indices,
-    }
 
 
 def _subset_image_paths(raw_dataset: Dataset) -> Optional[List[str]]:
@@ -777,38 +452,6 @@ def load_spatial_supervision(
         if cache_ok:
             return cached_global_targets, cached_mask_entries, cached_keep_idx
         logger.info("Ignoring cached SAVLG supervision at {} due to {}", cache_path, reason)
-
-    supervision_source = _savlg_supervision_source(args)
-    if supervision_source == "groundedsam2":
-        global_concept_targets, filtered_entries, keep_idx_list = _load_groundedsam2_spatial_supervision(
-            raw_dataset,
-            concepts,
-            args,
-            split_name,
-            keep_idx=keep_idx,
-        )
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        torch.save(
-            {
-                "global_concept_targets": global_concept_targets,
-                "mask_entries": filtered_entries,
-                "keep_idx": keep_idx_list,
-                "source": supervision_source,
-            },
-            cache_path,
-        )
-        logger.info(
-            "Saved SAVLG {} supervision cache to {} (kept {}/{})",
-            supervision_source,
-            cache_path,
-            int(len(keep_idx_list)),
-            len(concepts),
-        )
-        return global_concept_targets, filtered_entries, keep_idx_list
-    if supervision_source != "gdino":
-        raise ValueError(
-            f"Unsupported SAVLG supervision source: {supervision_source}. Expected one of ['gdino', 'groundedsam2']."
-        )
 
     threshold = float(getattr(args, "cbl_confidence_threshold", 0.15))
     concept_to_idx = {concept: idx for idx, concept in enumerate(concepts)}
@@ -1674,25 +1317,6 @@ def pool_concept_maps(maps: torch.Tensor, args) -> torch.Tensor:
     return values.mean(dim=-1)
 
 
-def pool_local_mil_logits(map_logits: torch.Tensor, args) -> torch.Tensor:
-    pooling = str(getattr(args, "savlg_local_pooling", "lse")).lower()
-    flat = map_logits.flatten(2)
-    if pooling == "lse":
-        temperature = float(getattr(args, "savlg_mil_temperature", 1.0))
-        temperature = max(temperature, 1e-6)
-        num_patches = flat.shape[-1]
-        pooled = temperature * torch.logsumexp(flat / temperature, dim=-1)
-        return pooled - temperature * math.log(max(num_patches, 1))
-    if pooling == "topk":
-        num_patches = flat.shape[-1]
-        topk_fraction = float(getattr(args, "savlg_mil_topk_fraction", 0.2))
-        topk_fraction = min(max(topk_fraction, 0.0), 1.0)
-        k = max(1, int(math.ceil(num_patches * topk_fraction)))
-        values, _ = flat.topk(k=k, dim=-1)
-        return values.mean(dim=-1)
-    raise ValueError(f"Unsupported SAVLG local MIL pooling mode: {pooling}")
-
-
 def savlg_residual_coupling_enabled(args) -> bool:
     return abs(float(getattr(args, "savlg_residual_spatial_alpha", 0.0))) > 0.0
 
@@ -1708,22 +1332,9 @@ def pool_residual_spatial_logits(map_logits: torch.Tensor, args) -> torch.Tensor
         return pooled - temperature * math.log(max(num_patches, 1))
     if pooling == "avg":
         return flat.mean(dim=-1)
-    if pooling == "topk":
-        num_patches = flat.shape[-1]
-        topk_fraction = float(
-            getattr(
-                args,
-                "savlg_residual_topk_fraction",
-                getattr(args, "savlg_mil_topk_fraction", 0.2),
-            )
-        )
-        topk_fraction = min(max(topk_fraction, 0.0), 1.0)
-        k = max(1, int(math.ceil(num_patches * topk_fraction)))
-        values, _ = flat.topk(k=k, dim=-1)
-        return values.mean(dim=-1)
     raise ValueError(
         f"Unsupported SAVLG residual spatial pooling mode: {pooling}. "
-        "Supported modes are lse, avg, and topk."
+        "Supported modes are lse and avg."
     )
 
 
@@ -1746,12 +1357,6 @@ def compute_savlg_concept_logits(
     return global_logits, spatial_logits, global_logits
 
 
-def pool_spatial_teacher_logits(map_logits: torch.Tensor, args) -> torch.Tensor:
-    if bool(getattr(args, "savlg_use_local_mil", False)):
-        return pool_local_mil_logits(map_logits, args)
-    return pool_concept_maps(map_logits, args)
-
-
 def compute_local_trust_weights(
     global_concept_targets: torch.Tensor,
     args,
@@ -1771,73 +1376,6 @@ def compute_local_trust_weights(
     return floor + (1.0 - floor) * normalized.pow(power)
 
 
-def compute_global_spatial_consistency_loss(
-    pooled_logits: torch.Tensor,
-    spatial_teacher_logits: torch.Tensor,
-    global_concept_targets: torch.Tensor,
-    local_trust_weights: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    teacher_probs = torch.sigmoid(spatial_teacher_logits.detach())
-    consistency = F.binary_cross_entropy_with_logits(
-        pooled_logits,
-        teacher_probs,
-        reduction="none",
-    )
-    pair_weights = (global_concept_targets > 0.0).to(consistency.dtype)
-    if local_trust_weights is not None:
-        pair_weights = pair_weights * local_trust_weights.to(consistency.dtype)
-    return (consistency * pair_weights).sum() / torch.clamp(pair_weights.sum(), min=1.0)
-
-
-def _soft_box_distribution_targets(mask_targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    target_mass = mask_targets.clamp(min=0.0)
-    target_mass_sum = target_mass.sum(dim=1, keepdim=True)
-    valid = target_mass_sum.squeeze(1) > 0.0
-    target_dist = torch.zeros_like(target_mass)
-    if bool(valid.any()):
-        target_dist[valid] = target_mass[valid] / torch.clamp(
-            target_mass_sum[valid],
-            min=1e-6,
-        )
-    return target_dist, valid
-
-
-def _outside_mass_penalty(
-    map_logits: torch.Tensor,
-    mask_targets: torch.Tensor,
-) -> torch.Tensor:
-    pred_dist = F.softmax(map_logits, dim=1)
-    outside_weight = 1.0 - mask_targets.clamp(0.0, 1.0)
-    return (pred_dist * outside_weight).sum(dim=1)
-
-
-def _coverage_penalty(
-    map_logits: torch.Tensor,
-    mask_targets: torch.Tensor,
-) -> torch.Tensor:
-    pred_prob = torch.sigmoid(map_logits)
-    target_mass = mask_targets.clamp(min=0.0)
-    target_mass_sum = target_mass.sum(dim=1)
-    covered_mass = (pred_prob * target_mass).sum(dim=1)
-    coverage = covered_mass / torch.clamp(target_mass_sum, min=1e-6)
-    return 1.0 - coverage
-
-
-def _absent_topk_penalty(
-    map_logits: torch.Tensor,
-    global_concept_targets: torch.Tensor,
-    topk_fraction: float,
-) -> torch.Tensor:
-    flat_probs = torch.sigmoid(map_logits).flatten(2)
-    num_locations = flat_probs.shape[-1]
-    k = max(1, int(math.ceil(float(topk_fraction) * float(num_locations))))
-    topk_vals = flat_probs.topk(k, dim=-1).values.mean(dim=-1)
-    absent_mask = global_concept_targets <= 0.5
-    if not bool(absent_mask.any()):
-        return map_logits.sum() * 0.0
-    return topk_vals[absent_mask].mean()
-
-
 def compute_spatial_losses(
     pooled_logits: torch.Tensor,
     map_logits: torch.Tensor,
@@ -1846,236 +1384,19 @@ def compute_spatial_losses(
     mask_targets: torch.Tensor,
     mask_valid: torch.Tensor,
     global_bce_pos_weight: float = 1.0,
-    patch_bce_pos_weight: float = 1.0,
-    loss_dice_w: float = 0.0,
-    local_mil_logits: Optional[torch.Tensor] = None,
-    local_bce_pos_weight: float = 1.0,
     local_trust_weights: Optional[torch.Tensor] = None,
-    local_loss_mode: str = "bce",
-    outside_penalty_w: float = 0.0,
-    coverage_w: float = 0.0,
-    absent_topk_w: float = 0.0,
-    absent_topk_fraction: float = 0.1,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    global_concept_bce = F.binary_cross_entropy_with_logits(
-        pooled_logits, global_concept_targets, reduction="none"
-    )
-    global_pos_w = torch.where(
-        global_concept_targets > 0.5,
-        torch.full_like(global_concept_targets, float(global_bce_pos_weight)),
-        torch.ones_like(global_concept_targets),
-    )
-    loss_global_concept = (global_concept_bce * global_pos_w).sum() / torch.clamp(
-        global_pos_w.sum(), min=1.0
-    )
-    map_logits = F.interpolate(
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Global concept BCE plus spatial soft-align KL for positive boxed concepts."""
+    return sgcbm_concept_losses(
+        pooled_logits,
         map_logits,
-        size=mask_targets.shape[-2:],
-        mode="bilinear",
-        align_corners=False,
+        global_concept_targets,
+        mask_indices,
+        mask_targets,
+        mask_valid,
+        global_pos_weight=global_bce_pos_weight,
+        local_trust_weights=local_trust_weights,
     )
-    batch_bce = []
-    batch_dice = []
-    batch_outside = []
-    batch_coverage = []
-    local_loss_mode = str(local_loss_mode).lower()
-    for b in range(map_logits.shape[0]):
-        valid = mask_valid[b]
-        if not bool(valid.any()):
-            continue
-        cidx = mask_indices[b][valid]
-        pred = map_logits[b].index_select(0, cidx)
-        tgt = mask_targets[b][valid].to(pred.dtype)
-        concept_weights = torch.ones((pred.shape[0],), device=pred.device, dtype=pred.dtype)
-        if local_trust_weights is not None:
-            concept_weights = local_trust_weights[b].index_select(0, cidx).to(pred.dtype)
-        if local_loss_mode == "bce":
-            bce_raw = F.binary_cross_entropy_with_logits(pred, tgt, reduction="none")
-            patch_pos_w = torch.where(
-                tgt > 0.5,
-                torch.full_like(tgt, float(patch_bce_pos_weight)),
-                torch.ones_like(tgt),
-            )
-            patch_pos_w_flat = patch_pos_w.flatten(1)
-            per_concept_mask_loss = (bce_raw.flatten(1) * patch_pos_w_flat).sum(dim=1) / torch.clamp(
-                patch_pos_w_flat.sum(dim=1),
-                min=1.0,
-            )
-        elif local_loss_mode == "containment":
-            pred_prob = torch.sigmoid(pred).flatten(1)
-            tgt_flat = tgt.flatten(1).clamp(min=0.0)
-            inside_mass = (pred_prob * tgt_flat).sum(dim=1)
-            total_mass = pred_prob.sum(dim=1)
-            per_concept_mask_loss = 1.0 - (inside_mass / (total_mass + 1e-6))
-        elif local_loss_mode == "soft_align":
-            pred_flat = pred.flatten(1)
-            tgt_flat = tgt.flatten(1).clamp(min=0.0)
-            tgt_dist, valid_targets = _soft_box_distribution_targets(tgt_flat)
-            per_concept_mask_loss = torch.zeros(
-                (pred_flat.shape[0],),
-                device=pred.device,
-                dtype=pred.dtype,
-            )
-            if bool(valid_targets.any()):
-                pred_log_dist = F.log_softmax(pred_flat[valid_targets], dim=1)
-                per_concept_mask_loss[valid_targets] = F.kl_div(
-                    pred_log_dist,
-                    tgt_dist[valid_targets],
-                    reduction="none",
-                ).sum(dim=1)
-        else:
-            raise ValueError(f"Unsupported SAVLG local loss mode: {local_loss_mode}")
-        mask_loss = (per_concept_mask_loss * concept_weights).sum() / torch.clamp(
-            concept_weights.sum(),
-            min=1.0,
-        )
-        batch_bce.append(mask_loss)
-        if outside_penalty_w > 0.0:
-            outside_loss = (
-                _outside_mass_penalty(pred.flatten(1), tgt.flatten(1).to(pred.dtype)) * concept_weights
-            ).sum() / torch.clamp(
-                concept_weights.sum(),
-                min=1.0,
-            )
-            batch_outside.append(outside_loss)
-        if coverage_w > 0.0:
-            coverage_loss = (
-                _coverage_penalty(pred.flatten(1), tgt.flatten(1).to(pred.dtype)) * concept_weights
-            ).sum() / torch.clamp(
-                concept_weights.sum(),
-                min=1.0,
-            )
-            batch_coverage.append(coverage_loss)
-
-        if loss_dice_w > 0.0:
-            pred_prob = torch.sigmoid(pred)
-            pred_flat = pred_prob.flatten(1)
-            tgt_flat = tgt.flatten(1)
-            intersection = (pred_flat * tgt_flat).sum(dim=1)
-            denom = pred_flat.sum(dim=1) + tgt_flat.sum(dim=1)
-            per_concept_dice = 1.0 - ((2.0 * intersection + 1e-6) / (denom + 1e-6))
-            batch_dice.append(
-                (per_concept_dice * concept_weights).sum()
-                / torch.clamp(concept_weights.sum(), min=1.0)
-            )
-    if batch_bce:
-        loss_mask = torch.stack(batch_bce).mean()
-    else:
-        loss_mask = map_logits.sum() * 0.0
-    if batch_dice:
-        loss_dice = torch.stack(batch_dice).mean()
-    else:
-        loss_dice = map_logits.sum() * 0.0
-    if batch_outside:
-        loss_outside = torch.stack(batch_outside).mean()
-    else:
-        loss_outside = map_logits.sum() * 0.0
-    if batch_coverage:
-        loss_coverage = torch.stack(batch_coverage).mean()
-    else:
-        loss_coverage = map_logits.sum() * 0.0
-    if absent_topk_w > 0.0:
-        loss_absent_topk = _absent_topk_penalty(
-            map_logits,
-            global_concept_targets,
-            topk_fraction=absent_topk_fraction,
-        )
-    else:
-        loss_absent_topk = map_logits.sum() * 0.0
-    if local_mil_logits is not None:
-        local_bce = F.binary_cross_entropy_with_logits(
-            local_mil_logits, global_concept_targets, reduction="none"
-        )
-        local_pos_w = torch.where(
-            global_concept_targets > 0.5,
-            torch.full_like(global_concept_targets, float(local_bce_pos_weight)),
-            torch.ones_like(global_concept_targets),
-        )
-        local_pair_weights = torch.ones_like(local_bce)
-        if local_trust_weights is not None:
-            local_pair_weights = torch.where(
-                global_concept_targets > 0.0,
-                local_trust_weights.to(local_bce.dtype),
-                torch.ones_like(local_bce),
-            )
-        local_weight = local_pos_w * local_pair_weights
-        loss_local_mil = (local_bce * local_weight).sum() / torch.clamp(
-            local_weight.sum(), min=1.0
-        )
-    else:
-        loss_local_mil = map_logits.sum() * 0.0
-    return (
-        loss_global_concept,
-        loss_mask,
-        loss_dice,
-        loss_local_mil,
-        loss_outside,
-        loss_coverage,
-        loss_absent_topk,
-    )
-
-
-def compute_refinement_loss(
-    map_logits: torch.Tensor,
-    mask_indices: torch.Tensor,
-    mask_targets: torch.Tensor,
-    mask_valid: torch.Tensor,
-    patch_bce_pos_weight: float = 1.0,
-    local_trust_weights: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    resized_logits = F.interpolate(
-        map_logits,
-        size=mask_targets.shape[-2:],
-        mode="bilinear",
-        align_corners=False,
-    )
-    batch_losses = []
-    for b in range(resized_logits.shape[0]):
-        valid = mask_valid[b]
-        if not bool(valid.any()):
-            continue
-        cidx = mask_indices[b][valid]
-        pred = resized_logits[b].index_select(0, cidx)
-        tgt = mask_targets[b][valid].to(pred.dtype)
-        concept_weights = torch.ones((pred.shape[0],), device=pred.device, dtype=pred.dtype)
-        if local_trust_weights is not None:
-            concept_weights = local_trust_weights[b].index_select(0, cidx).to(pred.dtype)
-
-        flat_pred = pred.detach().flatten(1)
-        flat_tgt = tgt.flatten(1)
-        support = flat_tgt > 0
-        if not bool(support.any()):
-            continue
-
-        masked_scores = flat_pred.masked_fill(~support, float("-inf"))
-        top_idx = masked_scores.argmax(dim=1)
-        missing_support = ~support.any(dim=1)
-        if bool(missing_support.any()):
-            top_idx[missing_support] = flat_pred[missing_support].argmax(dim=1)
-
-        pseudo = torch.zeros_like(flat_tgt)
-        pseudo.scatter_(1, top_idx.unsqueeze(1), 1.0)
-        pseudo = pseudo.view_as(tgt)
-
-        bce_raw = F.binary_cross_entropy_with_logits(pred, pseudo, reduction="none")
-        patch_pos_w = torch.where(
-            pseudo > 0.5,
-            torch.full_like(pseudo, float(patch_bce_pos_weight)),
-            torch.ones_like(pseudo),
-        )
-        patch_pos_w_flat = patch_pos_w.flatten(1)
-        per_concept_loss = (bce_raw.flatten(1) * patch_pos_w_flat).sum(dim=1) / torch.clamp(
-            patch_pos_w_flat.sum(dim=1),
-            min=1.0,
-        )
-        batch_losses.append(
-            (per_concept_loss * concept_weights).sum()
-            / torch.clamp(concept_weights.sum(), min=1.0)
-        )
-
-    if batch_losses:
-        return torch.stack(batch_losses).mean()
-    return map_logits.sum() * 0.0
 
 
 def train_concept_head(
@@ -2084,7 +1405,6 @@ def train_concept_head(
     concept_layer: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    teacher: Optional[Dict[str, object]] = None,
 ) -> nn.Module:
     backbone.eval()
     for parameter in backbone.parameters():
@@ -2124,15 +1444,6 @@ def train_concept_head(
     min_epochs = max(0, int(getattr(args, "cbl_min_epochs", 0)))
     min_delta = float(getattr(args, "cbl_min_delta", 0.0))
     epochs_without_improvement = 0
-    distill_weight = float(getattr(args, "savlg_distill_w", 0.0))
-    refine_weight = float(getattr(args, "savlg_refine_w", 0.0))
-    refine_warmup_epochs = int(getattr(args, "savlg_refine_warmup_epochs", 0))
-    consistency_weight = float(getattr(args, "savlg_global_spatial_consistency_w", 0.0))
-    consistency_warmup_epochs = int(getattr(args, "savlg_global_spatial_consistency_warmup_epochs", 0))
-    consistency_enabled = (
-        consistency_weight > 0.0
-        and str(getattr(args, "savlg_branch_arch", "shared")).lower() == "dual"
-    )
     global_concept_loss_weight = _savlg_global_concept_loss_weight(args)
 
     for epoch in range(int(args.cbl_epochs)):
@@ -2149,11 +1460,9 @@ def train_concept_head(
             def compute_train_loss():
                 if _savlg_batch_already_features(images):
                     feats = _move_savlg_feats_to_device(images, args.device)
-                    images_for_teacher = None
                 else:
                     batch_images = images.to(args.device)
                     feats = forward_savlg_backbone(backbone, batch_images, args)
-                    images_for_teacher = batch_images
                 global_outputs, spatial_maps = forward_savlg_concept_layer(concept_layer, feats)
                 _, _, final_logits = compute_savlg_concept_logits(
                     global_outputs,
@@ -2162,25 +1471,7 @@ def train_concept_head(
                     concept_layer=concept_layer,
                 )
                 local_trust_weights = compute_local_trust_weights(global_concepts, args)
-                local_mil_logits = None
-                if bool(getattr(args, "savlg_use_local_mil", False)):
-                    local_mil_logits = pool_local_mil_logits(spatial_maps, args)
-                spatial_teacher_logits = None
-                if consistency_enabled:
-                    spatial_teacher_logits = (
-                        local_mil_logits
-                        if local_mil_logits is not None
-                        else pool_spatial_teacher_logits(spatial_maps, args)
-                    )
-                (
-                    loss_global_concept,
-                    loss_mask,
-                    loss_dice,
-                    loss_local_mil,
-                    loss_outside,
-                    loss_coverage,
-                    loss_absent_topk,
-                ) = compute_spatial_losses(
+                loss_global_concept, loss_mask = compute_spatial_losses(
                     final_logits,
                     spatial_maps,
                     global_concepts,
@@ -2188,61 +1479,11 @@ def train_concept_head(
                     mask_pad,
                     valid_pad,
                     global_bce_pos_weight=float(getattr(args, "global_bce_pos_weight", 1.0)),
-                    patch_bce_pos_weight=float(getattr(args, "patch_bce_pos_weight", 1.0)),
-                    loss_dice_w=float(getattr(args, "loss_dice_w", 0.0)),
-                    local_mil_logits=local_mil_logits,
-                    local_bce_pos_weight=float(getattr(args, "local_bce_pos_weight", 1.0)),
                     local_trust_weights=local_trust_weights,
-                    local_loss_mode=str(getattr(args, "savlg_local_loss_mode", "bce")),
-                    outside_penalty_w=float(getattr(args, "savlg_outside_penalty_w", 0.0)),
-                    coverage_w=float(getattr(args, "savlg_coverage_w", 0.0)),
-                    absent_topk_w=float(getattr(args, "savlg_absent_topk_w", 0.0)),
-                    absent_topk_fraction=float(getattr(args, "savlg_absent_topk_fraction", 0.1)),
                 )
-                loss_refine = spatial_maps.sum() * 0.0
-                if refine_weight > 0.0 and epoch >= refine_warmup_epochs:
-                    loss_refine = compute_refinement_loss(
-                        spatial_maps,
-                        idx_pad,
-                        mask_pad,
-                        valid_pad,
-                        patch_bce_pos_weight=float(getattr(args, "patch_bce_pos_weight", 1.0)),
-                        local_trust_weights=local_trust_weights,
-                    )
-                loss_consistency = final_logits.sum() * 0.0
-                if consistency_enabled and epoch >= consistency_warmup_epochs:
-                    loss_consistency = compute_global_spatial_consistency_loss(
-                        final_logits,
-                        spatial_teacher_logits,
-                        global_concepts,
-                        local_trust_weights=local_trust_weights,
-                    )
-                loss_distill = final_logits.sum() * 0.0
-                if teacher is not None and distill_weight > 0.0:
-                    if images_for_teacher is None:
-                        raise RuntimeError(
-                            "SAVLG teacher distillation is not supported with cached feature batches."
-                        )
-                    with torch.no_grad():
-                        teacher_feats = teacher["backbone"](images_for_teacher)
-                        teacher_logits = teacher["concept_layer"](teacher_feats).index_select(
-                            1, teacher["indices"]
-                        )
-                        teacher_probs = torch.sigmoid(teacher_logits)
-                    loss_distill = F.binary_cross_entropy_with_logits(
-                        final_logits, teacher_probs, reduction="mean"
-                    )
                 return (
                     global_concept_loss_weight * loss_global_concept
                     + float(getattr(args, "loss_mask_w", 1.0)) * loss_mask
-                    + float(getattr(args, "loss_dice_w", 0.0)) * loss_dice
-                    + float(getattr(args, "loss_local_mil_w", 0.0)) * loss_local_mil
-                    + float(getattr(args, "savlg_outside_penalty_w", 0.0)) * loss_outside
-                    + float(getattr(args, "savlg_coverage_w", 0.0)) * loss_coverage
-                    + float(getattr(args, "savlg_absent_topk_w", 0.0)) * loss_absent_topk
-                    + refine_weight * loss_refine
-                    + consistency_weight * loss_consistency
-                    + distill_weight * loss_distill
                 )
 
             loss = compute_train_loss()
@@ -2258,11 +1499,9 @@ def train_concept_head(
             for images, global_concepts, idx_pad, mask_pad, valid_pad, _ in val_loader:
                 if _savlg_batch_already_features(images):
                     feats = _move_savlg_feats_to_device(images, args.device)
-                    images_for_teacher = None
                 else:
                     images = images.to(args.device)
                     feats = forward_savlg_backbone(backbone, images, args)
-                    images_for_teacher = images
                 global_concepts = global_concepts.to(args.device)
                 idx_pad = idx_pad.to(args.device)
                 mask_pad = mask_pad.to(args.device)
@@ -2275,25 +1514,7 @@ def train_concept_head(
                     concept_layer=concept_layer,
                 )
                 local_trust_weights = compute_local_trust_weights(global_concepts, args)
-                local_mil_logits = None
-                if bool(getattr(args, "savlg_use_local_mil", False)):
-                    local_mil_logits = pool_local_mil_logits(spatial_maps, args)
-                spatial_teacher_logits = None
-                if consistency_enabled:
-                    spatial_teacher_logits = (
-                        local_mil_logits
-                        if local_mil_logits is not None
-                        else pool_spatial_teacher_logits(spatial_maps, args)
-                    )
-                (
-                    loss_global_concept,
-                    loss_mask,
-                    loss_dice,
-                    loss_local_mil,
-                    loss_outside,
-                    loss_coverage,
-                    loss_absent_topk,
-                ) = compute_spatial_losses(
+                loss_global_concept, loss_mask = compute_spatial_losses(
                     final_logits,
                     spatial_maps,
                     global_concepts,
@@ -2301,60 +1522,11 @@ def train_concept_head(
                     mask_pad,
                     valid_pad,
                     global_bce_pos_weight=float(getattr(args, "global_bce_pos_weight", 1.0)),
-                    patch_bce_pos_weight=float(getattr(args, "patch_bce_pos_weight", 1.0)),
-                    loss_dice_w=float(getattr(args, "loss_dice_w", 0.0)),
-                    local_mil_logits=local_mil_logits,
-                    local_bce_pos_weight=float(getattr(args, "local_bce_pos_weight", 1.0)),
                     local_trust_weights=local_trust_weights,
-                    local_loss_mode=str(getattr(args, "savlg_local_loss_mode", "bce")),
-                    outside_penalty_w=float(getattr(args, "savlg_outside_penalty_w", 0.0)),
-                    coverage_w=float(getattr(args, "savlg_coverage_w", 0.0)),
-                    absent_topk_w=float(getattr(args, "savlg_absent_topk_w", 0.0)),
-                    absent_topk_fraction=float(getattr(args, "savlg_absent_topk_fraction", 0.1)),
                 )
-                loss_refine = spatial_maps.sum() * 0.0
-                if refine_weight > 0.0 and epoch >= refine_warmup_epochs:
-                    loss_refine = compute_refinement_loss(
-                        spatial_maps,
-                        idx_pad,
-                        mask_pad,
-                        valid_pad,
-                        patch_bce_pos_weight=float(getattr(args, "patch_bce_pos_weight", 1.0)),
-                        local_trust_weights=local_trust_weights,
-                    )
-                loss_consistency = final_logits.sum() * 0.0
-                if consistency_enabled and epoch >= consistency_warmup_epochs:
-                    loss_consistency = compute_global_spatial_consistency_loss(
-                        final_logits,
-                        spatial_teacher_logits,
-                        global_concepts,
-                        local_trust_weights=local_trust_weights,
-                    )
-                loss_distill = final_logits.sum() * 0.0
-                if teacher is not None and distill_weight > 0.0:
-                    if images_for_teacher is None:
-                        raise RuntimeError(
-                            "SAVLG teacher distillation is not supported with cached feature batches."
-                        )
-                    teacher_feats = teacher["backbone"](images_for_teacher)
-                    teacher_logits = teacher["concept_layer"](teacher_feats).index_select(
-                        1, teacher["indices"]
-                    )
-                    teacher_probs = torch.sigmoid(teacher_logits)
-                    loss_distill = F.binary_cross_entropy_with_logits(
-                        final_logits, teacher_probs, reduction="mean"
-                    )
                 val_loss = (
                     global_concept_loss_weight * loss_global_concept
                     + float(getattr(args, "loss_mask_w", 1.0)) * loss_mask
-                    + float(getattr(args, "loss_dice_w", 0.0)) * loss_dice
-                    + float(getattr(args, "loss_local_mil_w", 0.0)) * loss_local_mil
-                    + float(getattr(args, "savlg_outside_penalty_w", 0.0)) * loss_outside
-                    + float(getattr(args, "savlg_coverage_w", 0.0)) * loss_coverage
-                    + float(getattr(args, "savlg_absent_topk_w", 0.0)) * loss_absent_topk
-                    + refine_weight * loss_refine
-                    + consistency_weight * loss_consistency
-                    + distill_weight * loss_distill
                 )
                 val_running += float(val_loss.item()) * global_concepts.size(0)
             val_loss = val_running / max(len(val_loader.dataset), 1)
@@ -2480,18 +1652,12 @@ def train_savlg_cbm(args):
     classes = data_utils.get_classes(args.dataset)
     raw_concepts = data_utils.get_concepts(args.concept_set, args.filter_set)
     train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone = create_savlg_splits(args)
-    supervision_source = _savlg_supervision_source(args)
-    if supervision_source == "gdino":
-        train_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "train")
-        # When we use a train/val split from the *train* images, the spatial supervision
-        # must come from the train annotations for both splits (ConceptDataset does the same).
-        if use_original_label_free_protocol(args):
-            val_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "val")
-        else:
-            val_ann_dir = train_ann_dir
+    train_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "train")
+    # When train/val are split from the training images, both splits use train annotations.
+    if use_original_label_free_protocol(args):
+        val_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "val")
     else:
-        train_ann_dir = args.annotation_dir
-        val_ann_dir = args.annotation_dir
+        val_ann_dir = train_ann_dir
 
     filter_mode = _savlg_concept_filter_mode(args)
     if filter_mode == "vlg_global":
@@ -2526,9 +1692,6 @@ def train_savlg_cbm(args):
         )
 
     stream_supervision = bool(getattr(args, "savlg_stream_supervision", False))
-    if stream_supervision and _savlg_supervision_source(args) != "gdino":
-        raise ValueError("--savlg_stream_supervision currently supports only --savlg_supervision_source=gdino.")
-
     if stream_supervision:
         if keep_idx is None:
             keep_idx = list(range(len(raw_concepts)))
@@ -2622,8 +1785,6 @@ def train_savlg_cbm(args):
         **supervision_loader_kwargs,
     )
 
-    teacher = _load_savlg_teacher(args, concepts)
-
     concept_layer = build_savlg_concept_layer(args, backbone, len(concepts))
     maybe_initialize_savlg_from_vlg(args, concept_layer, concepts)
     concept_layer = train_concept_head(
@@ -2632,7 +1793,6 @@ def train_savlg_cbm(args):
         concept_layer,
         train_supervision_loader,
         val_supervision_loader,
-        teacher=teacher,
     )
 
     if getattr(args, "cbl_only", False):
@@ -2782,27 +1942,15 @@ def train_savlg_cbm(args):
         "spatial_losses": {
             "loss_global_concept_w": _savlg_global_concept_loss_weight(args),
             "loss_mask_w": float(getattr(args, "loss_mask_w", 1.0)),
-            "loss_dice_w": float(getattr(args, "loss_dice_w", 0.0)),
-            "loss_local_mil_w": float(getattr(args, "loss_local_mil_w", 0.0)),
-            "outside_penalty_w": float(getattr(args, "savlg_outside_penalty_w", 0.0)),
-            "coverage_w": float(getattr(args, "savlg_coverage_w", 0.0)),
-            "absent_topk_w": float(getattr(args, "savlg_absent_topk_w", 0.0)),
-            "absent_topk_fraction": float(getattr(args, "savlg_absent_topk_fraction", 0.1)),
             "global_bce_pos_weight": float(getattr(args, "global_bce_pos_weight", 1.0)),
-            "patch_bce_pos_weight": float(getattr(args, "patch_bce_pos_weight", 1.0)),
-            "local_bce_pos_weight": float(getattr(args, "local_bce_pos_weight", 1.0)),
             "global_target_mode": _savlg_global_target_mode(args),
             "target_mode": str(getattr(args, "savlg_target_mode", "hard_iou")),
-            "local_loss_mode": str(getattr(args, "savlg_local_loss_mode", "bce")),
+            "local_loss_mode": "soft_align",
             "patch_iou_thresh": float(getattr(args, "patch_iou_thresh", 0.5)),
         },
         "pooling": {
             "mode": str(getattr(args, "savlg_pooling", "avg")),
             "topk_fraction": float(getattr(args, "savlg_topk_fraction", 0.2)),
-            "local_mil_enabled": bool(getattr(args, "savlg_use_local_mil", False)),
-            "local_mil_pooling": str(getattr(args, "savlg_local_pooling", "lse")),
-            "local_mil_temperature": float(getattr(args, "savlg_mil_temperature", 1.0)),
-            "local_mil_topk_fraction": float(getattr(args, "savlg_mil_topk_fraction", 0.2)),
         },
         "residual_spatial_coupling": {
             "alpha": float(getattr(args, "savlg_residual_spatial_alpha", 0.0)),
@@ -2815,35 +1963,11 @@ def train_savlg_cbm(args):
             "power": float(getattr(args, "savlg_local_weight_power", 1.0)),
             "enabled": str(getattr(args, "savlg_local_weight_mode", "uniform")).lower() != "uniform",
         },
-        "teacher_distillation": {
-            "teacher_load_path": str(getattr(args, "savlg_teacher_load_path", "") or ""),
-            "distill_w": float(getattr(args, "savlg_distill_w", 0.0)),
-            "enabled": teacher is not None and float(getattr(args, "savlg_distill_w", 0.0)) > 0.0,
-        },
         "vlg_warm_start": {
             "init_path": str(getattr(args, "savlg_init_from_vlg_path", "") or ""),
             "init_spatial": bool(getattr(args, "savlg_init_spatial_from_vlg", False)),
             "freeze_global_head": bool(getattr(args, "savlg_freeze_global_head", False)),
             "enabled": bool(str(getattr(args, "savlg_init_from_vlg_path", "") or "").strip()),
-        },
-        "global_spatial_consistency": {
-            "consistency_w": float(getattr(args, "savlg_global_spatial_consistency_w", 0.0)),
-            "warmup_epochs": int(getattr(args, "savlg_global_spatial_consistency_warmup_epochs", 0)),
-            "enabled": (
-                float(getattr(args, "savlg_global_spatial_consistency_w", 0.0)) > 0.0
-                and str(getattr(args, "savlg_branch_arch", "shared")).lower() == "dual"
-            ),
-            "positive_only": True,
-            "teacher_source": (
-                "local_mil_logits"
-                if bool(getattr(args, "savlg_use_local_mil", False))
-                else "pooled_spatial_maps"
-            ),
-        },
-        "oicr_refinement": {
-            "refine_w": float(getattr(args, "savlg_refine_w", 0.0)),
-            "warmup_epochs": int(getattr(args, "savlg_refine_warmup_epochs", 0)),
-            "box_anchored_top_patch": bool(float(getattr(args, "savlg_refine_w", 0.0)) > 0.0),
         },
         "supervision_cache_paths": {
             "train": _supervision_cache_path(args, "train", concepts),
