@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import math
 import runpy
 import sys
 from pathlib import Path
@@ -30,11 +31,17 @@ def load_cub_metrics(load_path: Path, nec_values: set[int] | None) -> list[dict[
             nec = int(round(nec_float))
             if nec_values is not None and nec not in nec_values:
                 continue
+            accuracy_raw = (row.get("Accuracy") or "").strip()
+            if not accuracy_raw:
+                continue
+            accuracy = float(accuracy_raw)
+            if not math.isfinite(accuracy):
+                continue
             rows.append(
                 {
                     "NEC": nec,
                     "NEC_raw": nec_float,
-                    "Accuracy": float(row["Accuracy"]),
+                    "Accuracy": accuracy,
                 }
             )
     return rows
