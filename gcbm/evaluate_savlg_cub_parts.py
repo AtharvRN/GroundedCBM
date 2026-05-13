@@ -67,14 +67,21 @@ def _parse_csv_floats(x: str):
     return [float(v.strip()) for v in x.split(",") if v.strip()]
 
 
-def _normalize_map_with_mode(maps: torch.Tensor, mode: str) -> torch.Tensor:
+def _normalize_map_with_mode(
+    maps: torch.Tensor,
+    mode: str,
+    proj_mean: Optional[torch.Tensor] = None,
+    proj_std: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
     maps = maps.detach().float()
     if mode == "sigmoid":
         return torch.sigmoid(maps)
     if mode == "concept_zscore_minmax":
-        mean = maps.flatten(1).mean(dim=1).view(-1, 1, 1)
-        std = maps.flatten(1).std(dim=1, unbiased=False).view(-1, 1, 1).clamp_min(1e-6)
-        maps = (maps - mean) / std
+        mode = "proj_zscore_minmax"
+    if mode == "proj_zscore_minmax":
+        if proj_mean is None or proj_std is None:
+            raise RuntimeError("proj_zscore_minmax requires proj_mean.pt/proj_std.pt in the checkpoint directory.")
+        maps = (maps - proj_mean.to(maps.device)) / proj_std.to(maps.device)
     elif mode != "minmax":
         raise ValueError(f"Unsupported map normalization mode: {mode}")
     mins = maps.flatten(1).min(dim=1).values.view(-1, 1, 1)
@@ -306,7 +313,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--max_images", type=int, default=None)
-    parser.add_argument("--map_normalization", type=str, default="concept_zscore_minmax")
+    parser.add_argument(
+        "--map_normalization",
+        type=str,
+        default="concept_zscore_minmax",
+        choices=["minmax", "sigmoid", "proj_zscore_minmax", "concept_zscore_minmax"],
+        help="Map normalization. For CUB, concept_zscore_minmax uses saved proj_mean.pt/proj_std.pt, then min-max scales each concept map.",
+    )
     parser.add_argument("--point_source", type=str, default="normalized_map", choices=["normalized_map", "pred_dist"])
     parser.add_argument("--activation_thresholds", type=str, default="0.3,0.4,0.5,0.6,0.7,0.8,0.9")
     parser.add_argument("--radius_fracs", type=str, default="0.01,0.02,0.05,0.1")
@@ -351,6 +364,21 @@ def main() -> None:
 
     concepts = _load_concepts(args_ns.load_path, args)
     concept_to_idx = {canonicalize_concept_label(name): idx for idx, name in enumerate(concepts)}
+    if args_ns.map_normalization in {"concept_zscore_minmax", "proj_zscore_minmax"}:
+        mean_path = Path(args_ns.load_path) / "proj_mean.pt"
+        std_path = Path(args_ns.load_path) / "proj_std.pt"
+        if not mean_path.exists() or not std_path.exists():
+            raise RuntimeError("CUB concept_zscore_minmax requires proj_mean.pt/proj_std.pt in the checkpoint directory.")
+        proj_mean_all = torch.load(mean_path, map_location="cpu").float().flatten()
+        proj_std_all = torch.load(std_path, map_location="cpu").float().flatten().clamp_min(1e-6)
+        if proj_mean_all.numel() < len(concepts) or proj_std_all.numel() < len(concepts):
+            raise RuntimeError(
+                f"proj_mean/proj_std size mismatch: got {proj_mean_all.numel()}/{proj_std_all.numel()} "
+                f"for {len(concepts)} concepts."
+            )
+    else:
+        proj_mean_all = None
+        proj_std_all = None
 
     concept_layer = build_savlg_concept_layer(args, backbone, len(concepts)).to(args.device)
     concept_layer.load_state_dict(torch.load(os.path.join(args_ns.load_path, "concept_layer.pt"), map_location=args.device))
@@ -445,6 +473,13 @@ def main() -> None:
                     continue
 
                 concept_idx_tensor = torch.as_tensor([concept_to_idx[label] for label, _ in valid_gt_concepts], device=spatial_maps.device, dtype=torch.long)
+                if proj_mean_all is not None and proj_std_all is not None:
+                    concept_idx_cpu = concept_idx_tensor.cpu()
+                    proj_mean = proj_mean_all.index_select(0, concept_idx_cpu).view(-1, 1, 1)
+                    proj_std = proj_std_all.index_select(0, concept_idx_cpu).view(-1, 1, 1)
+                else:
+                    proj_mean = None
+                    proj_std = None
                 maps_k_native = spatial_maps[b].index_select(0, concept_idx_tensor)
                 maps_k = F.interpolate(
                     maps_k_native.unsqueeze(1),
@@ -455,7 +490,12 @@ def main() -> None:
                 if args_ns.point_source == "pred_dist":
                     score_maps = F.softmax(maps_k.flatten(1), dim=1).view_as(maps_k)
                 else:
-                    score_maps = _normalize_map_with_mode(maps_k, args_ns.map_normalization)
+                    score_maps = _normalize_map_with_mode(
+                        maps_k,
+                        args_ns.map_normalization,
+                        proj_mean=proj_mean,
+                        proj_std=proj_std,
+                    )
 
                 argmax_flat = score_maps.flatten(1).argmax(dim=1)
                 argmax_y = (argmax_flat // score_maps.shape[-1]).cpu().tolist()
