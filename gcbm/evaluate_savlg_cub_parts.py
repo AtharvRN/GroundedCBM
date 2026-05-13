@@ -375,7 +375,7 @@ def parse_args() -> argparse.Namespace:
         "--annotation_cache_json",
         type=str,
         default=None,
-        help="Optional precomputed part-aligned annotation cache JSON created by precompute_cub_part_annotation_cache.py",
+        help="Optional precomputed part-aligned annotation cache JSON.",
     )
     parser.add_argument("--cub_root", type=str, required=True, help="Path to local CUB_200_2011 root")
     parser.add_argument("--mapping_json", type=str, required=True)
