@@ -11,10 +11,11 @@ pip install -r requirements.txt
 
 ## Public Scripts
 
-The release has five user-facing entry points:
+The release has six user-facing entry points:
 
 ```text
 train_cbm.py                         Train CBM concept layers.
+scripts/precompute_imagenet_targets.py Precompute ImageNet GDINO target tensors.
 scripts/train_sparse_nec.py          Train sparse GLM heads with an NEC sweep.
 scripts/eval_nec.py                  Evaluate/report CBM+sparse accuracy at NEC values.
 scripts/eval_gdino_localization.py   Evaluate localization against GDINO pseudo-GT boxes.
@@ -59,6 +60,12 @@ annotations/
   ...
 ```
 
+The original [VLG-CBM release](https://github.com/Trustworthy-ML-Lab/VLG-CBM)
+links the CUB annotation archive in its README.
+Place that archive at `annotations/` with the structure above. CUB part
+localization uses the included mapping file:
+`data/cub_concept_part_mapping_gpt54.json`.
+
 ### ImageNet
 
 ImageNet SG-CBM training supports either an ImageFolder train root or a JSONL
@@ -70,6 +77,25 @@ not the original ImageNet dataset indices.
 Training uses GDINO annotations. Precomputed GDINO target tensors are preferred
 for large runs; if `--precomputed_target_dir` is omitted, targets are built from
 the annotation JSON files on the fly.
+
+To regenerate a valid ImageNet precomputed target cache:
+
+```bash
+python scripts/precompute_imagenet_targets.py \
+  --image_root /path/to/imagenet/train \
+  --annotation_dir /path/to/imagenet_annotations \
+  --concept_file concept_files/imagenet_filtered.txt \
+  --output_dir /path/to/precomputed_targets \
+  --split train \
+  --mask_h 14 \
+  --mask_w 14 \
+  --spatial_target_mode soft_box
+```
+
+If you precompute from a subset manifest, train with the compact manifest
+written by the script, for example
+`/path/to/precomputed_targets/train_manifest.jsonl`. That manifest keeps target
+cache rows compact while preserving the original `annotation_index`.
 
 ImageNet NEC evaluation supports an extracted validation directory or the
 official validation tar. Supply the devkit metadata when evaluating a flat
@@ -110,12 +136,12 @@ ImageNet:
 python scripts/train_sparse_nec.py \
   --dataset imagenet \
   --artifact_dir /path/to/imagenet_run \
-  --nec_values 1,5,10,20,50,4309
+  --nec_values 1,5,10,15,20,25,30
 ```
 
 ## 3. Evaluate NEC Accuracy
 
-CUB reads the `metrics.csv` written by the sparse sweep:
+CUB reads the `nec_metrics.json` written by the sparse sweep:
 
 ```bash
 python scripts/eval_nec.py \
@@ -197,7 +223,7 @@ python scripts/eval_cub_part_localization.py \
   --load_path /path/to/cub_sgcbm_run \
   --annotation_dir annotations \
   --cub_root /path/to/CUB_200_2011 \
-  --mapping_json /path/to/cub_concept_part_mapping.json \
+  --mapping_json data/cub_concept_part_mapping_gpt54.json \
   --output results/cub_part_localization.json \
   --map_normalization concept_zscore_minmax
 ```
@@ -210,7 +236,7 @@ python scripts/eval_cub_part_localization.py \
   --load_path /path/to/cub_sgcbm_run \
   --annotation_dir annotations \
   --cub_root /path/to/CUB_200_2011 \
-  --mapping_json /path/to/cub_concept_part_mapping.json \
+  --mapping_json data/cub_concept_part_mapping_gpt54.json \
   --output results/cub_part_localization_oracle.json \
   --map_normalization concept_zscore_minmax \
   --compute_concept_oracle

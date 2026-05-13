@@ -19,6 +19,19 @@ def parse_nec_values(raw: str) -> set[int] | None:
 
 
 def load_cub_metrics(load_path: Path, nec_values: set[int] | None) -> list[dict[str, Any]]:
+    nec_json_path = load_path / "nec_metrics.json"
+    if nec_json_path.exists():
+        payload = json.loads(nec_json_path.read_text(encoding="utf-8"))
+        rows = []
+        for row in payload.get("metrics", []):
+            nec = int(row["NEC"])
+            if nec_values is not None and nec not in nec_values:
+                continue
+            accuracy = float(row["Accuracy"])
+            if math.isfinite(accuracy):
+                rows.append({"NEC": nec, "Accuracy": accuracy})
+        return rows
+
     metrics_path = load_path / "metrics.csv"
     if not metrics_path.exists():
         raise FileNotFoundError(

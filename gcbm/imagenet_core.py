@@ -235,6 +235,7 @@ class SafeImageFolderWithAnnotations(Dataset):
         self.concepts = list(concepts)
         self.concept_to_idx = {name: idx for idx, name in enumerate(self.concepts)}
         self.sample_indices: Optional[List[int]] = None
+        self.annotation_indices: Optional[List[int]] = None
         if manifest:
             self.dataset = self._load_manifest(manifest, split)
         else:
@@ -244,6 +245,7 @@ class SafeImageFolderWithAnnotations(Dataset):
     def _load_manifest(self, manifest: str, split: str) -> Any:
         samples: List[Tuple[str, int]] = []
         sample_indices: List[int] = []
+        annotation_indices: List[int] = []
         class_names: Dict[int, str] = {}
         with open(manifest, "r") as handle:
             for line_number, line in enumerate(handle, start=1):
@@ -254,8 +256,10 @@ class SafeImageFolderWithAnnotations(Dataset):
                 path = str(payload["path"])
                 class_id = int(payload["class_id"])
                 sample_index = int(payload.get("sample_index", len(samples)))
+                annotation_index = int(payload.get("annotation_index", sample_index))
                 samples.append((path, class_id))
                 sample_indices.append(sample_index)
+                annotation_indices.append(annotation_index)
                 class_names[class_id] = str(payload.get("class_name", class_id))
         if not samples:
             raise ValueError(f"Manifest has no samples: {manifest}")
@@ -273,6 +277,7 @@ class SafeImageFolderWithAnnotations(Dataset):
         dataset.classes = classes
         dataset.transform = self._transform(split)
         self.sample_indices = sample_indices
+        self.annotation_indices = annotation_indices
         return dataset
 
     def attach_precomputed_targets(self, root: str, cfg: Optional[Config] = None) -> None:
@@ -363,12 +368,20 @@ class SafeImageFolderWithAnnotations(Dataset):
             return payload
         return payload.get("concepts", [])
 
+    def annotation_index_for_row(self, row_index: int) -> int:
+        if self.annotation_indices is not None:
+            return int(self.annotation_indices[row_index])
+        if self.sample_indices is not None:
+            return int(self.sample_indices[row_index])
+        return int(row_index)
+
     def __len__(self) -> int:
         return len(self.dataset.samples)
 
     def __getitem__(self, index: int):
         path, class_id = self.dataset.samples[index]
         sample_index = int(self.sample_indices[index]) if self.sample_indices is not None else int(index)
+        annotation_index = self.annotation_index_for_row(index)
         with self._safe_loader(path) as raw_image:
             image_size = (int(raw_image.size[0]), int(raw_image.size[1]))
             image = self.dataset.transform(raw_image) if self.dataset.transform is not None else raw_image
@@ -381,7 +394,7 @@ class SafeImageFolderWithAnnotations(Dataset):
         if self.precomputed_targets is not None:
             item.update(self.precomputed_targets.get(sample_index))
         else:
-            item["annotation"] = self._load_annotation(sample_index)
+            item["annotation"] = self._load_annotation(annotation_index)
         return item
 
 
@@ -616,11 +629,7 @@ def count_concept_targets(dataset: Dataset, cfg: Config) -> Tuple[np.ndarray, in
     start_time = time.perf_counter()
     for position, sample_index in enumerate(indices, start=1):
         path, _ = base_dataset.dataset.samples[sample_index]
-        annotation_index = (
-            int(base_dataset.sample_indices[sample_index])
-            if base_dataset.sample_indices is not None
-            else int(sample_index)
-        )
+        annotation_index = base_dataset.annotation_index_for_row(sample_index)
         image_size = get_image_size(path, base_dataset.input_size, base_dataset.min_image_bytes)
         annotations = base_dataset._load_annotation(annotation_index)
         global_target, _, _ = build_gdino_target_sample(
@@ -1190,11 +1199,7 @@ def precompute_target_store(
     start_time = time.perf_counter()
     for sample_index in range(total_examples):
         path, _ = dataset.dataset.samples[sample_index]
-        annotation_index = (
-            int(dataset.sample_indices[sample_index])
-            if dataset.sample_indices is not None
-            else sample_index
-        )
+        annotation_index = dataset.annotation_index_for_row(sample_index)
         image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
         annotations = dataset._load_annotation(annotation_index)
         global_target, concept_ids, _ = build_gdino_target_sample(
@@ -1236,11 +1241,7 @@ def precompute_target_store(
     second_start = time.perf_counter()
     for sample_index in range(total_examples):
         path, _ = dataset.dataset.samples[sample_index]
-        annotation_index = (
-            int(dataset.sample_indices[sample_index])
-            if dataset.sample_indices is not None
-            else sample_index
-        )
+        annotation_index = dataset.annotation_index_for_row(sample_index)
         image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
         annotations = dataset._load_annotation(annotation_index)
         _, concept_ids, masks = build_gdino_target_sample(

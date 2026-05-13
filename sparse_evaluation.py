@@ -1,9 +1,11 @@
 import os
 from argparse import ArgumentParser, Namespace
+import json
 
 import pandas as pd
 
 from evaluations.sparse_utils import (
+    DEFAULT_MEASURE_LEVEL,
     sparsity_acc_test,
     sparsity_acc_test_lf_cbm,
     sparsity_acc_test_salf_cbm,
@@ -88,6 +90,25 @@ def main() -> None:
     else:
         raise NotImplementedError(
             f"Sparse evaluation for model_name={model_name} is not implemented yet."
+        )
+    nec_levels = [
+        int(level)
+        for level in DEFAULT_MEASURE_LEVEL
+        if os.path.exists(os.path.join(args.load_path, f"W_g@NEC={int(level)}.pt"))
+    ]
+    nec_rows = [
+        {"NEC": nec, "Accuracy": float(acc)}
+        for nec, acc in zip(nec_levels, accs)
+    ]
+    with open(os.path.join(args.load_path, "nec_metrics.json"), "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "model_name": model_name,
+                "load_path": args.load_path,
+                "metrics": nec_rows,
+            },
+            handle,
+            indent=2,
         )
     if args.result_file:
         if os.path.exists(args.result_file):

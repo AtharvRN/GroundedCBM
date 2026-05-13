@@ -1,0 +1,5851 @@
+{
+  "meta": {
+    "model": "gpt-5.4",
+    "concept_file": "concept_files/cub_filtered.txt",
+    "parts_file": "datasets/CUB_200_2011/parts/parts.txt",
+    "batch_size": 50,
+    "num_concepts": 723,
+    "num_kept": 331,
+    "part_group_counts": {
+      "back": 29,
+      "beak": 82,
+      "belly": 10,
+      "breast": 29,
+      "crown": 15,
+      "eye": 22,
+      "leg": 21,
+      "tail": 51,
+      "throat": 11,
+      "wing": 61
+    }
+  },
+  "mappings": [
+    {
+      "concept": "long, black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a wingspan of up to 3.5 feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall size/extent, not a localized annotated part."
+    },
+    {
+      "concept": "a white face and underparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple/vague regions, not one supported part."
+    },
+    {
+      "concept": "a raucous call",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral/audio trait, not a body part."
+    },
+    {
+      "concept": "pattern",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too abstract and not localized to one part."
+    },
+    {
+      "concept": "fast, erratic flight patterns",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral trait, not a body part."
+    },
+    {
+      "concept": "a red head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head spans multiple supported parts, so not cleanly mappable."
+    },
+    {
+      "concept": "a white patch on the wing",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Localized to the wing."
+    },
+    {
+      "concept": "a yellow bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a small beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Abstract attribute with no localized part."
+    },
+    {
+      "concept": "rusty-brown feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers are not tied to one supported part."
+    },
+    {
+      "concept": "a small, stocky body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-body description, not one supported part."
+    },
+    {
+      "concept": "a small, slim body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-body description, not one supported part."
+    },
+    {
+      "concept": "A long curved bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a vibrant blue plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global plumage trait, not one localized part."
+    },
+    {
+      "concept": "a small, green body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-body description, not one supported part."
+    },
+    {
+      "concept": "a black wingtip",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too specific relative to the whole wing annotation."
+    },
+    {
+      "concept": "a streaked back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a long tail with white bars",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "shiny black eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "a black face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face is a vague unsupported region."
+    },
+    {
+      "concept": "orange legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "black wings with white stripes",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a slender body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-body shape, not one supported part."
+    },
+    {
+      "concept": "loud, rasping voice",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral/audio trait, not a body part."
+    },
+    {
+      "concept": "spotted feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers are not tied to one supported part."
+    },
+    {
+      "concept": "a black head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head spans multiple supported parts, so not cleanly mappable."
+    },
+    {
+      "concept": "a black beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a black mask around the eyes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Covers area around eyes, not the eye part itself."
+    },
+    {
+      "concept": "a red crest on the head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Crest is not a supported part group."
+    },
+    {
+      "concept": "black plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global plumage trait, not one localized part."
+    },
+    {
+      "concept": "a black and white color scheme",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global color pattern, not one localized part."
+    },
+    {
+      "concept": "a small, shy bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-animal/behavior description, not a body part."
+    },
+    {
+      "concept": "a white stripe above the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Region above the eye is not the eye part itself."
+    },
+    {
+      "concept": "a white chest and belly",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts at once."
+    },
+    {
+      "concept": "a small, songbird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-animal category/size, not a body part."
+    },
+    {
+      "concept": "a brown back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "blue wings with white bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a small, brown bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-animal description, not one supported part."
+    },
+    {
+      "concept": "a black tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a large blue-grey bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-animal description, not one supported part."
+    },
+    {
+      "concept": "a large, seabird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-animal category/size, not a body part."
+    },
+    {
+      "concept": "A red eye",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eye."
+    },
+    {
+      "concept": "white body with grey wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mixes whole body with wing, so not one part."
+    },
+    {
+      "concept": "white wingbars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Wingbars are markings on the wing."
+    },
+    {
+      "concept": "a large, stocky body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-body description, not one supported part."
+    },
+    {
+      "concept": "white patch on neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported coarse part group."
+    },
+    {
+      "concept": "a rectangular shape",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Abstract shape trait, not a localized part."
+    },
+    {
+      "concept": "a brown tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a small, sparrow-like body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall body form, not one supported part."
+    },
+    {
+      "concept": "a pale stripe above the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to eyebrow/supercilium region, not a supported part label."
+    },
+    {
+      "concept": "yellowish-green legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a blue-grey back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a small, thrush-like bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes whole bird type/size, not one part."
+    },
+    {
+      "concept": "a short, stout bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "black wings with orange bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a small body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a red ring around the eye",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Cleanly centered on the eye region."
+    },
+    {
+      "concept": "grayish wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a medium sized bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size, not a localized part."
+    },
+    {
+      "concept": "a black cap on the female",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap maps to crown."
+    },
+    {
+      "concept": "a red throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Directly describes the throat."
+    },
+    {
+      "concept": "black wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "white underparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underparts spans multiple regions and is too vague."
+    },
+    {
+      "concept": "a black band across the belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Primarily localized to the belly."
+    },
+    {
+      "concept": "a rusty-brown back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "black tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "black and orange feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers are not localized to one supported part."
+    },
+    {
+      "concept": "a long, thin bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "brown and gray plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is overall coloration, not one part."
+    },
+    {
+      "concept": "a black head and upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Covers multiple unsupported regions."
+    },
+    {
+      "concept": "long tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a white wingbar",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Wingbar is a marking on the wing."
+    },
+    {
+      "concept": "a short, thick neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported part group."
+    },
+    {
+      "concept": "a wingspan of 3-4 feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size measurement, not a localized part."
+    },
+    {
+      "concept": "a yellow-tipped tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "a black tail with white tips",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "a small, thin beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a long, thick beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "black streaks on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "long hind legs for jumping",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "yellow or white \"eyebrows\"",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Eyebrow/supercilium is not a supported part group."
+    },
+    {
+      "concept": "a black mask",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mask refers to face region, which is unsupported."
+    },
+    {
+      "concept": "yellow throat and breast",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Covers two supported parts, not one."
+    },
+    {
+      "concept": "a long, slender neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported part group."
+    },
+    {
+      "concept": "a brown breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "yellowish-brown wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a large, black body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "gray plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is overall coloration, not one part."
+    },
+    {
+      "concept": "shy and secretive behavior",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavior is non-spatial and not a part."
+    },
+    {
+      "concept": "a hooked bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a small mouth",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mouth is not a supported part group."
+    },
+    {
+      "concept": "a black cap on the head",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap maps to crown."
+    },
+    {
+      "concept": "black beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "grey legs and feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Includes feet, which are unsupported."
+    },
+    {
+      "concept": "white body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a short, pointed beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a white throat and belly",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Covers two supported parts, not one."
+    },
+    {
+      "concept": "a black mask over its eyes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mask spans the face/eye area and does not cleanly match one supported part."
+    },
+    {
+      "concept": "a dark coloration",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall coloration, not one supported part."
+    },
+    {
+      "concept": "a curved beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a yellow head and throat",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts, including unsupported head as a whole."
+    },
+    {
+      "concept": "brown and black feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "General plumage description, not one supported part."
+    },
+    {
+      "concept": "a hooked beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "hooked beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "short wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a large, black spider",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not a bird part concept."
+    },
+    {
+      "concept": "a white or pale gray body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "pale gray upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "Long, slim body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "orange and black wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a thin, pointy bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a white wing bar",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wing bar is a subregion/pattern, not the whole wing annotation."
+    },
+    {
+      "concept": "long, red legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a green body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a large, green head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is unsupported as a single part."
+    },
+    {
+      "concept": "green head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is unsupported as a single part."
+    },
+    {
+      "concept": "grey legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a streaked head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is unsupported as a single part."
+    },
+    {
+      "concept": "a white breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "a duck-like bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes whole-bird appearance, not one part."
+    },
+    {
+      "concept": "a built-in keyboard",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not a bird part concept."
+    },
+    {
+      "concept": "a brown or gray body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "webbed toes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Toes/feet are unsupported parts."
+    },
+    {
+      "concept": "a large bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "olive-colored sides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Sides is a vague body region, not supported."
+    },
+    {
+      "concept": "a long, forked tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a black band across the eyes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Spans across both eyes as a facial pattern, not the eye part itself."
+    },
+    {
+      "concept": "a bright green body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a black eye-stripe",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Eye-stripe is a facial pattern, not the eye part itself."
+    },
+    {
+      "concept": "large feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are unsupported parts."
+    },
+    {
+      "concept": "a gray crown",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Directly describes the crown."
+    },
+    {
+      "concept": "a forked tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a pink bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a white front",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Front is a vague region, not a supported part."
+    },
+    {
+      "concept": "a small, plump body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "A long tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a black mask over the eyes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mask is a facial pattern spanning multiple areas."
+    },
+    {
+      "concept": "a large, conical bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a brownish back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a black and white striped tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a light-colored belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly describes the belly."
+    },
+    {
+      "concept": "a brown cap and white eyebrows",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts and eyebrows are unsupported."
+    },
+    {
+      "concept": "greenish-yellow legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a rusty-brown breast band",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Breast band is a subregion/pattern, not the whole breast annotation."
+    },
+    {
+      "concept": "a white eyebrow",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Eyebrow is unsupported."
+    },
+    {
+      "concept": "a high dispersion",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Abstract non-spatial trait."
+    },
+    {
+      "concept": "all black feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "General plumage description, not one supported part."
+    },
+    {
+      "concept": "yellow eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "a glossy sheen to its feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall feather quality, not one supported part."
+    },
+    {
+      "concept": "a black tail with white sides",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "a buffy breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "yellow bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a long, sharp bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "red legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "bright golden-yellow plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage color, not one supported part."
+    },
+    {
+      "concept": "a white eye-ring",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Eye-ring is localized around the eye."
+    },
+    {
+      "concept": "a white bar on the wing",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily localized on the wing."
+    },
+    {
+      "concept": "grayish brown body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too vague and unsupported."
+    },
+    {
+      "concept": "a Mohs hardness of 10",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not a bird part trait."
+    },
+    {
+      "concept": "a large, sparrow-like bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes whole bird size/type, not a part."
+    },
+    {
+      "concept": "spotted plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage pattern, not one supported part."
+    },
+    {
+      "concept": "blue-gray wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a white or pale underside",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underside is a vague multi-part region."
+    },
+    {
+      "concept": "long, webbed feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are unsupported and not cleanly mappable to leg."
+    },
+    {
+      "concept": "a brown or gray plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage color, not one supported part."
+    },
+    {
+      "concept": "small, slim body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is vague and describes overall shape."
+    },
+    {
+      "concept": "a orange breast and belly",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "a black streak on the head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is too vague; could span multiple supported parts."
+    },
+    {
+      "concept": "a white chest",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Chest aligns best with breast."
+    },
+    {
+      "concept": "a long, black and white tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a tail with a distinct V-shape",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a long tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a black and white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage pattern, not one supported part."
+    },
+    {
+      "concept": "mottled grey and white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage pattern, not one supported part."
+    },
+    {
+      "concept": "gray or olive-gray upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a white tail with a black tip",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "brown and gray feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers are not one supported localized part."
+    },
+    {
+      "concept": "black feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are unsupported."
+    },
+    {
+      "concept": "a crest on the head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Crest does not map cleanly to one supported head part."
+    },
+    {
+      "concept": "wing bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Localized marking on the wing."
+    },
+    {
+      "concept": "a black patch on the back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "white spots on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a small head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is too vague and unsupported as a coarse group."
+    },
+    {
+      "concept": "a yellowish belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly describes the belly."
+    },
+    {
+      "concept": "black legs and feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mixes supported legs with unsupported feet."
+    },
+    {
+      "concept": "Long, hooked bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "pale gray or white color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too generic; not tied to one supported part."
+    },
+    {
+      "concept": "black and white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage pattern, not one supported part."
+    },
+    {
+      "concept": "three toes on each foot",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Foot/toes are unsupported."
+    },
+    {
+      "concept": "a rusty-brown cap",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap aligns with the crown."
+    },
+    {
+      "concept": "a Scarlet-red body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too vague and unsupported."
+    },
+    {
+      "concept": "a red body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too vague and unsupported."
+    },
+    {
+      "concept": "a small, black head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is too vague and unsupported as a coarse group."
+    },
+    {
+      "concept": "a reddish-brown color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too generic; not tied to one supported part."
+    },
+    {
+      "concept": "long, thin antennae",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Antennae are not bird parts in CUB."
+    },
+    {
+      "concept": "pale pink legs and feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mixes supported legs with unsupported feet."
+    },
+    {
+      "concept": "white and black coloration",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global coloration, not one supported part."
+    },
+    {
+      "concept": "a small, conical bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a streaked brown plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "a black cheek patch",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Cheek is not a supported CUB part group."
+    },
+    {
+      "concept": "pale brown upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a black ring around the bill",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Around the bill is not the beak itself and does not map cleanly to one part."
+    },
+    {
+      "concept": "a brownish-gray upper body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upper body is a vague multi-part region."
+    },
+    {
+      "concept": "a thin, pointed beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a brown back with dark streaks",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "long, black legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a brown cap with a white cheek",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines crown with unsupported cheek."
+    },
+    {
+      "concept": "a long, hooked beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a streaked chest",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Chest aligns to the breast region."
+    },
+    {
+      "concept": "A blue sheen on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a black band on the wing",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Maps to the wing as the supported coarse part."
+    },
+    {
+      "concept": "a small, slim bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes whole-bird size and build."
+    },
+    {
+      "concept": "two white bars on wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "greenish-yellow upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "dark blue-gray upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a yellow breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "a dark blue-black upper body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upper body is a vague multi-part region."
+    },
+    {
+      "concept": "a black cap",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap aligns to the crown."
+    },
+    {
+      "concept": "a black head and back",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head and back spans multiple parts."
+    },
+    {
+      "concept": "a long, thick bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps to beak."
+    },
+    {
+      "concept": "long black tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a long, slender beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a yellow body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a black cap and back",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines crown and back, so not one part."
+    },
+    {
+      "concept": "white coloration on the body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "two white bars on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a long, yellow bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps to beak."
+    },
+    {
+      "concept": "a large head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is not a supported coarse part."
+    },
+    {
+      "concept": "a black and white striped head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head spans multiple unsupported/supported subparts."
+    },
+    {
+      "concept": "long, brown legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "long wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a white crown",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Directly describes the crown."
+    },
+    {
+      "concept": "eyes are yellow",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "long, white legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a brown or bronzy plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "orange-yellow legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a black stripe down its neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a grayish-brown head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is not a supported coarse part."
+    },
+    {
+      "concept": "a hard, crystalline structure",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not a bird part annotation concept."
+    },
+    {
+      "concept": "iridescent blue-green back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "dark streaks on the breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "grey sides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Sides is not a supported coarse part."
+    },
+    {
+      "concept": "brown and white feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers are general and not one supported part."
+    },
+    {
+      "concept": "a broad, round beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "pale pink legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "green plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "a brown or gray back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "white body with gray wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines unsupported body with wing, so not one part."
+    },
+    {
+      "concept": "black and white tail feathers",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "white undersides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Undersides is a vague multi-part region, not one supported part."
+    },
+    {
+      "concept": "a small bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a gray head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head spans multiple supported parts, not one coarse part."
+    },
+    {
+      "concept": "short, dark legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "long, thin legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a white body with gray wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to body plus wings, so multiple parts."
+    },
+    {
+      "concept": "green and white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is whole-bird coloration, not one supported part."
+    },
+    {
+      "concept": "a black or dark grey plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is whole-bird coloration, not one supported part."
+    },
+    {
+      "concept": "yellowish upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a long tail with a black tip",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "beak and legs are black",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes multiple supported parts at once."
+    },
+    {
+      "concept": "orange throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Directly describes the throat."
+    },
+    {
+      "concept": "a large body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and too broad."
+    },
+    {
+      "concept": "white undertail feathers",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Undertail feathers align to the tail region."
+    },
+    {
+      "concept": "iridescent black feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers is generic whole-plumage description, not one part."
+    },
+    {
+      "concept": "a grayish-brown body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and too broad."
+    },
+    {
+      "concept": "a green back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a pointed beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a red belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly describes the belly."
+    },
+    {
+      "concept": "a short, black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a long, narrow tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a glossy, black plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a global trait, not one supported part."
+    },
+    {
+      "concept": "a small black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a small, blue bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes the whole bird, not one part."
+    },
+    {
+      "concept": "a dark gray back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a small, sleek body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and shape-like."
+    },
+    {
+      "concept": "shape",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Abstract trait, not a localizable supported part."
+    },
+    {
+      "concept": "a long, deeply forked tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "white undertail coverts",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Undertail coverts align best with the tail region."
+    },
+    {
+      "concept": "a white body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and too broad."
+    },
+    {
+      "concept": "brown streaks on the sides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Sides is a vague body region, not one supported part."
+    },
+    {
+      "concept": "shaggy appearance",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Appearance is abstract and not tied to one supported part."
+    },
+    {
+      "concept": "a long, snake-like neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported coarse part group."
+    },
+    {
+      "concept": "a black stripe on the wing",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wing."
+    },
+    {
+      "concept": "a long, notched tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "white stripes above the eyes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Above the eyes maps to forehead/supercilium ambiguously, so not clean."
+    },
+    {
+      "concept": "black streaks on the sides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Sides is a vague body region, not one supported part."
+    },
+    {
+      "concept": "two red eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is whole-bird coloration, not one supported part."
+    },
+    {
+      "concept": "a grayish-white body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and too broad."
+    },
+    {
+      "concept": "a black bill with a yellow tip",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a long, thin neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported coarse part group."
+    },
+    {
+      "concept": "red eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "a gray breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "yellowish stripes on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "grayish-white underparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underparts is a vague multi-part region."
+    },
+    {
+      "concept": "a thin, black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a long, pointed wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a black crescent on the breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Primarily describes the breast."
+    },
+    {
+      "concept": "a reddish-brown body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes the whole body, not one supported part."
+    },
+    {
+      "concept": "yellow wings with black bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a long, pointed beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a large, orange bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a small, blackbird-like bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall bird type/size, not a supported part."
+    },
+    {
+      "concept": "a long, pointed tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "brownish wings with white bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a purple-red head and breast",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts and includes unsupported head."
+    },
+    {
+      "concept": "a black band across its eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Centered on the eye region."
+    },
+    {
+      "concept": "a red cap on the head",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap maps to crown."
+    },
+    {
+      "concept": "a yellow eyebrow",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Eyebrow is not a supported part annotation."
+    },
+    {
+      "concept": "a small, forked tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a black cap and bib",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts: crown and throat/breast region."
+    },
+    {
+      "concept": "A black body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a raucous voice",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral/acoustic trait, not a part."
+    },
+    {
+      "concept": "a brownish-gray color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global color trait without a specific part."
+    },
+    {
+      "concept": "a yellow crown",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Directly describes the crown."
+    },
+    {
+      "concept": "a black and white body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a small bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size, not a part."
+    },
+    {
+      "concept": "a small, greenish-gray bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall bird description, not a supported part."
+    },
+    {
+      "concept": "orange feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are not a supported part group."
+    },
+    {
+      "concept": "a small, plump bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall body shape/size, not a part."
+    },
+    {
+      "concept": "a black head, back, and tail",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts and unsupported head."
+    },
+    {
+      "concept": "a whitish throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Directly describes the throat."
+    },
+    {
+      "concept": "a bright green back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a long, brown tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a white stripe on the tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly localizable to the tail."
+    },
+    {
+      "concept": "a black collar",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Collar is an ambiguous neck region, not a supported part."
+    },
+    {
+      "concept": "white belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly describes the belly."
+    },
+    {
+      "concept": "a loud cawing sound",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral/acoustic trait, not a part."
+    },
+    {
+      "concept": "yellow wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a grey back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "yellow beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "long, narrow wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a medium-sized duck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall animal type/size, not a part."
+    },
+    {
+      "concept": "a small, blue-green body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported."
+    },
+    {
+      "concept": "a small, rounded body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body shape, not a supported part."
+    },
+    {
+      "concept": "white belly and undertail",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple regions, one unsupported as stated."
+    },
+    {
+      "concept": "a medium-sized bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size, not a part."
+    },
+    {
+      "concept": "orange or yellow eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "a black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "large wingspan",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global size measurement, not a localized part annotation."
+    },
+    {
+      "concept": "a white belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly describes the belly."
+    },
+    {
+      "concept": "a black or dark gray color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global color trait without a specific part."
+    },
+    {
+      "concept": "grayish upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a long, slender body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body shape, not a supported part."
+    },
+    {
+      "concept": "a black and white barred tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a yellow body with black wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts and includes unsupported body."
+    },
+    {
+      "concept": "a black hood and back",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple parts and hood is unsupported."
+    },
+    {
+      "concept": "a stocky body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body shape, not a supported part."
+    },
+    {
+      "concept": "a long, pointed bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "All-dark plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "brown upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a small, slender body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is not a supported single part."
+    },
+    {
+      "concept": "long, brown wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "large eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "a thick bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "yellowish sides and flanks",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Sides and flanks do not map cleanly to one supported part."
+    },
+    {
+      "concept": "greenish upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a thin beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a black and white coloring",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global color pattern, not one localized part."
+    },
+    {
+      "concept": "a long bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a small, dark body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is not a supported single part."
+    },
+    {
+      "concept": "a wingspan of about 3 feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size measurement, not a localized part annotation."
+    },
+    {
+      "concept": "black legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a seabird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Taxonomic/ecological description, not a part."
+    },
+    {
+      "concept": "a pale grayish-white underbody",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underbody is a vague region, not one supported part."
+    },
+    {
+      "concept": "a large, red breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "black wingtips",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wingtips are too specific relative to whole wing annotation."
+    },
+    {
+      "concept": "a long, hooked bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a stout body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is not a supported single part."
+    },
+    {
+      "concept": "a small tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "large black bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird description, not one supported part."
+    },
+    {
+      "concept": "a slender, white body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is not a supported single part."
+    },
+    {
+      "concept": "a bright orange breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "pale blue-gray upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a gray back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a white throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Directly describes the throat."
+    },
+    {
+      "concept": "a black crest on the head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Crest/head does not map cleanly to a supported part."
+    },
+    {
+      "concept": "a greenish back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "white stripes on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes markings on the wings."
+    },
+    {
+      "concept": "a long, black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a black breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "long, black wingtips",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wingtips are too specific relative to whole wing annotation."
+    },
+    {
+      "concept": "a long, curved bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a stout, conical bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a green tail with a white edge",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "a small, conical beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "red feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers are not a single supported localized part."
+    },
+    {
+      "concept": "a slimmer body than most crows",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body/overall build is not a supported part."
+    },
+    {
+      "concept": "a red spot on the beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Localized on the beak."
+    },
+    {
+      "concept": "a pointed bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a red cap on the male",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Cap does not map cleanly to crown/forehead annotation."
+    },
+    {
+      "concept": "dark blue-black upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a long body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is not a supported single part."
+    },
+    {
+      "concept": "a gray body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is not a supported single part."
+    },
+    {
+      "concept": "a black patch on the breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Localized on the breast."
+    },
+    {
+      "concept": "a small to medium-sized bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size of the bird, not a part."
+    },
+    {
+      "concept": "short, yellow legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "a tail with white bars",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Localized pattern on the tail."
+    },
+    {
+      "concept": "dark gray or black upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "\"Upperparts\" is a vague multi-part region, not one supported part."
+    },
+    {
+      "concept": "black and orange plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage coloration, not a single supported part."
+    },
+    {
+      "concept": "white sides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "\"Sides\" is not a supported coarse part group."
+    },
+    {
+      "concept": "a brown cap",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "\"Cap\" maps cleanly to the crown."
+    },
+    {
+      "concept": "a white underbelly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Underbelly maps to the belly."
+    },
+    {
+      "concept": "brown wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a yellow or orange beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Direct match to beak."
+    },
+    {
+      "concept": "streaks of white on its wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes coloration on the wings."
+    },
+    {
+      "concept": "gray feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too general; feathers are not one supported part."
+    },
+    {
+      "concept": "silky, brown feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too general and partly texture-based, not one supported part."
+    },
+    {
+      "concept": "a long, curved tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a small, white bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes whole bird size/color, not one part."
+    },
+    {
+      "concept": "a black mask through the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mask is a face pattern spanning unsupported regions, not just the eye."
+    },
+    {
+      "concept": "a short, conical beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a yellowish eyebrow",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Eyebrow/supercilium is not a supported coarse part."
+    },
+    {
+      "concept": "a small, grayish-brown bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes whole bird appearance, not one part."
+    },
+    {
+      "concept": "a red breast (males only)",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Direct match to breast."
+    },
+    {
+      "concept": "a violet ear patch",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Ear patch is not a supported part group."
+    },
+    {
+      "concept": "a long, straight beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a white ring around the neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck ring spans an unsupported neck region, not one supported part."
+    },
+    {
+      "concept": "White wingtips",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wingtips are too specific relative to the whole wing annotation."
+    },
+    {
+      "concept": "a yellow throat and breast",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mentions two supported parts at once."
+    },
+    {
+      "concept": "a black band across the breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Localized to the breast."
+    },
+    {
+      "concept": "brownish-gray plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage coloration, not a single part."
+    },
+    {
+      "concept": "pale belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Direct match to belly."
+    },
+    {
+      "concept": "a small, sparrow-like bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall bird description, not a supported part."
+    },
+    {
+      "concept": "a long, thin tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a white stripe over the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Stripe over the eye is not the eye itself and does not map cleanly to a supported part."
+    },
+    {
+      "concept": "a long, pointy beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a black throat and upper chest",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mentions throat plus upper chest/breast, so it spans multiple regions."
+    },
+    {
+      "concept": "long wingspan",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "short tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a brown back and white belly",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mentions two supported parts at once."
+    },
+    {
+      "concept": "a black bib with white stripes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Bib is not a clean supported part mapping; it spans throat/upper breast ambiguously."
+    },
+    {
+      "concept": "long tail with white stripes",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily localized to the tail."
+    },
+    {
+      "concept": "iridescent green feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too general; feathers are not one supported part."
+    },
+    {
+      "concept": "a black or dark gray plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage coloration, not a single part."
+    },
+    {
+      "concept": "a light stripe above the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Stripe above the eye is not the eye itself and does not map cleanly to a supported part."
+    },
+    {
+      "concept": "a yellowish bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps to beak."
+    },
+    {
+      "concept": "a big head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is not a supported coarse part group."
+    },
+    {
+      "concept": "a small, round head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is not a supported coarse part group."
+    },
+    {
+      "concept": "a black tail with white bars",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "black mask",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mask is a facial region pattern, not one supported part."
+    },
+    {
+      "concept": "a trackpad or mouse",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not a bird part concept."
+    },
+    {
+      "concept": "red skin around the face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face is an unsupported vague region."
+    },
+    {
+      "concept": "a black back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Direct match to back."
+    },
+    {
+      "concept": "a brown or grayish body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region, not one supported part."
+    },
+    {
+      "concept": "all black coloration",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global coloration, not localized to one part."
+    },
+    {
+      "concept": "a dark blue or black back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Direct match to back."
+    },
+    {
+      "concept": "a black back and tail",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mentions two supported parts at once."
+    },
+    {
+      "concept": "a black band on the tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a rust-colored cap and nape",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts, not one single part group."
+    },
+    {
+      "concept": "a large, brown bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes the whole bird, not a single supported part."
+    },
+    {
+      "concept": "a dark line through the eye",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Primarily localized to the eye region."
+    },
+    {
+      "concept": "black and white wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a gray plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a whole-bird trait, not one supported part."
+    },
+    {
+      "concept": "short legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "two long wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a large, cone-shaped bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "black head, neck, and back",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Covers multiple regions, not one supported part."
+    },
+    {
+      "concept": "gray upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "grey upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a small, black bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "yellowish underparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underparts is a vague multi-part region."
+    },
+    {
+      "concept": "a long, curved neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported coarse part group."
+    },
+    {
+      "concept": "white breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "webbed feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are not a supported part group."
+    },
+    {
+      "concept": "a swift, acrobatic flight",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral trait, not a localizable part."
+    },
+    {
+      "concept": "a bright red breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "iridescent feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers is a broad non-part-specific trait."
+    },
+    {
+      "concept": "a black wings and tail",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts, not one single part group."
+    },
+    {
+      "concept": "long, tapered wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a large, plump body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region."
+    },
+    {
+      "concept": "a small to medium size",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size is not a part annotation."
+    },
+    {
+      "concept": "greenish-yellow back and wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts, not one single part group."
+    },
+    {
+      "concept": "a grayish-brown back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "a white rump",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Rump is not a supported coarse part group."
+    },
+    {
+      "concept": "a yellow head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a red throat pouch",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Primarily describes the throat region."
+    },
+    {
+      "concept": "A short tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail."
+    },
+    {
+      "concept": "a white underside",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underside is a vague multi-part region."
+    },
+    {
+      "concept": "a blue back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back."
+    },
+    {
+      "concept": "brownish plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a whole-bird trait, not one supported part."
+    },
+    {
+      "concept": "a yellow eye",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eye."
+    },
+    {
+      "concept": "a black and white striped body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region."
+    },
+    {
+      "concept": "black feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feathers is not a single supported part group."
+    },
+    {
+      "concept": "a long, thick neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported coarse part group."
+    },
+    {
+      "concept": "rufous (red-brown) color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Color alone is not tied to one supported part."
+    },
+    {
+      "concept": "yellowish legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "relatively long wings and tail",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts, not one single part group."
+    },
+    {
+      "concept": "a thin, curved bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "hairy body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region."
+    },
+    {
+      "concept": "a brownish-olive upper body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upper body is a vague multi-part region."
+    },
+    {
+      "concept": "a clear, melodious song",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral or acoustic trait, not a localizable part."
+    },
+    {
+      "concept": "a white patch on its wing",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily localized to the wing."
+    },
+    {
+      "concept": "a black-and-white striped head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a white head and neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Covers unsupported or multiple regions, not one supported part."
+    },
+    {
+      "concept": "a black wingtips",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wingtips are too specific relative to the whole wing annotation."
+    },
+    {
+      "concept": "a pointy crest on the head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Crest/head does not map cleanly to one supported part."
+    },
+    {
+      "concept": "long, pointed wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a large, hooked bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "white underwings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underwings is too specific and not the whole wing part."
+    },
+    {
+      "concept": "a yellowish breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Describes the breast directly."
+    },
+    {
+      "concept": "a brown and white color scheme",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global coloration, not a single supported part."
+    },
+    {
+      "concept": "long, black ear tufts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Ear tufts are not a supported CUB part."
+    },
+    {
+      "concept": "a short, stubby beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Describes the beak directly."
+    },
+    {
+      "concept": "all black body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported as one part."
+    },
+    {
+      "concept": "a long, graceful neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not a supported coarse part."
+    },
+    {
+      "concept": "a rusty brown color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "General color trait, not localized to one part."
+    },
+    {
+      "concept": "a small songbird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird type/size, not a part."
+    },
+    {
+      "concept": "white streaks on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Pattern localized to the wings."
+    },
+    {
+      "concept": "shaggy feathers",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feather texture is not tied to one supported part."
+    },
+    {
+      "concept": "a black line through each eye",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Primarily centered on the eye region."
+    },
+    {
+      "concept": "a short tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Describes the tail directly."
+    },
+    {
+      "concept": "white breast with brown spots",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Describes the breast directly."
+    },
+    {
+      "concept": "a white body with black wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to multiple regions, not one supported part."
+    },
+    {
+      "concept": "a light gray or white chest",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Chest does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a white stripe over each eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Over-eye stripe is not the eye part itself."
+    },
+    {
+      "concept": "a brownish-red breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Describes the breast directly."
+    },
+    {
+      "concept": "a large, stocky bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird size/build, not a part."
+    },
+    {
+      "concept": "a black band across the chest",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Chest does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a black neck and head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines multiple unsupported/supported regions."
+    },
+    {
+      "concept": "long, blue-gray wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes the wings directly."
+    },
+    {
+      "concept": "yellowish sides",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Sides is a vague body region."
+    },
+    {
+      "concept": "a black mask across the face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face is a vague multi-part region."
+    },
+    {
+      "concept": "a black ring around the eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Primarily describes the eye region."
+    },
+    {
+      "concept": "grey or brown plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall plumage color, not one part."
+    },
+    {
+      "concept": "a black head and neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines multiple regions and neck is unsupported."
+    },
+    {
+      "concept": "a small, drab-colored bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird description, not a part."
+    },
+    {
+      "concept": "a rusty-red throat and breast",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "black wings with white spots",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes the wings directly."
+    },
+    {
+      "concept": "grey or black wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes the wings directly."
+    },
+    {
+      "concept": "gray head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is broader than any one supported part."
+    },
+    {
+      "concept": "large size",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size, not a part."
+    },
+    {
+      "concept": "a short, thick beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Describes the beak directly."
+    },
+    {
+      "concept": "a reddish-brown back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Describes the back directly."
+    },
+    {
+      "concept": "a yellow throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Describes the throat directly."
+    },
+    {
+      "concept": "a long, flowing tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Describes the tail directly."
+    },
+    {
+      "concept": "a small, black bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird description, not a part."
+    },
+    {
+      "concept": "a light-colored underside",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underside is a vague multi-part region."
+    },
+    {
+      "concept": "a large bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird size, not a part."
+    },
+    {
+      "concept": "gray body with black spots",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported as one part."
+    },
+    {
+      "concept": "a small, round body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body shape is not a supported part."
+    },
+    {
+      "concept": "a black hood",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Hood covers multiple head regions, not one part."
+    },
+    {
+      "concept": "blue-grey wings and back",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "black markings on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes the wings directly."
+    },
+    {
+      "concept": "long, black wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Describes the wings directly."
+    },
+    {
+      "concept": "large body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported as one part."
+    },
+    {
+      "concept": "olive-gray upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a pinkish breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Describes the breast directly."
+    },
+    {
+      "concept": "a yellow belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly describes the belly, which is a supported part."
+    },
+    {
+      "concept": "Shiny black plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "a loud caw",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavior/vocalization, not a localizable body part."
+    },
+    {
+      "concept": "a violet patch near each ear",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Ear region is not a supported part group."
+    },
+    {
+      "concept": "a white or light-colored belly",
+      "keep": true,
+      "part_group": "belly",
+      "exact_parts": [
+        "belly"
+      ],
+      "rationale": "Directly refers to the belly."
+    },
+    {
+      "concept": "blue eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly refers to the eyes, mapped to eye."
+    },
+    {
+      "concept": "white underparts with streaks",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underparts is a vague multi-part region."
+    },
+    {
+      "concept": "a streaked breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "dark wingtips",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Too specific relative to the whole wing annotation."
+    },
+    {
+      "concept": "all-white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "blue upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a yellow cap on the head",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap on the head aligns best with crown."
+    },
+    {
+      "concept": "a black bib with white border",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Bib is best aligned with the throat area."
+    },
+    {
+      "concept": "brownish-grey upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "white tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly refers to the tail."
+    },
+    {
+      "concept": "forked tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Tail is a supported part even though shape is mentioned."
+    },
+    {
+      "concept": "a brown streak down its back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly refers to the back."
+    },
+    {
+      "concept": "blue wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly refers to the wings, mapped to wing."
+    },
+    {
+      "concept": "a black stripe through the eye",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Primarily localized to the eye region."
+    },
+    {
+      "concept": "a short, hooked beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Beak is a supported part."
+    },
+    {
+      "concept": "orange eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly refers to the eyes, mapped to eye."
+    },
+    {
+      "concept": "iridescent green plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall plumage, not one supported part."
+    },
+    {
+      "concept": "a loud, high-pitched song",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavior/vocalization, not a body part."
+    },
+    {
+      "concept": "long, dark wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly refers to the wings."
+    },
+    {
+      "concept": "a large, white body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region."
+    },
+    {
+      "concept": "a black stripe on the head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is too broad and does not map cleanly to one part."
+    },
+    {
+      "concept": "a light brown or grayish color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global color trait with no specific supported part."
+    },
+    {
+      "concept": "large webbed feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are not a supported part group."
+    },
+    {
+      "concept": "a grayish-brown crown",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Directly refers to the crown."
+    },
+    {
+      "concept": "Glossy black wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly refers to the wings."
+    },
+    {
+      "concept": "a white collar around the neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck/collar does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a brown back and wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes multiple supported parts at once."
+    },
+    {
+      "concept": "a pale orange or brown breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly refers to the breast."
+    },
+    {
+      "concept": "a red breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly refers to the breast."
+    },
+    {
+      "concept": "black cap and white \"eyeline\"",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes multiple parts at once: crown and eye region."
+    },
+    {
+      "concept": "a white face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face is a vague unsupported region."
+    },
+    {
+      "concept": "blue wings with black bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "yellowish eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly refers to the eyes, mapped to eye."
+    },
+    {
+      "concept": "long, powerful wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly refers to the wings."
+    },
+    {
+      "concept": "a brownish cap",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap aligns best with crown."
+    },
+    {
+      "concept": "dark brown stripes on the back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly refers to the back."
+    },
+    {
+      "concept": "a long beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Beak is a supported part."
+    },
+    {
+      "concept": "a short, stubby bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps directly to beak."
+    },
+    {
+      "concept": "brown streaks on the chest",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Chest aligns best with breast."
+    },
+    {
+      "concept": "olive-green upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a large, white bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole bird description, not one supported part."
+    },
+    {
+      "concept": "a short, pointed tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly refers to the tail."
+    },
+    {
+      "concept": "a ruby-red throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Directly refers to the throat."
+    },
+    {
+      "concept": "a short, stubby tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly refers to the tail."
+    },
+    {
+      "concept": "Yellow eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly refers to the eyes, mapped to eye."
+    },
+    {
+      "concept": "black wings with white bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings, a supported part group."
+    },
+    {
+      "concept": "a round body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall body shape, not a supported localized part."
+    },
+    {
+      "concept": "a brown or reddish cap",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap maps cleanly to the crown."
+    },
+    {
+      "concept": "a yellow bill with a red spot",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps to beak, and the description stays on that part."
+    },
+    {
+      "concept": "a large, bulky body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes overall body size/build, not a supported part."
+    },
+    {
+      "concept": "a small, blue body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and unsupported as a coarse part."
+    },
+    {
+      "concept": "a bright yellow body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region, not a supported part."
+    },
+    {
+      "concept": "a high refractive index",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not a bird part or localizable visual part annotation."
+    },
+    {
+      "concept": "yellow tips on the wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wingtips are more specific than the supported whole wing annotation."
+    },
+    {
+      "concept": "orange legs and feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mixes leg with unsupported feet, so it does not map cleanly."
+    },
+    {
+      "concept": "pointed wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a white breast and belly",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "a long, curved beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Cleanly describes the beak."
+    },
+    {
+      "concept": "a long, thin body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and too broad."
+    },
+    {
+      "concept": "a small, brown body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and not a single annotated part."
+    },
+    {
+      "concept": "a long, black tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Cleanly describes the tail."
+    },
+    {
+      "concept": "a black cap on its head",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap maps to the crown."
+    },
+    {
+      "concept": "a yellow head and breast",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines head region with breast, not a single supported part."
+    },
+    {
+      "concept": "a rosy breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Cleanly describes the breast."
+    },
+    {
+      "concept": "brown back and wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "a large, bulbous beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Cleanly describes the beak."
+    },
+    {
+      "concept": "a black and white head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is too broad and not a supported coarse part."
+    },
+    {
+      "concept": "a white stripe on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a white chin and throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Chin aligns most closely with the throat region."
+    },
+    {
+      "concept": "a white line above the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Above-eye stripe is not the eye itself and lacks a supported matching part."
+    },
+    {
+      "concept": "a clear or translucent color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Not tied to any localized supported part."
+    },
+    {
+      "concept": "a black body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region, not a supported part."
+    },
+    {
+      "concept": "a long, orange beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Cleanly describes the beak."
+    },
+    {
+      "concept": "a short, blunt beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Cleanly describes the beak."
+    },
+    {
+      "concept": "a long, narrow bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "blue and white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a whole-bird trait, not one supported part."
+    },
+    {
+      "concept": "a black and white striped back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Cleanly describes the back."
+    },
+    {
+      "concept": "a white eye ring",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "An eye ring is localized around the eye and aligns to eye."
+    },
+    {
+      "concept": "gray and white plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is global, not a single supported part."
+    },
+    {
+      "concept": "long legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Cleanly describes the legs."
+    },
+    {
+      "concept": "a dark brown or black color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Color alone is not tied to any supported part."
+    },
+    {
+      "concept": "red-brown color",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Color alone is not tied to any supported part."
+    },
+    {
+      "concept": "all black plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Whole-bird plumage pattern, not one supported part."
+    },
+    {
+      "concept": "a short, notched tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Cleanly describes the tail."
+    },
+    {
+      "concept": "white bars on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "grey and white mottled plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a global trait, not one supported part."
+    },
+    {
+      "concept": "a loud, musical song",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral/acoustic trait, not a localizable part."
+    },
+    {
+      "concept": "a small, pointed bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a blue-gray body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is unsupported and too broad."
+    },
+    {
+      "concept": "a long neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck is not among the supported part groups."
+    },
+    {
+      "concept": "a black \"mask\" around the eyes",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mask around the eyes spans a broader face region, not cleanly the eye part."
+    },
+    {
+      "concept": "a gray back with black streaks",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Cleanly describes the back."
+    },
+    {
+      "concept": "a long tail with a white tip",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "yellow bar on wing",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wing."
+    },
+    {
+      "concept": "a blue head",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Head is too broad and not a supported coarse part."
+    },
+    {
+      "concept": "a black mask on the face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face mask spans multiple unsupported facial regions, not one annotated part."
+    },
+    {
+      "concept": "red shoulders",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Shoulders are not a supported CUB part group."
+    },
+    {
+      "concept": "A conical bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to the beak part."
+    },
+    {
+      "concept": "a swift, direct flight",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavioral trait, not a localizable body part."
+    },
+    {
+      "concept": "a greenish-yellow body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and not one supported part."
+    },
+    {
+      "concept": "a long, stout beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a black ring around the neck",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Neck ring spans around the neck, not one supported part."
+    },
+    {
+      "concept": "red and yellow wingtips",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Wingtips are too specific relative to the whole wing annotation."
+    },
+    {
+      "concept": "grayish-brown plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a whole-bird trait, not one part."
+    },
+    {
+      "concept": "a white throat and breast",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "a red face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face is a vague multi-part region, not one supported part."
+    },
+    {
+      "concept": "a black eye stripe",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Stripe near the eye is not the eye part itself."
+    },
+    {
+      "concept": "blue plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global plumage color, not a single supported part."
+    },
+    {
+      "concept": "a rusty-red breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Directly describes the breast."
+    },
+    {
+      "concept": "a black tail with a white tip",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Primarily describes the tail."
+    },
+    {
+      "concept": "a black streak on the breast",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Localized on the breast."
+    },
+    {
+      "concept": "a large, gray body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and includes size, not one part."
+    },
+    {
+      "concept": "a black stripe above the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Above-eye stripe is adjacent to the eye, not the eye itself."
+    },
+    {
+      "concept": "olive upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "a yellow beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "white patches on the wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Localized on the wings."
+    },
+    {
+      "concept": "yellow legs and feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Combines legs with unsupported feet."
+    },
+    {
+      "concept": "white spots on its wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Localized on the wings."
+    },
+    {
+      "concept": "white wing bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Wing bars are markings on the wing."
+    },
+    {
+      "concept": "beak is curved and pointed",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes beak shape."
+    },
+    {
+      "concept": "a loud, harsh cry",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Vocal behavior, not a body part."
+    },
+    {
+      "concept": "a large, hawk-like body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall body form, not one supported part."
+    },
+    {
+      "concept": "brown wings with white bars",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings."
+    },
+    {
+      "concept": "a black line through the eye",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Eye line is a surrounding marking, not the eye part itself."
+    },
+    {
+      "concept": "yellow or orange plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Global plumage trait, not one supported part."
+    },
+    {
+      "concept": "a small to medium sized bird",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall size, not a localizable part."
+    },
+    {
+      "concept": "a long, orange-red beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "streaked upperparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Upperparts is a vague multi-part region."
+    },
+    {
+      "concept": "gray wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "a small, brown bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to the beak part."
+    },
+    {
+      "concept": "a black head with a white beak",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Mentions head plus beak, so not one supported part."
+    },
+    {
+      "concept": "short, black legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs."
+    },
+    {
+      "concept": "grayish wings and tail",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Refers to two supported parts at once."
+    },
+    {
+      "concept": "black eyes",
+      "keep": true,
+      "part_group": "eye",
+      "exact_parts": [
+        "left eye",
+        "right eye"
+      ],
+      "rationale": "Directly describes the eyes."
+    },
+    {
+      "concept": "a long, thin beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak."
+    },
+    {
+      "concept": "a small, delicate body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body/overall build is not one supported part."
+    },
+    {
+      "concept": "green wings",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Directly describes the wings."
+    },
+    {
+      "concept": "yellow underparts",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Underparts is a vague multi-part region."
+    },
+    {
+      "concept": "size",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Abstract overall size trait, not a part."
+    },
+    {
+      "concept": "a brown body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is too broad and not one supported part."
+    },
+    {
+      "concept": "a black throat",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Directly describes the throat."
+    },
+    {
+      "concept": "a rusty cap",
+      "keep": true,
+      "part_group": "crown",
+      "exact_parts": [
+        "crown"
+      ],
+      "rationale": "Cap maps best to the crown."
+    },
+    {
+      "concept": "long tail feathers",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Tail feathers map to the tail part."
+    },
+    {
+      "concept": "a plump body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall body shape, not one supported part."
+    },
+    {
+      "concept": "a small, thin body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Overall body build, not one supported part."
+    },
+    {
+      "concept": "a blue-gray back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back, which is a supported part."
+    },
+    {
+      "concept": "a greenish-yellow back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back, which is a supported part."
+    },
+    {
+      "concept": "brown wings with white stripes",
+      "keep": true,
+      "part_group": "wing",
+      "exact_parts": [
+        "left wing",
+        "right wing"
+      ],
+      "rationale": "Primarily describes the wings, which map to the coarse wing group."
+    },
+    {
+      "concept": "a long, sharp beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak, which is supported."
+    },
+    {
+      "concept": "a dark, glossy bill",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Bill maps cleanly to beak."
+    },
+    {
+      "concept": "a black or dark gray body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a whole-bird/vague region, not a supported single part."
+    },
+    {
+      "concept": "a black back and wings",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Describes multiple supported parts at once."
+    },
+    {
+      "concept": "yellow feet",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Feet are not a supported part group."
+    },
+    {
+      "concept": "gray or brown plumage",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Plumage is a global trait, not one supported part."
+    },
+    {
+      "concept": "a long, black beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak, which is supported."
+    },
+    {
+      "concept": "a yellow throat and chin",
+      "keep": true,
+      "part_group": "throat",
+      "exact_parts": [
+        "throat"
+      ],
+      "rationale": "Primarily refers to the throat region; chin is not separate in the coarse set."
+    },
+    {
+      "concept": "a short beak",
+      "keep": true,
+      "part_group": "beak",
+      "exact_parts": [
+        "beak"
+      ],
+      "rationale": "Directly describes the beak, which is supported."
+    },
+    {
+      "concept": "a small, compact body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body/overall size does not align to one supported part."
+    },
+    {
+      "concept": "a black V on the back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "The marked region is the back, which is supported."
+    },
+    {
+      "concept": "olive-green back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back, which is a supported part."
+    },
+    {
+      "concept": "a long, tapered tail",
+      "keep": true,
+      "part_group": "tail",
+      "exact_parts": [
+        "tail"
+      ],
+      "rationale": "Directly describes the tail, which is supported."
+    },
+    {
+      "concept": "a streaked brown back",
+      "keep": true,
+      "part_group": "back",
+      "exact_parts": [
+        "back"
+      ],
+      "rationale": "Directly describes the back, which is a supported part."
+    },
+    {
+      "concept": "a loud, melodious song",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Behavior/vocalization is not a spatial part attribute."
+    },
+    {
+      "concept": "short, brown legs",
+      "keep": true,
+      "part_group": "leg",
+      "exact_parts": [
+        "left leg",
+        "right leg"
+      ],
+      "rationale": "Directly describes the legs, which map to the coarse leg group."
+    },
+    {
+      "concept": "a blue body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a vague whole-bird region, not a supported single part."
+    },
+    {
+      "concept": "white stripes on the face",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Face is a vague region and does not map cleanly to one supported part."
+    },
+    {
+      "concept": "a grey or brown body",
+      "keep": false,
+      "part_group": null,
+      "exact_parts": [],
+      "rationale": "Body is a whole-bird/vague region, not a supported single part."
+    },
+    {
+      "concept": "a gray chest",
+      "keep": true,
+      "part_group": "breast",
+      "exact_parts": [
+        "breast"
+      ],
+      "rationale": "Chest aligns cleanly with the breast part."
+    }
+  ]
+}
