@@ -245,64 +245,75 @@ def min_normalized_distance(px: int, py: int, points: Sequence[Tuple[float, floa
     return 1.0 if best is None else float(best)
 
 
-def oracle_point_metrics(
+def batched_oracle_metrics(
     score_maps: torch.Tensor,
-    points: Sequence[Tuple[float, float]],
-    diag: float,
-) -> Tuple[float, int, int]:
-    flat = score_maps.flatten(1).argmax(dim=1)
-    ys = (flat // score_maps.shape[-1]).float()
-    xs = (flat % score_maps.shape[-1]).float()
-    point_tensor = torch.tensor(points, dtype=torch.float32, device=score_maps.device)
-    dx = xs[:, None] - point_tensor[None, :, 0]
-    dy = ys[:, None] - point_tensor[None, :, 1]
-    dists = torch.sqrt(dx.square() + dy.square()) / max(float(diag), 1e-8)
-    best_idx = int(dists.amin(dim=1).argmin().item())
-    best_dist = float(dists[best_idx].min().item())
-    best_y = int(ys[best_idx].item())
-    best_x = int(xs[best_idx].item())
-    return best_dist, best_x, best_y
-
-
-def oracle_threshold_metrics(
-    score_maps: torch.Tensor,
-    gt_mask: torch.Tensor,
-    point_mask: torch.Tensor,
+    points_per_target: Sequence[Sequence[Tuple[float, float]]],
+    gt_masks: torch.Tensor,
+    point_masks: torch.Tensor,
     thresholds: Sequence[float],
+    radii: Sequence[float],
+    diag: float,
     chunk_size: int,
-) -> Dict[float, Dict[str, float]]:
-    score_flat = score_maps.flatten(1).cpu()
-    gt_flat = gt_mask.flatten().cpu()
-    point_flat = point_mask.flatten().cpu()
-    gt_idx = torch.nonzero(gt_flat, as_tuple=False).flatten()
-    point_idx = torch.nonzero(point_flat, as_tuple=False).flatten()
-    gt_sum = int(gt_idx.numel())
-    out: Dict[float, Dict[str, float]] = {}
+) -> Dict[str, object]:
+    device = score_maps.device
+    score_flat = score_maps.flatten(1)
+    gt_flat = gt_masks.to(device=device, dtype=torch.float32).flatten(1)
+    point_flat = point_masks.to(device=device, dtype=torch.float32).flatten(1)
+    gt_sum = gt_flat.sum(dim=1).view(1, -1)
+    flat_argmax = score_flat.argmax(dim=1)
+    argmax_y = (flat_argmax // score_maps.shape[-1]).float()
+    argmax_x = (flat_argmax % score_maps.shape[-1]).float()
+
+    mean_dist_sum = 0.0
+    point_hits_sum = {r: 0.0 for r in radii}
+    point_count = 0
+    for points in points_per_target:
+        point_tensor = torch.tensor(points, dtype=torch.float32, device=device)
+        dx = argmax_x[:, None] - point_tensor[None, :, 0]
+        dy = argmax_y[:, None] - point_tensor[None, :, 1]
+        per_concept_dist = torch.sqrt(dx.square() + dy.square()).amin(dim=1) / max(float(diag), 1e-8)
+        best_idx = int(per_concept_dist.argmin().item())
+        best_dist = float(per_concept_dist[best_idx].item())
+        best_x = int(argmax_x[best_idx].item())
+        best_y = int(argmax_y[best_idx].item())
+        mean_dist_sum += best_dist
+        point_count += 1
+        for r in radii:
+            point_hits_sum[r] += 1.0 if point_in_any_disk(best_x, best_y, points, float(r) * diag) else 0.0
+
+    threshold_out: Dict[float, Dict[str, float]] = {}
+    chunk_size = max(int(chunk_size), 1)
     for thr in thresholds:
-        best_point = 0.0
-        best_iou = 0.0
-        best_dice = 0.0
+        best_point = torch.zeros((gt_flat.shape[0],), dtype=torch.float32, device=device)
+        best_iou = torch.zeros((gt_flat.shape[0],), dtype=torch.float32, device=device)
+        best_dice = torch.zeros((gt_flat.shape[0],), dtype=torch.float32, device=device)
         for start in range(0, score_flat.shape[0], chunk_size):
-            chunk = score_flat[start : start + chunk_size]
-            pred_sum = (chunk >= thr).sum(dim=1)
-            if gt_sum > 0:
-                inter = (chunk[:, gt_idx] >= thr).sum(dim=1)
-            else:
-                inter = torch.zeros_like(pred_sum)
+            pred = (score_flat[start : start + chunk_size] >= thr).float()
+            pred_sum = pred.sum(dim=1).view(-1, 1)
+            inter = pred @ gt_flat.T
             union = pred_sum + gt_sum - inter
-            iou = torch.where(union > 0, inter.float() / union.float(), torch.zeros_like(union, dtype=torch.float32))
+            iou = torch.where(union > 0, inter / union.clamp_min(1.0), torch.zeros_like(union))
             dice = torch.where(
                 (pred_sum + gt_sum) > 0,
-                (2.0 * inter.float()) / (pred_sum + gt_sum).float(),
-                torch.zeros_like(pred_sum, dtype=torch.float32),
+                (2.0 * inter) / (pred_sum + gt_sum).clamp_min(1.0),
+                torch.zeros_like(inter),
             )
-            if point_idx.numel() > 0:
-                point_hit = (chunk[:, point_idx] >= thr).any(dim=1).float()
-                best_point = max(best_point, float(point_hit.max().item()))
-            best_iou = max(best_iou, float(iou.max().item()))
-            best_dice = max(best_dice, float(dice.max().item()))
-        out[thr] = {"point_in_mask": best_point, "mask_iou": best_iou, "dice": best_dice}
-    return out
+            point_hit = ((pred @ point_flat.T) > 0).float()
+            best_point = torch.maximum(best_point, point_hit.max(dim=0).values)
+            best_iou = torch.maximum(best_iou, iou.max(dim=0).values)
+            best_dice = torch.maximum(best_dice, dice.max(dim=0).values)
+        threshold_out[thr] = {
+            "point_in_mask_sum": float(best_point.sum().item()),
+            "mask_iou_sum": float(best_iou.sum().item()),
+            "dice_sum": float(best_dice.sum().item()),
+            "count": int(gt_flat.shape[0]),
+        }
+    return {
+        "mean_dist_sum": mean_dist_sum,
+        "point_hits_sum": point_hits_sum,
+        "point_count": point_count,
+        "thresholds": threshold_out,
+    }
 
 
 def build_dataset_image_ids(ds: Dataset, images_index: Dict[str, int]) -> Dict[int, int]:
@@ -593,9 +604,9 @@ def main() -> None:
                             proj_mean=oracle_mean,
                             proj_std=oracle_std,
                         )
-                    oracle_score_maps_cpu = oracle_score_maps.cpu()
+                    oracle_score_maps_for_metrics = oracle_score_maps
                 else:
-                    oracle_score_maps_cpu = None
+                    oracle_score_maps_for_metrics = None
 
                 argmax_flat = score_maps.flatten(1).argmax(dim=1)
                 argmax_y = (argmax_flat // score_maps.shape[-1]).cpu().tolist()
@@ -658,28 +669,27 @@ def main() -> None:
                     threshold_fp[thr] += int(fp_vals[i].sum().item())
                     threshold_fn[thr] += int(fn_vals[i].sum().item())
 
-                if oracle_score_maps_cpu is not None:
-                    for points, gt_mask, point_mask in zip(points_per_concept, gt_masks, point_indicator_masks):
-                        oracle_dist, oracle_x, oracle_y = oracle_point_metrics(oracle_score_maps_cpu, points, diag)
-                        oracle_mean_dist_sum += oracle_dist
-                        oracle_mean_dist_count += 1
-                        oracle_point_hits_count += 1
-                        for r in radii:
-                            oracle_point_hits_sum[r] += (
-                                1.0 if point_in_any_disk(oracle_x, oracle_y, points, float(r) * diag) else 0.0
-                            )
-                        oracle_by_thr = oracle_threshold_metrics(
-                            oracle_score_maps_cpu,
-                            gt_mask,
-                            point_mask,
-                            thresholds,
-                            max(int(args_ns.oracle_chunk_size), 1),
-                        )
-                        for thr in thresholds:
-                            oracle_threshold_count[thr] += 1
-                            oracle_threshold_point_hits_sum[thr] += oracle_by_thr[thr]["point_in_mask"]
-                            oracle_threshold_mask_iou_sum[thr] += oracle_by_thr[thr]["mask_iou"]
-                            oracle_threshold_dice_sum[thr] += oracle_by_thr[thr]["dice"]
+                if oracle_score_maps_for_metrics is not None:
+                    oracle_batch = batched_oracle_metrics(
+                        oracle_score_maps_for_metrics,
+                        points_per_concept,
+                        gt_masks_tensor,
+                        point_indicator_tensor,
+                        thresholds,
+                        radii,
+                        diag,
+                        max(int(args_ns.oracle_chunk_size), 1),
+                    )
+                    oracle_mean_dist_sum += float(oracle_batch["mean_dist_sum"])
+                    oracle_mean_dist_count += int(oracle_batch["point_count"])
+                    oracle_point_hits_count += int(oracle_batch["point_count"])
+                    for r, value in oracle_batch["point_hits_sum"].items():
+                        oracle_point_hits_sum[r] += float(value)
+                    for thr, values in oracle_batch["thresholds"].items():
+                        oracle_threshold_count[thr] += int(values["count"])
+                        oracle_threshold_point_hits_sum[thr] += float(values["point_in_mask_sum"])
+                        oracle_threshold_mask_iou_sum[thr] += float(values["mask_iou_sum"])
+                        oracle_threshold_dice_sum[thr] += float(values["dice_sum"])
 
     results = {
         "load_path": args_ns.load_path,
