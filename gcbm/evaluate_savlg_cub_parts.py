@@ -245,6 +245,66 @@ def min_normalized_distance(px: int, py: int, points: Sequence[Tuple[float, floa
     return 1.0 if best is None else float(best)
 
 
+def oracle_point_metrics(
+    score_maps: torch.Tensor,
+    points: Sequence[Tuple[float, float]],
+    diag: float,
+) -> Tuple[float, int, int]:
+    flat = score_maps.flatten(1).argmax(dim=1)
+    ys = (flat // score_maps.shape[-1]).float()
+    xs = (flat % score_maps.shape[-1]).float()
+    point_tensor = torch.tensor(points, dtype=torch.float32, device=score_maps.device)
+    dx = xs[:, None] - point_tensor[None, :, 0]
+    dy = ys[:, None] - point_tensor[None, :, 1]
+    dists = torch.sqrt(dx.square() + dy.square()) / max(float(diag), 1e-8)
+    best_idx = int(dists.amin(dim=1).argmin().item())
+    best_dist = float(dists[best_idx].min().item())
+    best_y = int(ys[best_idx].item())
+    best_x = int(xs[best_idx].item())
+    return best_dist, best_x, best_y
+
+
+def oracle_threshold_metrics(
+    score_maps: torch.Tensor,
+    gt_mask: torch.Tensor,
+    point_mask: torch.Tensor,
+    thresholds: Sequence[float],
+    chunk_size: int,
+) -> Dict[float, Dict[str, float]]:
+    score_flat = score_maps.flatten(1).cpu()
+    gt_flat = gt_mask.flatten().cpu()
+    point_flat = point_mask.flatten().cpu()
+    gt_idx = torch.nonzero(gt_flat, as_tuple=False).flatten()
+    point_idx = torch.nonzero(point_flat, as_tuple=False).flatten()
+    gt_sum = int(gt_idx.numel())
+    out: Dict[float, Dict[str, float]] = {}
+    for thr in thresholds:
+        best_point = 0.0
+        best_iou = 0.0
+        best_dice = 0.0
+        for start in range(0, score_flat.shape[0], chunk_size):
+            chunk = score_flat[start : start + chunk_size]
+            pred_sum = (chunk >= thr).sum(dim=1)
+            if gt_sum > 0:
+                inter = (chunk[:, gt_idx] >= thr).sum(dim=1)
+            else:
+                inter = torch.zeros_like(pred_sum)
+            union = pred_sum + gt_sum - inter
+            iou = torch.where(union > 0, inter.float() / union.float(), torch.zeros_like(union, dtype=torch.float32))
+            dice = torch.where(
+                (pred_sum + gt_sum) > 0,
+                (2.0 * inter.float()) / (pred_sum + gt_sum).float(),
+                torch.zeros_like(pred_sum, dtype=torch.float32),
+            )
+            if point_idx.numel() > 0:
+                point_hit = (chunk[:, point_idx] >= thr).any(dim=1).float()
+                best_point = max(best_point, float(point_hit.max().item()))
+            best_iou = max(best_iou, float(iou.max().item()))
+            best_dice = max(best_dice, float(dice.max().item()))
+        out[thr] = {"point_in_mask": best_point, "mask_iou": best_iou, "dice": best_dice}
+    return out
+
+
 def build_dataset_image_ids(ds: Dataset, images_index: Dict[str, int]) -> Dict[int, int]:
     out: Dict[int, int] = {}
     for ds_idx in range(len(ds)):
@@ -321,6 +381,17 @@ def parse_args() -> argparse.Namespace:
         help="Map normalization. For CUB, concept_zscore_minmax uses saved proj_mean.pt/proj_std.pt, then min-max scales each concept map.",
     )
     parser.add_argument("--point_source", type=str, default="normalized_map", choices=["normalized_map", "pred_dist"])
+    parser.add_argument(
+        "--compute_concept_oracle",
+        action="store_true",
+        help="Also evaluate every concept map for each part target and report the best concept score per metric.",
+    )
+    parser.add_argument(
+        "--oracle_chunk_size",
+        type=int,
+        default=128,
+        help="Number of concepts per chunk for all-concept oracle mask metrics.",
+    )
     parser.add_argument("--activation_thresholds", type=str, default="0.3,0.4,0.5,0.6,0.7,0.8,0.9")
     parser.add_argument("--radius_fracs", type=str, default="0.01,0.02,0.05,0.1")
     parser.add_argument("--disk_radius_frac", type=float, default=0.03)
@@ -402,6 +473,14 @@ def main() -> None:
     threshold_tp = {thr: 0 for thr in thresholds}
     threshold_fp = {thr: 0 for thr in thresholds}
     threshold_fn = {thr: 0 for thr in thresholds}
+    oracle_point_hits_sum = {r: 0.0 for r in radii}
+    oracle_point_hits_count = 0
+    oracle_mean_dist_sum = 0.0
+    oracle_mean_dist_count = 0
+    oracle_threshold_point_hits_sum = {thr: 0.0 for thr in thresholds}
+    oracle_threshold_mask_iou_sum = {thr: 0.0 for thr in thresholds}
+    oracle_threshold_dice_sum = {thr: 0.0 for thr in thresholds}
+    oracle_threshold_count = {thr: 0 for thr in thresholds}
 
     ann_split_dir = Path(args.annotation_dir) / f"{args.dataset}_test"
     if not ann_split_dir.is_dir():
@@ -496,6 +575,27 @@ def main() -> None:
                         proj_mean=proj_mean,
                         proj_std=proj_std,
                     )
+                if args_ns.compute_concept_oracle:
+                    all_maps = F.interpolate(
+                        spatial_maps[b].unsqueeze(1),
+                        size=(img_h, img_w),
+                        mode="bilinear",
+                        align_corners=False,
+                    ).squeeze(1)
+                    if args_ns.point_source == "pred_dist":
+                        oracle_score_maps = F.softmax(all_maps.flatten(1), dim=1).view_as(all_maps)
+                    else:
+                        oracle_mean = proj_mean_all.view(-1, 1, 1) if proj_mean_all is not None else None
+                        oracle_std = proj_std_all.view(-1, 1, 1) if proj_std_all is not None else None
+                        oracle_score_maps = _normalize_map_with_mode(
+                            all_maps,
+                            args_ns.map_normalization,
+                            proj_mean=oracle_mean,
+                            proj_std=oracle_std,
+                        )
+                    oracle_score_maps_cpu = oracle_score_maps.cpu()
+                else:
+                    oracle_score_maps_cpu = None
 
                 argmax_flat = score_maps.flatten(1).argmax(dim=1)
                 argmax_y = (argmax_flat // score_maps.shape[-1]).cpu().tolist()
@@ -558,6 +658,29 @@ def main() -> None:
                     threshold_fp[thr] += int(fp_vals[i].sum().item())
                     threshold_fn[thr] += int(fn_vals[i].sum().item())
 
+                if oracle_score_maps_cpu is not None:
+                    for points, gt_mask, point_mask in zip(points_per_concept, gt_masks, point_indicator_masks):
+                        oracle_dist, oracle_x, oracle_y = oracle_point_metrics(oracle_score_maps_cpu, points, diag)
+                        oracle_mean_dist_sum += oracle_dist
+                        oracle_mean_dist_count += 1
+                        oracle_point_hits_count += 1
+                        for r in radii:
+                            oracle_point_hits_sum[r] += (
+                                1.0 if point_in_any_disk(oracle_x, oracle_y, points, float(r) * diag) else 0.0
+                            )
+                        oracle_by_thr = oracle_threshold_metrics(
+                            oracle_score_maps_cpu,
+                            gt_mask,
+                            point_mask,
+                            thresholds,
+                            max(int(args_ns.oracle_chunk_size), 1),
+                        )
+                        for thr in thresholds:
+                            oracle_threshold_count[thr] += 1
+                            oracle_threshold_point_hits_sum[thr] += oracle_by_thr[thr]["point_in_mask"]
+                            oracle_threshold_mask_iou_sum[thr] += oracle_by_thr[thr]["mask_iou"]
+                            oracle_threshold_dice_sum[thr] += oracle_by_thr[thr]["dice"]
+
     results = {
         "load_path": args_ns.load_path,
         "mapping_json": args_ns.mapping_json,
@@ -606,6 +729,41 @@ def main() -> None:
     results["best_mask_iou"] = best_mask_iou
     results["best_dice"] = best_dice
     results["best_point_in_mask"] = best_point_in_mask
+    if args_ns.compute_concept_oracle:
+        oracle_threshold_metrics_out: Dict[str, Dict[str, float]] = {}
+        oracle_best_mask_iou = {"threshold": None, "value": None}
+        oracle_best_dice = {"threshold": None, "value": None}
+        oracle_best_point_in_mask = {"threshold": None, "value": None}
+        for thr in thresholds:
+            point_in_mask = float(oracle_threshold_point_hits_sum[thr] / max(oracle_threshold_count[thr], 1))
+            mask_iou = float(oracle_threshold_mask_iou_sum[thr] / max(oracle_threshold_count[thr], 1))
+            dice = float(oracle_threshold_dice_sum[thr] / max(oracle_threshold_count[thr], 1))
+            oracle_threshold_metrics_out[str(thr)] = {
+                "point_in_mask": point_in_mask,
+                "mask_iou": mask_iou,
+                "dice": dice,
+            }
+            if oracle_best_mask_iou["value"] is None or mask_iou > oracle_best_mask_iou["value"]:
+                oracle_best_mask_iou = {"threshold": thr, "value": mask_iou}
+            if oracle_best_dice["value"] is None or dice > oracle_best_dice["value"]:
+                oracle_best_dice = {"threshold": thr, "value": dice}
+            if oracle_best_point_in_mask["value"] is None or point_in_mask > oracle_best_point_in_mask["value"]:
+                oracle_best_point_in_mask = {"threshold": thr, "value": point_in_mask}
+        results["concept_oracle"] = {
+            "definition": "For each part target, all concept maps are evaluated and the best concept score is selected independently for each metric.",
+            "num_gt_instances": oracle_mean_dist_count,
+            "point_metrics": {
+                "mean_normalized_distance": float(oracle_mean_dist_sum / max(oracle_mean_dist_count, 1)),
+                "point_hit": {
+                    str(r): float(oracle_point_hits_sum[r] / max(oracle_point_hits_count, 1))
+                    for r in radii
+                },
+            },
+            "threshold_metrics": oracle_threshold_metrics_out,
+            "best_mask_iou": oracle_best_mask_iou,
+            "best_dice": oracle_best_dice,
+            "best_point_in_mask": oracle_best_point_in_mask,
+        }
 
     out = Path(args_ns.output)
     out.parent.mkdir(parents=True, exist_ok=True)
