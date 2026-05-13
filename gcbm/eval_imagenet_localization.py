@@ -5,6 +5,7 @@ import sys
 import tarfile
 import time
 from collections import defaultdict
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, List, Optional, Sequence, Tuple
 
@@ -143,7 +144,8 @@ def load_run_config(config_dir: Path, args: argparse.Namespace) -> Config:
     payload["pin_memory"] = bool(args.pin_memory)
     payload["skip_final_layer"] = True
     payload["print_config"] = False
-    return Config(**payload)
+    valid_fields = {field.name for field in fields(Config)}
+    return Config(**{key: value for key, value in payload.items() if key in valid_fields})
 
 
 def load_val_label_count(devkit_dir: Path) -> Optional[int]:

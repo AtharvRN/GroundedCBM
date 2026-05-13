@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -74,7 +75,8 @@ def load_config(artifact_dir: Path, args: argparse.Namespace) -> Config:
         payload["train_root"] = args.train_root
     if args.precomputed_target_dir:
         payload["precomputed_target_dir"] = args.precomputed_target_dir
-    return Config(**payload)
+    valid_fields = {field.name for field in fields(Config)}
+    return Config(**{key: value for key, value in payload.items() if key in valid_fields})
 
 
 def resolve_precomputed_target_dir(artifact_dir: Path, cfg: Config, override: str) -> Path:

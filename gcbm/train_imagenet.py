@@ -2,10 +2,11 @@
 
 This entrypoint intentionally keeps only the path we use for paper-scale
 ImageNet CBL training:
-- precomputed GDINO targets are required,
-- branch_arch is always dual,
+- precomputed GDINO targets are used when available, otherwise GDINO targets are
+  built on the fly from annotations,
+- shared, dual, and multiscale dual heads are selectable by CLI,
 - spatial supervision is soft-align KL,
-- sparse GLM final-layer training is optional after CBL training.
+- sparse GLM or dense final-layer training is optional after CBL training.
 
 It reuses the dataset, precompute store, and model primitives from the
 standalone driver so we do not duplicate the fragile ImageNet annotation/cache
@@ -38,6 +39,7 @@ from gcbm.imagenet_core import (  # noqa: E402
     autocast_context,
     batch_targets_to_device,
     build_loader,
+    build_gdino_targets,
     build_model,
     build_run_dir,
     compute_feature_stats_memmap,
@@ -53,6 +55,7 @@ from gcbm.imagenet_core import (  # noqa: E402
     save_checkpoint,
     select_subset_indices,
     split_train_val,
+    train_dense_final_layer,
     train_sparse_final_layer,
 )
 
@@ -66,7 +69,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional JSONL manifest with path/class_id/sample_index entries.",
     )
     parser.add_argument("--annotation_dir", required=True)
-    parser.add_argument("--precomputed_target_dir", required=True)
+    parser.add_argument(
+        "--precomputed_target_dir",
+        default="",
+        help="Optional GDINO target cache. If omitted, targets are generated from annotations on the fly.",
+    )
     parser.add_argument("--concept_file", default="concept_files/imagenet_filtered.txt")
     parser.add_argument("--val_root", default="")
     parser.add_argument("--save_dir", default="artifacts/imagenet")
@@ -104,6 +111,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mask_h", type=int, default=14)
     parser.add_argument("--mask_w", type=int, default=14)
     parser.add_argument("--min_image_bytes", type=int, default=2048)
+    parser.add_argument("--patch_iou_thresh", type=float, default=0.5)
+    parser.add_argument("--concept_threshold", type=float, default=0.15)
+    parser.add_argument(
+        "--spatial_target_mode",
+        choices=["hard_iou", "soft_box"],
+        default="soft_box",
+        help="Rasterization used for on-the-fly or precomputed GDINO boxes.",
+    )
 
     parser.add_argument("--filter_concepts_by_count", action="store_true")
     parser.add_argument("--concept_min_count", type=int, default=1)
@@ -121,10 +136,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--loss_mask_w", type=float, default=1.0)
 
     parser.add_argument(
+        "--branch_arch",
+        choices=["shared", "dual"],
+        default="dual",
+        help="Concept-head architecture. Use dual for SG-CBM residual spatial logits.",
+    )
+    parser.add_argument(
         "--spatial_branch_mode",
         choices=["shared_stage", "multiscale_conv45"],
         default="multiscale_conv45",
-        help="Both modes use dual branch_arch; multiscale_conv45 is the paper/default path.",
+        help="Spatial branch source. multiscale_conv45 is the SG-CBM paper/default path.",
     )
     parser.add_argument("--spatial_stage", choices=["conv4", "conv5"], default="conv5")
     parser.add_argument("--residual_alpha", type=float, default=0.2)
@@ -150,6 +171,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--print_config", action="store_true")
 
     parser.add_argument("--train_glm_after_cbl", action="store_true")
+    parser.add_argument(
+        "--train_final_layer_after_cbl",
+        action="store_true",
+        help="Train the selected final classifier after CBL. --train_glm_after_cbl is kept as a sparse alias.",
+    )
+    parser.add_argument(
+        "--final_layer_type",
+        choices=["sparse", "dense"],
+        default="sparse",
+        help="Final classifier trained after CBL when enabled.",
+    )
     parser.add_argument("--feature_batch_size", type=int, default=256)
     parser.add_argument("--feature_workers", type=int, default=4)
     parser.add_argument("--feature_prefetch_factor", type=int, default=2)
@@ -161,6 +193,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--saga_prefetch_factor", type=int, default=2)
     parser.add_argument("--saga_verbose_every", type=int, default=20)
     parser.add_argument("--saga_table_device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--dense_lr", type=float, default=1e-3)
+    parser.add_argument("--dense_n_iters", type=int, default=20)
     return parser.parse_args()
 
 
@@ -200,9 +234,9 @@ def build_config(args: argparse.Namespace) -> Config:
         train_random_transforms=False,
         mask_h=args.mask_h,
         mask_w=args.mask_w,
-        patch_iou_thresh=0.5,
-        concept_threshold=0.15,
-        spatial_target_mode="soft_box",
+        patch_iou_thresh=float(args.patch_iou_thresh),
+        concept_threshold=float(args.concept_threshold),
+        spatial_target_mode=str(args.spatial_target_mode),
         spatial_loss_mode="soft_align",
         filter_concepts_by_count=bool(args.filter_concepts_by_count),
         concept_min_count=max(0, int(args.concept_min_count)),
@@ -216,8 +250,7 @@ def build_config(args: argparse.Namespace) -> Config:
         patch_pos_weight=1.0,
         loss_global_w=args.loss_global_w,
         loss_mask_w=args.loss_mask_w,
-        loss_dice_w=0.0,
-        branch_arch="dual",
+        branch_arch=str(args.branch_arch),
         spatial_branch_mode=args.spatial_branch_mode,
         spatial_stage=args.spatial_stage,
         residual_alpha=args.residual_alpha,
@@ -226,8 +259,8 @@ def build_config(args: argparse.Namespace) -> Config:
         log_every=max(1, int(args.log_every)),
         save_every=max(1, int(args.save_every)),
         eval_every=max(0, int(args.eval_every)),
-        skip_final_layer=not bool(args.train_glm_after_cbl),
-        final_layer_type="sparse",
+        skip_final_layer=not bool(args.train_glm_after_cbl or args.train_final_layer_after_cbl),
+        final_layer_type="sparse" if bool(args.train_glm_after_cbl) else str(args.final_layer_type),
         saga_batch_size=max(1, int(args.saga_batch_size)),
         saga_workers=max(0, int(args.saga_workers)),
         saga_prefetch_factor=max(1, int(args.saga_prefetch_factor)),
@@ -235,8 +268,8 @@ def build_config(args: argparse.Namespace) -> Config:
         saga_lam=float(args.saga_lam),
         saga_n_iters=max(1, int(args.saga_n_iters)),
         saga_verbose_every=max(1, int(args.saga_verbose_every)),
-        dense_lr=1e-3,
-        dense_n_iters=20,
+        dense_lr=float(args.dense_lr),
+        dense_n_iters=max(1, int(args.dense_n_iters)),
         feature_storage_dtype="fp16",
         saga_table_device=str(args.saga_table_device),
         vlg_init_path=str(args.vlg_init_path or ""),
@@ -257,14 +290,10 @@ def validate_config(cfg: Config) -> None:
         raise ValueError("--train_root is required")
     if not cfg.annotation_dir:
         raise ValueError("--annotation_dir is required")
-    if not cfg.precomputed_target_dir:
-        raise ValueError("--precomputed_target_dir is required; this script never builds targets on the fly")
-    if cfg.branch_arch != "dual":
-        raise ValueError("This simplified script only supports branch_arch=dual")
-    if cfg.spatial_target_mode != "soft_box" or cfg.spatial_loss_mode != "soft_align":
-        raise ValueError("This simplified script only supports soft_box targets with soft_align loss")
-    if cfg.loss_dice_w != 0.0:
-        raise ValueError("Dice loss is intentionally removed from this script")
+    if cfg.spatial_branch_mode == "multiscale_conv45" and cfg.branch_arch != "dual":
+        raise ValueError("--spatial_branch_mode=multiscale_conv45 requires --branch_arch=dual")
+    if cfg.spatial_loss_mode != "soft_align":
+        raise ValueError("This release trainer only supports soft-align KL spatial loss")
     if cfg.freeze_global_head and not cfg.vlg_init_path:
         raise ValueError("--freeze_global_head requires --vlg_init_path")
     if cfg.vlg_init_path and not cfg.vlg_concepts_path:
@@ -341,16 +370,28 @@ def compute_cbl_losses(
     }
 
 
-def require_precomputed_targets(batch: Dict[str, Any], cfg: Config) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    if "global_targets" not in batch:
-        raise RuntimeError("Batch has no precomputed targets. Pass a valid --precomputed_target_dir.")
-    return batch_targets_to_device(batch, cfg)
+def batch_cbl_targets(
+    batch: Dict[str, Any],
+    dataset: DatasetView,
+    cfg: Config,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    if "global_targets" in batch:
+        return batch_targets_to_device(batch, cfg)
+    return build_gdino_targets(
+        batch["annotations"],
+        batch["image_sizes"],
+        dataset.concept_to_idx,
+        len(dataset.concepts),
+        cfg,
+        cfg.device,
+    )
 
 
 def train_one_epoch(
     backbone: nn.Module,
     head: nn.Module,
     loader: torch.utils.data.DataLoader,
+    dataset: DatasetView,
     optimizer: torch.optim.Optimizer,
     scaler: Optional[torch.cuda.amp.GradScaler],
     cfg: Config,
@@ -363,7 +404,7 @@ def train_one_epoch(
 
     for step, batch in enumerate(loader, start=1):
         images = prepare_images(batch["images"], cfg)
-        global_targets, idx_pad, mask_pad, valid_pad = require_precomputed_targets(batch, cfg)
+        global_targets, idx_pad, mask_pad, valid_pad = batch_cbl_targets(batch, dataset, cfg)
 
         optimizer.zero_grad(set_to_none=True)
         with torch.no_grad(), autocast_context(cfg):
@@ -404,7 +445,6 @@ def train_one_epoch(
         "loss": totals["total"] / count,
         "loss_global": totals["global"] / count,
         "loss_mask": totals["mask"] / count,
-        "loss_dice": 0.0,
         "images_per_second": totals["count"] / max(elapsed, 1e-6),
         "elapsed_sec": elapsed,
     }
@@ -417,6 +457,7 @@ def evaluate_one_epoch(
     backbone: nn.Module,
     head: nn.Module,
     loader: torch.utils.data.DataLoader,
+    dataset: DatasetView,
     cfg: Config,
     split_name: str,
 ) -> Dict[str, float]:
@@ -427,7 +468,7 @@ def evaluate_one_epoch(
 
     for batch in loader:
         images = prepare_images(batch["images"], cfg)
-        global_targets, idx_pad, mask_pad, valid_pad = require_precomputed_targets(batch, cfg)
+        global_targets, idx_pad, mask_pad, valid_pad = batch_cbl_targets(batch, dataset, cfg)
         with torch.inference_mode(), autocast_context(cfg):
             feats = backbone(images)
         with autocast_context(cfg):
@@ -446,7 +487,6 @@ def evaluate_one_epoch(
         "loss": totals["total"] / count,
         "loss_global": totals["global"] / count,
         "loss_mask": totals["mask"] / count,
-        "loss_dice": 0.0,
         "images_per_second": totals["count"] / max(elapsed, 1e-6),
         "elapsed_sec": elapsed,
     }
@@ -462,6 +502,21 @@ def evaluate_one_epoch(
 
 def build_datasets(cfg: Config) -> Tuple[DatasetView, DatasetView, Optional[Dict[str, Any]]]:
     concepts = load_run_concepts(cfg)
+
+    def attach_targets_if_present(dataset: SafeImageFolderWithAnnotations) -> None:
+        if not cfg.precomputed_target_dir:
+            return
+        target_dir = Path(cfg.precomputed_target_dir) / dataset.split
+        if not target_dir.is_dir():
+            print(
+                f"[targets] no precomputed targets for split={dataset.split} at {target_dir}; "
+                "using on-the-fly GDINO targets",
+                flush=True,
+            )
+            return
+        dataset.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
+        print(f"[targets] using precomputed targets from {target_dir}", flush=True)
+
     train_dataset_full = SafeImageFolderWithAnnotations(
         root=cfg.train_root,
         annotation_dir=cfg.annotation_dir,
@@ -472,7 +527,7 @@ def build_datasets(cfg: Config) -> Tuple[DatasetView, DatasetView, Optional[Dict
         manifest=cfg.train_manifest,
         train_random_transforms=False,
     )
-    train_dataset_full.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
+    attach_targets_if_present(train_dataset_full)
 
     if cfg.val_root:
         val_dataset_full = SafeImageFolderWithAnnotations(
@@ -484,7 +539,7 @@ def build_datasets(cfg: Config) -> Tuple[DatasetView, DatasetView, Optional[Dict
             split="val",
             train_random_transforms=False,
         )
-        val_dataset_full.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
+        attach_targets_if_present(val_dataset_full)
         train_indices = select_subset_indices(
             train_dataset_full,
             list(range(len(train_dataset_full))),
@@ -521,7 +576,7 @@ def infer_num_classes(dataset: DatasetView) -> int:
     return int(max(dataset.base_dataset.dataset.targets)) + 1
 
 
-def train_glm_after_cbl(
+def train_final_layer_after_cbl(
     backbone: nn.Module,
     head: nn.Module,
     train_dataset: DatasetView,
@@ -530,7 +585,7 @@ def train_glm_after_cbl(
     run_dir: Path,
     best_path: Path,
 ) -> Dict[str, Any]:
-    print(f"[final_layer:sparse] loading best CBL head from {best_path}", flush=True)
+    print(f"[final_layer:{cfg.final_layer_type}] loading best CBL head from {best_path}", flush=True)
     head.load_state_dict(torch.load(best_path, map_location=cfg.device))
 
     feature_dir = Path(cfg.feature_dir).resolve() if cfg.feature_dir else (run_dir / "features")
@@ -579,7 +634,8 @@ def train_glm_after_cbl(
         run_dir / "final_layer_normalization.pt",
     )
 
-    final_layer_summary = train_sparse_final_layer(
+    final_layer_fn = train_dense_final_layer if cfg.final_layer_type == "dense" else train_sparse_final_layer
+    final_layer_summary = final_layer_fn(
         train_feature_path=train_feature_path,
         train_target_path=train_target_path,
         val_feature_path=val_feature_path,
@@ -590,7 +646,7 @@ def train_glm_after_cbl(
         n_classes=infer_num_classes(train_dataset),
         run_dir=run_dir,
     )
-    final_layer_summary["type"] = "sparse"
+    final_layer_summary["type"] = cfg.final_layer_type
     final_layer_summary["feature_extraction"] = {
         "train": train_extract_summary,
         "val": val_extract_summary,
@@ -599,7 +655,7 @@ def train_glm_after_cbl(
     }
     (run_dir / "final_layer_summary.json").write_text(json.dumps(final_layer_summary, indent=2))
     print(
-        f"[final_layer:sparse] train_top1={final_layer_summary['train']['top1']:.4f} "
+        f"[final_layer:{cfg.final_layer_type}] train_top1={final_layer_summary['train']['top1']:.4f} "
         f"val_top1={final_layer_summary['val']['top1']:.4f} "
         f"sparsity={final_layer_summary['nnz']}/{final_layer_summary['total']}",
         flush=True,
@@ -631,17 +687,16 @@ def run_training(cfg: Config) -> Dict[str, Any]:
     best_path = run_dir / "concept_head_best.pt"
     history: List[Dict[str, Any]] = []
     for epoch in range(1, cfg.epochs + 1):
-        train_metrics = train_one_epoch(backbone, head, train_loader, optimizer, scaler, cfg, epoch)
+        train_metrics = train_one_epoch(backbone, head, train_loader, train_dataset, optimizer, scaler, cfg, epoch)
         eval_every = int(getattr(cfg, "eval_every", 1))
         run_val = eval_every > 0 and (epoch % eval_every == 0 or epoch == cfg.epochs)
         if run_val:
-            val_metrics = evaluate_one_epoch(backbone, head, val_loader, cfg, split_name="val")
+            val_metrics = evaluate_one_epoch(backbone, head, val_loader, val_dataset, cfg, split_name="val")
         else:
             val_metrics = {
                 "loss": float("inf"),
                 "loss_global": float("nan"),
                 "loss_mask": float("nan"),
-                "loss_dice": 0.0,
                 "images_per_second": 0.0,
                 "elapsed_sec": 0.0,
                 "skipped": True,
@@ -676,7 +731,7 @@ def run_training(cfg: Config) -> Dict[str, Any]:
 
     final_layer_summary: Optional[Dict[str, Any]] = None
     if not cfg.skip_final_layer:
-        final_layer_summary = train_glm_after_cbl(
+        final_layer_summary = train_final_layer_after_cbl(
             backbone=backbone,
             head=head,
             train_dataset=train_dataset,

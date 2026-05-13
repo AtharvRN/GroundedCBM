@@ -19,10 +19,8 @@
   "savlg_branch_arch": "dual",
   "savlg_spatial_stage": "conv5",
   "savlg_spatial_branch_mode": "multiscale_conv45",
-  "savlg_local_loss_mode": "soft_align",
   "savlg_target_mode": "soft_box",
   "savlg_residual_spatial_alpha": 0.2,
   "savlg_residual_spatial_pooling": "lse",
-  "savlg_outside_penalty_w": 0.0,
   "skip_test_eval": false
 }

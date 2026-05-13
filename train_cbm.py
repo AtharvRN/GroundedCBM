@@ -947,31 +947,13 @@ def main():
         "--loss_mask_w",
         type=float,
         default=1.0,
-        help="Weight for SAVLG local patch-mask BCE loss",
-    )
-    parser.add_argument(
-        "--loss_dice_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG local Dice loss on valid boxed concepts",
+        help="Weight for SAVLG spatial soft-align KL loss",
     )
     parser.add_argument(
         "--global_bce_pos_weight",
         type=float,
         default=1.0,
         help="Positive-class weight for SAVLG global concept BCE",
-    )
-    parser.add_argument(
-        "--patch_bce_pos_weight",
-        type=float,
-        default=1.0,
-        help="Positive-class weight for SAVLG local patch-mask BCE",
-    )
-    parser.add_argument(
-        "--local_bce_pos_weight",
-        type=float,
-        default=1.0,
-        help="Positive-class weight for SAVLG local MIL BCE",
     )
     parser.add_argument(
         "--savlg_global_target_mode",
@@ -986,12 +968,6 @@ def main():
         default="spatial_threshold",
         choices=["spatial_threshold", "vlg_global"],
         help="How SAVLG filters concepts before training. 'vlg_global' reuses the same concept-dataset filtering path as VLG-CBM.",
-    )
-    parser.add_argument(
-        "--loss_local_mil_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG auxiliary local MIL loss",
     )
     parser.add_argument(
         "--savlg_local_weight_mode",
@@ -1086,30 +1062,6 @@ def main():
         help="Patch fraction used when --savlg_pooling=topk",
     )
     parser.add_argument(
-        "--savlg_use_local_mil",
-        action="store_true",
-        help="Enable an auxiliary local MIL objective for SAVLG",
-    )
-    parser.add_argument(
-        "--savlg_local_pooling",
-        type=str,
-        default="lse",
-        choices=["lse", "topk"],
-        help="Pooling mode for SAVLG local MIL logits",
-    )
-    parser.add_argument(
-        "--savlg_mil_temperature",
-        type=float,
-        default=1.0,
-        help="Temperature for SAVLG LSE local MIL pooling",
-    )
-    parser.add_argument(
-        "--savlg_mil_topk_fraction",
-        type=float,
-        default=0.2,
-        help="Patch fraction used when --savlg_local_pooling=topk",
-    )
-    parser.add_argument(
         "--savlg_residual_spatial_alpha",
         type=float,
         default=0.0,
@@ -1127,18 +1079,6 @@ def main():
         type=float,
         default=0.2,
         help="Patch fraction used when --savlg_residual_spatial_pooling=topk",
-    )
-    parser.add_argument(
-        "--savlg_global_spatial_consistency_w",
-        type=float,
-        default=0.0,
-        help="Weight for detached spatial-to-global SAVLG concept consistency on positive concept-image pairs",
-    )
-    parser.add_argument(
-        "--savlg_global_spatial_consistency_warmup_epochs",
-        type=int,
-        default=0,
-        help="Number of SAVLG concept-head epochs to wait before enabling spatial-to-global consistency",
     )
     parser.add_argument(
         "--savlg_target_mode",
@@ -1176,59 +1116,10 @@ def main():
         ),
     )
     parser.add_argument(
-        "--savlg_local_loss_mode",
-        type=str,
-        default="bce",
-        choices=["bce", "containment", "soft_align"],
-        help="How SAVLG applies local box supervision once patch targets are built",
-    )
-    parser.add_argument(
-        "--savlg_outside_penalty_w",
-        type=float,
-        default=0.0,
-        help="Weight for penalizing normalized SAVLG spatial activation mass outside the GT box",
-    )
-    parser.add_argument(
-        "--savlg_absent_topk_w",
-        type=float,
-        default=0.0,
-        help="Weight for penalizing top-k spatial activation on concept-absent maps",
-    )
-    parser.add_argument(
-        "--savlg_absent_topk_fraction",
-        type=float,
-        default=0.1,
-        help="Fraction of highest-activation spatial locations to penalize for absent concepts",
-    )
-    parser.add_argument(
         "--patch_iou_thresh",
         type=float,
         default=0.5,
         help="IoU threshold used for SAVLG hard patch targets",
-    )
-    parser.add_argument(
-        "--savlg_teacher_load_path",
-        type=str,
-        default=None,
-        help="Optional VLG-CBM teacher checkpoint directory for SAVLG distillation",
-    )
-    parser.add_argument(
-        "--savlg_distill_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG teacher-distillation loss on pooled concept logits",
-    )
-    parser.add_argument(
-        "--savlg_refine_w",
-        type=float,
-        default=0.0,
-        help="Weight for SAVLG OICR-style detached patch refinement loss",
-    )
-    parser.add_argument(
-        "--savlg_refine_warmup_epochs",
-        type=int,
-        default=0,
-        help="Number of SAVLG concept-head epochs to train before enabling refinement",
     )
     parser.add_argument(
         "--clip_score_mode",

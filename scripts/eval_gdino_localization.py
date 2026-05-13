@@ -584,7 +584,8 @@ def eval_imagenet(args: argparse.Namespace, thresholds: Sequence[float], keys: S
         payload["pin_memory"] = bool(args.pin_memory)
         payload["skip_final_layer"] = True
         payload["print_config"] = False
-        cfg = Config(**payload)
+        valid_fields = {field.name for field in dataclasses.fields(Config)}
+        cfg = Config(**{key: value for key, value in payload.items() if key in valid_fields})
     configure_runtime(cfg)
     concepts = load_concepts(str(source_run_dir / "concepts.txt"))
     concept_to_idx = {name: idx for idx, name in enumerate(concepts)}

@@ -3,6 +3,7 @@ import json
 import math
 import sys
 import time
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
@@ -103,7 +104,8 @@ def load_config(config_dir: Path, device: str) -> Config:
     payload["device"] = device
     payload["skip_final_layer"] = True
     payload["print_config"] = False
-    return Config(**payload)
+    valid_fields = {field.name for field in fields(Config)}
+    return Config(**{key: value for key, value in payload.items() if key in valid_fields})
 
 
 def infer_n_classes(*target_paths: Path) -> int:
