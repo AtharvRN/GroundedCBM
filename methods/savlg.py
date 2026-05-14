@@ -25,6 +25,7 @@ from gcbm.sg_model import (
     pool_residual_spatial_logits as shared_pool_residual_spatial_logits,
 )
 from gcbm.spatial_targets import rasterize_box_target as shared_rasterize_box_target
+from gcbm.target_batches import pad_sparse_targets
 from glm_saga.elasticnet import IndexedTensorDataset
 from methods.common import build_run_dir, save_args, write_artifacts
 from methods.lf import TransformedSubset, subset_targets, use_original_label_free_protocol
@@ -674,25 +675,9 @@ def collate_spatial_batch(batch):
     global_concepts = torch.stack(global_concepts, dim=0)
     labels = torch.tensor(labels, dtype=torch.long)
 
-    max_k = max(x.numel() for x in c_idx)
-    bsz = len(batch)
-    if max_k == 0:
-        idx_pad = torch.full((bsz, 1), -1, dtype=torch.long)
-        mask_pad = torch.zeros((bsz, 1, c_mask[0].shape[-2] if c_mask else 1, c_mask[0].shape[-1] if c_mask else 1), dtype=torch.float32)
-        valid = torch.zeros((bsz, 1), dtype=torch.bool)
-    else:
-        mask_h = c_mask[0].shape[-2]
-        mask_w = c_mask[0].shape[-1]
-        idx_pad = torch.full((bsz, max_k), -1, dtype=torch.long)
-        mask_pad = torch.zeros((bsz, max_k, mask_h, mask_w), dtype=torch.float32)
-        valid = torch.zeros((bsz, max_k), dtype=torch.bool)
-        for i, (idx_i, mask_i) in enumerate(zip(c_idx, c_mask)):
-            k = idx_i.numel()
-            if k == 0:
-                continue
-            idx_pad[i, :k] = idx_i
-            mask_pad[i, :k] = mask_i
-            valid[i, :k] = True
+    mask_h = c_mask[0].shape[-2] if c_mask else 1
+    mask_w = c_mask[0].shape[-1] if c_mask else 1
+    idx_pad, mask_pad, valid = pad_sparse_targets(c_idx, c_mask, mask_h=mask_h, mask_w=mask_w)
     return images, global_concepts, idx_pad, mask_pad, valid, labels
 
 
