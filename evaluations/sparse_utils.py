@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+from dataclasses import dataclass
+from typing import Optional
 
 import pandas as pd
 import torch
@@ -33,6 +35,58 @@ import numpy as np
 MAX_GLM_STEP = 150
 GLM_STEP_SIZE = 2 ** 0.1
 DEFAULT_MEASURE_LEVEL = (5, 10, 15, 20, 25, 30)
+
+
+@dataclass
+class NECFeatureSet:
+    """Concept features used by sparse GLM/NEC training and evaluation."""
+
+    concepts: list[str]
+    classes: list[str]
+    train_features: torch.Tensor
+    train_labels: torch.Tensor
+    test_features: torch.Tensor
+    test_labels: torch.Tensor
+    val_features: Optional[torch.Tensor] = None
+    val_labels: Optional[torch.Tensor] = None
+
+
+def _load_run_args(load_dir: str) -> argparse.Namespace:
+    with open(os.path.join(load_dir, "args.txt"), "r") as f:
+        return argparse.Namespace(**json.load(f))
+
+
+def _load_run_concepts(load_dir: str) -> list[str]:
+    with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
+        return f.read().split("\n")
+
+
+def _apply_common_overrides(
+    args: argparse.Namespace,
+    *,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+) -> argparse.Namespace:
+    if cbl_batch_size is not None:
+        args.cbl_batch_size = cbl_batch_size
+    if saga_batch_size is not None:
+        args.saga_batch_size = saga_batch_size
+    if num_workers is not None:
+        args.num_workers = num_workers
+    return args
+
+
+def _indexed_dataset_tensors(dataset) -> tuple[torch.Tensor, torch.Tensor]:
+    if not hasattr(dataset, "features") or not hasattr(dataset, "targets"):
+        raise TypeError(f"Expected IndexedTensorDataset, got {type(dataset).__name__}")
+    return dataset.features, dataset.targets
+
+
+def _tensor_dataset_tensors(dataset) -> tuple[torch.Tensor, torch.Tensor]:
+    if not hasattr(dataset, "tensors") or len(dataset.tensors) < 2:
+        raise TypeError(f"Expected TensorDataset, got {type(dataset).__name__}")
+    return dataset.tensors[0], dataset.tensors[1]
 
 
 def measure_acc(
@@ -111,32 +165,100 @@ def measure_acc(
     return path, {NEC: weight for NEC, weight in zip(feasible_measure_level, weights)}, accs
 
 
-def sparsity_acc_test(
+def _feature_loader(features, labels, batch_size, *, indexed: bool, shuffle: bool):
+    dataset = (
+        IndexedTensorDataset(features, labels)
+        if indexed
+        else TensorDataset(features, labels)
+    )
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+
+def _save_nec_outputs(load_dir: str, concepts: list[str], path, truncated_weights) -> None:
+    sparsity_list = [
+        (params["weight"].abs() > 1e-5).float().mean().item() for params in path
+    ]
+    nec_values = [len(concepts) * sparsity for sparsity in sparsity_list]
+    acc_values = [params["metrics"].get("acc_test", float("nan")) for params in path]
+    pd.DataFrame(data={"NEC": nec_values, "Accuracy": acc_values}).to_csv(
+        os.path.join(load_dir, "metrics.csv")
+    )
+    for nec, (weights, bias) in truncated_weights.items():
+        torch.save(weights, os.path.join(load_dir, f"W_g@NEC={nec:d}.pt"))
+        torch.save(bias, os.path.join(load_dir, f"b_g@NEC={nec:d}.pt"))
+
+
+def run_nec_sweep_from_features(
+    load_dir: str,
+    features: NECFeatureSet,
+    *,
+    saga_batch_size: int,
+    saga_step_size: float,
+    saga_n_iters: int,
+    device: str,
+    lam_max: float = 0.1,
+    max_glm_steps: int = MAX_GLM_STEP,
+) -> list[float]:
+    """Train sparse final layers from already-extracted concept features."""
+    train_loader = _feature_loader(
+        features.train_features,
+        features.train_labels,
+        saga_batch_size,
+        indexed=True,
+        shuffle=True,
+    )
+    val_loader = None
+    if features.val_features is not None and features.val_labels is not None:
+        val_loader = _feature_loader(
+            features.val_features,
+            features.val_labels,
+            saga_batch_size,
+            indexed=False,
+            shuffle=False,
+        )
+    test_loader = _feature_loader(
+        features.test_features,
+        features.test_labels,
+        saga_batch_size,
+        indexed=False,
+        shuffle=False,
+    )
+    path, truncated_weights, accs = measure_acc(
+        len(features.concepts),
+        len(features.classes),
+        len(train_loader.dataset),
+        train_loader,
+        val_loader,
+        test_loader,
+        saga_step_size=saga_step_size,
+        saga_n_iters=saga_n_iters,
+        device=device,
+        max_lam=lam_max,
+        max_glm_steps=max_glm_steps,
+    )
+    _save_nec_outputs(load_dir, features.concepts, path, truncated_weights)
+    return accs
+
+
+def extract_vlg_nec_features(
     load_dir,
-    lam_max=0.1,
     bot_filter=0,
     anno=None,
-    n_iters=None,
-    max_glm_steps=MAX_GLM_STEP,
     cbl_batch_size=None,
     saga_batch_size=None,
     num_workers=None,
     max_images=None,
-):
-    # Load arguments
-    with open(os.path.join(load_dir, "args.txt"), "r") as f:
-        args = json.load(f)
-        args = argparse.Namespace(**args)
+) -> tuple[NECFeatureSet, argparse.Namespace]:
+    args = _load_run_args(load_dir)
     if anno is not None:
         args.annotation_dir = anno
-    if cbl_batch_size is not None:
-        args.cbl_batch_size = cbl_batch_size
-    if saga_batch_size is not None:
-        args.saga_batch_size = saga_batch_size
-    if num_workers is not None:
-        args.num_workers = num_workers
-    with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
-        concepts = f.read().split("\n")
+    _apply_common_overrides(
+        args,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+    )
+    concepts = _load_run_concepts(load_dir)
     classes = data_utils.get_classes(args.dataset)
     if anno is None:
         anno = args.annotation_dir
@@ -213,44 +335,28 @@ def sparsity_acc_test(
             concept_logits = normalization(cbl(backbone(features)))
             test_concept_features.append(concept_logits.detach().cpu())
             test_concept_labels.append(labels)
-        test_concept_features = torch.cat(test_concept_features, dim=0)
-        concept_labels = torch.cat(test_concept_labels, dim=0)
-    test_concept_dataset = TensorDataset(test_concept_features, concept_labels)
-    test_concept_loader = DataLoader(
-        test_concept_dataset, batch_size=args.saga_batch_size, shuffle=False
+    test_concept_features = torch.cat(test_concept_features, dim=0)
+    concept_labels = torch.cat(test_concept_labels, dim=0)
+    train_features, train_labels = _indexed_dataset_tensors(train_concept_loader.dataset)
+    val_features, val_labels = _tensor_dataset_tensors(val_concept_loader.dataset)
+    feature_set = NECFeatureSet(
+        concepts=concepts,
+        classes=classes,
+        train_features=train_features,
+        train_labels=train_labels,
+        val_features=val_features,
+        val_labels=val_labels,
+        test_features=test_concept_features,
+        test_labels=concept_labels,
     )
-
-    path, truncated_weights, accs = measure_acc(
-        len(concepts),
-        len(classes),
-        len(train_concept_loader.dataset),
-        train_concept_loader,
-        val_concept_loader,
-        test_concept_loader,
-        saga_step_size=args.saga_step_size,
-        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
-        device=args.device,
-        max_lam=lam_max,
-        max_glm_steps=max_glm_steps,
-    )
-    sparsity_list = [
-        (params["weight"].abs() > 1e-5).float().mean().item() for params in path
-    ]
-    NEC = [len(concepts) * sparsity for sparsity in sparsity_list]
-    acc = [params["metrics"].get("acc_test", float("nan")) for params in path]
-    df = pd.DataFrame(data={"NEC": NEC, "Accuracy": acc})
-    df.to_csv(os.path.join(load_dir, "metrics.csv"))
-    # Save truncated weights
-    for NEC in truncated_weights:
-        W, b = truncated_weights[NEC]
-        torch.save(W, os.path.join(load_dir, f"W_g@NEC={NEC:d}.pt"))
-        torch.save(b, os.path.join(load_dir, f"b_g@NEC={NEC:d}.pt"))
-    return accs
+    return feature_set, args
 
 
-def sparsity_acc_test_lf_cbm(
+def sparsity_acc_test(
     load_dir,
     lam_max=0.1,
+    bot_filter=0,
+    anno=None,
     n_iters=None,
     max_glm_steps=MAX_GLM_STEP,
     cbl_batch_size=None,
@@ -258,10 +364,35 @@ def sparsity_acc_test_lf_cbm(
     num_workers=None,
     max_images=None,
 ):
-    # Load arguments
-    with open(os.path.join(load_dir, "args.txt"), "r") as f:
-        args = json.load(f)
-        args = argparse.Namespace(**args)
+    feature_set, args = extract_vlg_nec_features(
+        load_dir,
+        bot_filter=bot_filter,
+        anno=anno,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+        max_images=max_images,
+    )
+    return run_nec_sweep_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
+        saga_step_size=args.saga_step_size,
+        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
+        device=args.device,
+        lam_max=lam_max,
+        max_glm_steps=max_glm_steps,
+    )
+
+
+def extract_lf_nec_features(
+    load_dir,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    max_images=None,
+) -> tuple[NECFeatureSet, argparse.Namespace]:
+    args = _load_run_args(load_dir)
     if not hasattr(args, "batch_size"):
         args.batch_size = getattr(args, "lf_batch_size", getattr(args, "cbl_batch_size", 64))
     if not hasattr(args, "n_iters"):
@@ -274,8 +405,7 @@ def sparsity_acc_test_lf_cbm(
         args.saga_batch_size = saga_batch_size
     if num_workers is not None:
         args.num_workers = num_workers
-    with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
-        concepts = f.read().split("\n")
+    concepts = _load_run_concepts(load_dir)
     classes = data_utils.get_classes(args.dataset)
     # Concept filtering
 
@@ -296,8 +426,8 @@ def sparsity_acc_test_lf_cbm(
         test_dataset, shuffle=False, num_workers=args.num_workers, batch_size=args.batch_size
     )
     with torch.no_grad():
-        final_loaders = []
-        for i, loader in enumerate([train_dataloader, test_dataloader]):
+        final_features = []
+        for loader in [train_dataloader, test_dataloader]:
             concept_features = []
             concept_labels = []
             correct = 0
@@ -310,41 +440,46 @@ def sparsity_acc_test_lf_cbm(
             print("Accuracy: ", correct / len(loader.dataset))
             concept_features = torch.cat(concept_features, dim=0)
             concept_labels = torch.cat(concept_labels, dim=0)
-            concept_dataset = (
-                IndexedTensorDataset(concept_features, concept_labels)
-                if i == 0
-                else TensorDataset(concept_features, concept_labels)
-            )
-            concept_loader = DataLoader(
-                concept_dataset, batch_size=args.saga_batch_size, shuffle=False
-            )
-            final_loaders.append(concept_loader)
-    train_concept_loader, test_concept_loader = final_loaders
-    path, truncated_weights, accs = measure_acc(
-        len(concepts),
-        len(classes),
-        len(train_concept_loader.dataset),
-        train_concept_loader,
-        None,
-        test_concept_loader,
+            final_features.append((concept_features, concept_labels))
+    (train_features, train_labels), (test_features, test_labels) = final_features
+    feature_set = NECFeatureSet(
+        concepts=concepts,
+        classes=classes,
+        train_features=train_features,
+        train_labels=train_labels,
+        test_features=test_features,
+        test_labels=test_labels,
+    )
+    return feature_set, args
+
+
+def sparsity_acc_test_lf_cbm(
+    load_dir,
+    lam_max=0.1,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    max_images=None,
+):
+    feature_set, args = extract_lf_nec_features(
+        load_dir,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+        max_images=max_images,
+    )
+    return run_nec_sweep_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
+        saga_step_size=getattr(args, "saga_step_size", 0.1),
         saga_n_iters=n_iters if n_iters is not None else args.n_iters,
         device=args.device,
-        max_lam=lam_max,
+        lam_max=lam_max,
         max_glm_steps=max_glm_steps,
     )
-    sparsity_list = [
-        (params["weight"].abs() > 1e-5).float().mean().item() for params in path
-    ]
-    NEC = [len(concepts) * sparsity for sparsity in sparsity_list]
-    acc = [params["metrics"].get("acc_test", float("nan")) for params in path]
-    df = pd.DataFrame(data={"NEC": NEC, "Accuracy": acc})
-    df.to_csv(os.path.join(load_dir, "metrics.csv"))
-    # Save truncated weights
-    for NEC in truncated_weights:
-        W, b = truncated_weights[NEC]
-        torch.save(W, os.path.join(load_dir, f"W_g@NEC={NEC:d}.pt"))
-        torch.save(b, os.path.join(load_dir, f"b_g@NEC={NEC:d}.pt"))
-    return accs
 
 
 def _extract_salf_concepts(backbone, concept_layer, loader, device):
@@ -358,34 +493,6 @@ def _extract_salf_concepts(backbone, concept_layer, loader, device):
             maps = concept_layer(backbone(images))
             pooled = torch.nn.functional.adaptive_avg_pool2d(maps, 1).flatten(1)
             concept_features.append(pooled.cpu())
-            concept_labels.append(labels)
-    return torch.cat(concept_features, dim=0), torch.cat(concept_labels, dim=0)
-
-
-def _extract_savlg_concepts(args, backbone, concept_layer, loader):
-    backbone.eval()
-    concept_layer.eval()
-    concept_features = []
-    concept_labels = []
-    with torch.no_grad():
-        for images, labels in tqdm(loader):
-            if isinstance(images, dict):
-                feats = {
-                    key: value.to(args.device, non_blocking=True)
-                    for key, value in images.items()
-                }
-            elif isinstance(images, torch.Tensor) and images.ndim == 4 and int(images.shape[1]) != 3:
-                feats = images.to(args.device, non_blocking=True)
-            else:
-                images = images.to(args.device)
-                feats = forward_savlg_backbone(backbone, images, args)
-            global_outputs, spatial_maps = forward_savlg_concept_layer(concept_layer, feats)
-            _, _, final_logits = compute_savlg_concept_logits(
-                global_outputs,
-                spatial_maps,
-                args,
-            )
-            concept_features.append(final_logits.cpu())
             concept_labels.append(labels)
     return torch.cat(concept_features, dim=0), torch.cat(concept_labels, dim=0)
 
@@ -442,10 +549,6 @@ def _extract_savlg_concept_components(args, backbone, concept_layer, loader):
         torch.cat(spatial_features, dim=0),
         torch.cat(concept_labels, dim=0),
     )
-
-
-def _savlg_nec_component_cache_path(load_dir: str, split_name: str) -> str:
-    return os.path.join(load_dir, f"savlg_nec_{split_name}_components.pt")
 
 
 def _get_or_create_savlg_nec_components(
@@ -560,27 +663,21 @@ def _normalize_savlg_final_concepts(load_dir, train_concepts, val_concepts, test
     return train_concepts, val_concepts, test_concepts
 
 
-def sparsity_acc_test_salf_cbm(
+def extract_salf_nec_features(
     load_dir,
-    lam_max=0.1,
-    n_iters=None,
-    max_glm_steps=MAX_GLM_STEP,
     cbl_batch_size=None,
     saga_batch_size=None,
     num_workers=None,
     max_images=None,
-):
-    with open(os.path.join(load_dir, "args.txt"), "r") as f:
-        args = json.load(f)
-        args = argparse.Namespace(**args)
-    with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
-        concepts = f.read().split("\n")
-    if cbl_batch_size is not None:
-        args.cbl_batch_size = cbl_batch_size
-    if saga_batch_size is not None:
-        args.saga_batch_size = saga_batch_size
-    if num_workers is not None:
-        args.num_workers = num_workers
+) -> tuple[NECFeatureSet, argparse.Namespace]:
+    args = _load_run_args(load_dir)
+    concepts = _load_run_concepts(load_dir)
+    _apply_common_overrides(
+        args,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+    )
     classes = data_utils.get_classes(args.dataset)
 
     backbone = SpatialBackbone(args.backbone, device=args.device)
@@ -656,45 +753,18 @@ def sparsity_acc_test_salf_cbm(
     train_concepts = (train_concepts - train_mean) / train_std
     test_concepts = (test_concepts - train_mean) / train_std
 
-    train_concept_loader = DataLoader(
-        IndexedTensorDataset(train_concepts, train_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=False,
+    feature_set = NECFeatureSet(
+        concepts=concepts,
+        classes=classes,
+        train_features=train_concepts,
+        train_labels=train_labels,
+        test_features=test_concepts,
+        test_labels=test_labels,
     )
-    test_concept_loader = DataLoader(
-        TensorDataset(test_concepts, test_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=False,
-    )
-
-    path, truncated_weights, accs = measure_acc(
-        len(concepts),
-        len(classes),
-        len(train_concept_loader.dataset),
-        train_concept_loader,
-        None,
-        test_concept_loader,
-        saga_step_size=args.saga_step_size,
-        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
-        device=args.device,
-        max_lam=lam_max,
-        max_glm_steps=max_glm_steps,
-    )
-    sparsity_list = [
-        (params["weight"].abs() > 1e-5).float().mean().item() for params in path
-    ]
-    NEC = [len(concepts) * sparsity for sparsity in sparsity_list]
-    acc = [params["metrics"].get("acc_test", float("nan")) for params in path]
-    df = pd.DataFrame(data={"NEC": NEC, "Accuracy": acc})
-    df.to_csv(os.path.join(load_dir, "metrics.csv"))
-    for NEC in truncated_weights:
-        W, b = truncated_weights[NEC]
-        torch.save(W, os.path.join(load_dir, f"W_g@NEC={NEC:d}.pt"))
-        torch.save(b, os.path.join(load_dir, f"b_g@NEC={NEC:d}.pt"))
-    return accs
+    return feature_set, args
 
 
-def sparsity_acc_test_savlg_cbm(
+def sparsity_acc_test_salf_cbm(
     load_dir,
     lam_max=0.1,
     n_iters=None,
@@ -702,21 +772,45 @@ def sparsity_acc_test_savlg_cbm(
     cbl_batch_size=None,
     saga_batch_size=None,
     num_workers=None,
+    max_images=None,
+):
+    feature_set, args = extract_salf_nec_features(
+        load_dir,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+        max_images=max_images,
+    )
+    return run_nec_sweep_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
+        saga_step_size=args.saga_step_size,
+        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
+        device=args.device,
+        lam_max=lam_max,
+        max_glm_steps=max_glm_steps,
+    )
+
+
+def extract_savlg_nec_features(
+    load_dir,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
     alpha_override=None,
     disable_activation_cache_override=False,
     max_images=None,
     branch_norm_mode="none",
-):
+) -> tuple[NECFeatureSet, argparse.Namespace]:
     print(f"[SAVLG NEC] loading run from {load_dir}", flush=True)
-    with open(os.path.join(load_dir, "args.txt"), "r") as f:
-        args = json.load(f)
-        args = argparse.Namespace(**args)
-    if cbl_batch_size is not None:
-        args.cbl_batch_size = cbl_batch_size
-    if saga_batch_size is not None:
-        args.saga_batch_size = saga_batch_size
-    if num_workers is not None:
-        args.num_workers = num_workers
+    args = _load_run_args(load_dir)
+    _apply_common_overrides(
+        args,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+    )
     if disable_activation_cache_override:
         args.use_activation_cache = False
         args.disable_activation_cache = True
@@ -728,8 +822,7 @@ def sparsity_acc_test_savlg_cbm(
             flush=True,
         )
         args.skip_test_eval = False
-    with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
-        concepts = f.read().split("\n")
+    concepts = _load_run_concepts(load_dir)
     classes = data_utils.get_classes(args.dataset)
 
     print("[SAVLG NEC] creating SAVLG splits", flush=True)
@@ -786,44 +879,151 @@ def sparsity_acc_test_savlg_cbm(
             test_concepts,
         )
 
-    train_concept_loader = DataLoader(
-        IndexedTensorDataset(train_concepts, train_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=True,
+    feature_set = NECFeatureSet(
+        concepts=concepts,
+        classes=classes,
+        train_features=train_concepts,
+        train_labels=train_labels,
+        val_features=val_concepts,
+        val_labels=val_labels,
+        test_features=test_concepts,
+        test_labels=test_labels,
     )
-    val_concept_loader = DataLoader(
-        TensorDataset(val_concepts, val_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=False,
-    )
-    test_concept_loader = DataLoader(
-        TensorDataset(test_concepts, test_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=False,
-    )
+    return feature_set, args
 
-    path, truncated_weights, accs = measure_acc(
-        len(concepts),
-        len(classes),
-        len(train_concept_loader.dataset),
-        train_concept_loader,
-        val_concept_loader,
-        test_concept_loader,
+
+def sparsity_acc_test_savlg_cbm(
+    load_dir,
+    lam_max=0.1,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    alpha_override=None,
+    disable_activation_cache_override=False,
+    max_images=None,
+    branch_norm_mode="none",
+):
+    feature_set, args = extract_savlg_nec_features(
+        load_dir,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+        alpha_override=alpha_override,
+        disable_activation_cache_override=disable_activation_cache_override,
+        max_images=max_images,
+        branch_norm_mode=branch_norm_mode,
+    )
+    return run_nec_sweep_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
         saga_step_size=args.saga_step_size,
         saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
         device=args.device,
-        max_lam=lam_max,
+        lam_max=lam_max,
         max_glm_steps=max_glm_steps,
     )
-    sparsity_list = [
-        (params["weight"].abs() > 1e-5).float().mean().item() for params in path
-    ]
-    NEC = [len(concepts) * sparsity for sparsity in sparsity_list]
-    acc = [params["metrics"].get("acc_test", float("nan")) for params in path]
-    df = pd.DataFrame(data={"NEC": NEC, "Accuracy": acc})
-    df.to_csv(os.path.join(load_dir, "metrics.csv"))
-    for NEC in truncated_weights:
-        W, b = truncated_weights[NEC]
-        torch.save(W, os.path.join(load_dir, f"W_g@NEC={NEC:d}.pt"))
-        torch.save(b, os.path.join(load_dir, f"b_g@NEC={NEC:d}.pt"))
-    return accs
+
+
+def build_nec_feature_set(
+    load_dir: str,
+    model_name: str,
+    *,
+    annotation_dir=None,
+    bot_filter=0,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    savlg_alpha_override=None,
+    disable_activation_cache=False,
+    max_images=None,
+    savlg_branch_norm_mode="none",
+) -> tuple[NECFeatureSet, argparse.Namespace]:
+    """Extract reusable concept tensors for sparse training or later evaluation."""
+    normalized = str(model_name).lower().replace("-", "_")
+    if normalized == "vlg_cbm":
+        return extract_vlg_nec_features(
+            load_dir,
+            bot_filter=bot_filter,
+            anno=annotation_dir,
+            cbl_batch_size=cbl_batch_size,
+            saga_batch_size=saga_batch_size,
+            num_workers=num_workers,
+            max_images=max_images,
+        )
+    if normalized == "lf_cbm":
+        return extract_lf_nec_features(
+            load_dir,
+            cbl_batch_size=cbl_batch_size,
+            saga_batch_size=saga_batch_size,
+            num_workers=num_workers,
+            max_images=max_images,
+        )
+    if normalized == "salf_cbm":
+        return extract_salf_nec_features(
+            load_dir,
+            cbl_batch_size=cbl_batch_size,
+            saga_batch_size=saga_batch_size,
+            num_workers=num_workers,
+            max_images=max_images,
+        )
+    if normalized in {"savlg_cbm", "sg_cbm", "sgcbm"}:
+        return extract_savlg_nec_features(
+            load_dir,
+            cbl_batch_size=cbl_batch_size,
+            saga_batch_size=saga_batch_size,
+            num_workers=num_workers,
+            alpha_override=savlg_alpha_override,
+            disable_activation_cache_override=disable_activation_cache,
+            max_images=max_images,
+            branch_norm_mode=savlg_branch_norm_mode,
+        )
+    raise NotImplementedError(
+        f"Sparse evaluation for model_name={model_name} is not implemented yet."
+    )
+
+
+def train_sparse_nec_from_checkpoint(
+    load_dir: str,
+    model_name: str,
+    *,
+    lam_max=0.1,
+    bot_filter=0,
+    annotation_dir=None,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    savlg_alpha_override=None,
+    disable_activation_cache=False,
+    max_images=None,
+    savlg_branch_norm_mode="none",
+) -> tuple[list[float], NECFeatureSet, argparse.Namespace]:
+    """Extract concept features once, then run the shared sparse NEC sweep."""
+    feature_set, args = build_nec_feature_set(
+        load_dir,
+        model_name,
+        annotation_dir=annotation_dir,
+        bot_filter=bot_filter,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+        savlg_alpha_override=savlg_alpha_override,
+        disable_activation_cache=disable_activation_cache,
+        max_images=max_images,
+        savlg_branch_norm_mode=savlg_branch_norm_mode,
+    )
+    accs = run_nec_sweep_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
+        saga_step_size=getattr(args, "saga_step_size", 0.1),
+        saga_n_iters=n_iters if n_iters is not None else getattr(args, "saga_n_iters", 500),
+        device=args.device,
+        lam_max=lam_max,
+        max_glm_steps=max_glm_steps,
+    )
+    return accs, feature_set, args

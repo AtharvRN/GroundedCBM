@@ -6,10 +6,7 @@ import pandas as pd
 
 from evaluations.sparse_utils import (
     DEFAULT_MEASURE_LEVEL,
-    sparsity_acc_test,
-    sparsity_acc_test_lf_cbm,
-    sparsity_acc_test_salf_cbm,
-    sparsity_acc_test_savlg_cbm,
+    train_sparse_nec_from_checkpoint,
 )
 from methods.common import load_run_info
 
@@ -38,59 +35,22 @@ def main() -> None:
     args = parse_args()
     run_info = load_run_info(args.load_path)
     model_name = "lf_cbm" if args.lf_cbm else run_info.get("model_name", "vlg_cbm")
-    if model_name == "lf_cbm":
-        accs = sparsity_acc_test_lf_cbm(
-            args.load_path,
-            lam_max=args.lam,
-            n_iters=args.n_iters,
-            max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
-            cbl_batch_size=args.cbl_batch_size,
-            saga_batch_size=args.saga_batch_size,
-            num_workers=args.num_workers,
-            max_images=args.max_images,
-        )
-    elif model_name == "vlg_cbm":
-        accs = sparsity_acc_test(
-            args.load_path,
-            lam_max=args.lam,
-            bot_filter=args.filter,
-            anno=args.annotation_dir,
-            n_iters=args.n_iters,
-            max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
-            cbl_batch_size=args.cbl_batch_size,
-            saga_batch_size=args.saga_batch_size,
-            num_workers=args.num_workers,
-            max_images=args.max_images,
-        )
-    elif model_name == "salf_cbm":
-        accs = sparsity_acc_test_salf_cbm(
-            args.load_path,
-            lam_max=args.lam,
-            n_iters=args.n_iters,
-            max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
-            cbl_batch_size=args.cbl_batch_size,
-            saga_batch_size=args.saga_batch_size,
-            num_workers=args.num_workers,
-            max_images=args.max_images,
-        )
-    elif model_name == "savlg_cbm":
-        accs = sparsity_acc_test_savlg_cbm(
-            args.load_path,
-            lam_max=args.lam,
-            n_iters=args.n_iters,
-            max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
-            cbl_batch_size=args.cbl_batch_size,
-            saga_batch_size=args.saga_batch_size,
-            num_workers=args.num_workers,
-            alpha_override=args.savlg_alpha_override,
-            disable_activation_cache_override=args.disable_activation_cache,
-            max_images=args.max_images,
-            branch_norm_mode=args.savlg_branch_norm_mode,
-        )
-    else:
-        raise NotImplementedError(
-            f"Sparse evaluation for model_name={model_name} is not implemented yet."
-        )
+    accs, _, _ = train_sparse_nec_from_checkpoint(
+        args.load_path,
+        model_name,
+        lam_max=args.lam,
+        bot_filter=args.filter,
+        annotation_dir=args.annotation_dir,
+        n_iters=args.n_iters,
+        max_glm_steps=args.max_glm_steps if args.max_glm_steps is not None else 150,
+        cbl_batch_size=args.cbl_batch_size,
+        saga_batch_size=args.saga_batch_size,
+        num_workers=args.num_workers,
+        savlg_alpha_override=args.savlg_alpha_override,
+        disable_activation_cache=args.disable_activation_cache,
+        max_images=args.max_images,
+        savlg_branch_norm_mode=args.savlg_branch_norm_mode,
+    )
     nec_rows = []
     for level, acc in zip(DEFAULT_MEASURE_LEVEL, accs):
         nec = int(level)
