@@ -23,12 +23,20 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from gcbm.spatial_targets import (  # noqa: E402
+    PREPROCESS_RESIZE_SIZE,
+    normalize_box,
+    rasterize_box_iou as _shared_rasterize_box_iou,
+    rasterize_box_soft_occupancy as _shared_rasterize_box_soft_occupancy,
+    rasterize_box_target as _shared_rasterize_box_target,
+    resize_short_edge_size,
+    transform_box_for_resize_center_crop,
+)
 from glm_saga.elasticnet import glm_saga
 
 
 # Keep target rasterization in the same coordinate frame as the image tensor
 # transform: Resize(shorter side=256) followed by CenterCrop(input_size).
-PREPROCESS_RESIZE_SIZE = 256
 
 
 IMAGENET_LABEL_ALIASES = {
@@ -822,95 +830,18 @@ def feature_storage_dtype(cfg: Config) -> np.dtype:
     return np.float16
 
 
-def normalize_box(box: Sequence[float], image_size: Tuple[int, int]) -> Optional[Tuple[float, float, float, float]]:
-    pixel_box = _box_to_original_pixels(box, image_size=image_size)
-    if pixel_box is None:
-        return None
-    width, height = image_size
-    x1, y1, x2, y2 = pixel_box
-    return x1 / width, y1 / height, x2 / width, y2 / height
-
-
-def _box_to_original_pixels(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-) -> Optional[Tuple[float, float, float, float]]:
-    # Real GDINO annotations are saved as original-image pixel xyxy boxes, but
-    # Some annotation exports are already normalized to [0, 1].
-    if not isinstance(box, (list, tuple)) or len(box) != 4:
-        return None
-    x1, y1, x2, y2 = [float(v) for v in box]
-    width, height = image_size
-    if width <= 0 or height <= 0:
-        return None
-    if max(abs(x1), abs(y1), abs(x2), abs(y2)) > 1.5:
-        x1, x2 = sorted((x1, x2))
-        y1, y2 = sorted((y1, y2))
-    else:
-        x1, x2 = sorted((x1 * width, x2 * width))
-        y1, y2 = sorted((y1 * height, y2 * height))
-    x1, x2 = float(np.clip(x1, 0.0, width)), float(np.clip(x2, 0.0, width))
-    y1, y2 = float(np.clip(y1, 0.0, height)), float(np.clip(y2, 0.0, height))
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return x1, y1, x2, y2
-
-
-def resize_short_edge_size(
-    image_size: Tuple[int, int],
-    resize_size: int = PREPROCESS_RESIZE_SIZE,
-) -> Tuple[int, int]:
-    # Match torchvision.transforms.Resize(int): preserve aspect ratio and set
-    # the shorter edge to resize_size.
-    width, height = image_size
-    if width <= 0 or height <= 0:
-        return int(resize_size), int(resize_size)
-    if width == height:
-        return int(resize_size), int(resize_size)
-    if width < height:
-        return int(resize_size), int(resize_size * height / width)
-    return int(resize_size * width / height), int(resize_size)
-
-
 def transform_box_for_model_input(
     box: Sequence[float],
     image_size: Tuple[int, int],
     input_size: Optional[int],
     resize_size: int = PREPROCESS_RESIZE_SIZE,
 ) -> Optional[Tuple[float, float, float, float]]:
-    # Apply the same deterministic geometry as the image transform before
-    # rasterizing, so each mask cell corresponds to the model's spatial map.
-    pixel_box = _box_to_original_pixels(box, image_size=image_size)
-    if pixel_box is None:
-        return None
-    crop_size = int(input_size or resize_size)
-    width, height = image_size
-    resized_width, resized_height = resize_short_edge_size(image_size, resize_size=resize_size)
-    scale_x = resized_width / float(width)
-    scale_y = resized_height / float(height)
-    x1, y1, x2, y2 = pixel_box
-    x1 *= scale_x
-    x2 *= scale_x
-    y1 *= scale_y
-    y2 *= scale_y
-
-    # Match torchvision CenterCrop exactly for deterministic precompute.
-    crop_left = max(int(round((resized_width - crop_size) / 2.0)), 0)
-    crop_top = max(int(round((resized_height - crop_size) / 2.0)), 0)
-    x1 -= crop_left
-    x2 -= crop_left
-    y1 -= crop_top
-    y2 -= crop_top
-
-    x1 = float(np.clip(x1, 0.0, crop_size))
-    x2 = float(np.clip(x2, 0.0, crop_size))
-    y1 = float(np.clip(y1, 0.0, crop_size))
-    y2 = float(np.clip(y2, 0.0, crop_size))
-    # If center-cropping removes the annotated region entirely, do not create a
-    # spatial target for that concept on this image.
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return x1 / crop_size, y1 / crop_size, x2 / crop_size, y2 / crop_size
+    return transform_box_for_resize_center_crop(
+        box,
+        image_size=image_size,
+        input_size=input_size,
+        resize_size=resize_size,
+    )
 
 
 def rasterize_box_iou(
@@ -921,32 +852,16 @@ def rasterize_box_iou(
     mask_w: int,
     iou_thresh: float,
 ) -> Optional[np.ndarray]:
-    norm = transform_box_for_model_input(box, image_size=image_size, input_size=input_size)
-    if norm is None:
-        return None
-    x1, y1, x2, y2 = norm
-    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    if box_area <= 0.0:
-        return None
-    mask = np.zeros((mask_h, mask_w), dtype=np.float32)
-    patch_area = 1.0 / float(mask_h * mask_w)
-    for r in range(mask_h):
-        py1 = r / float(mask_h)
-        py2 = (r + 1) / float(mask_h)
-        for c in range(mask_w):
-            px1 = c / float(mask_w)
-            px2 = (c + 1) / float(mask_w)
-            ix1 = max(px1, x1)
-            iy1 = max(py1, y1)
-            ix2 = min(px2, x2)
-            iy2 = min(py2, y2)
-            inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-            if inter <= 0.0:
-                continue
-            union = patch_area + box_area - inter
-            if union > 0.0 and inter / union > iou_thresh:
-                mask[r, c] = 1.0
-    return mask
+    return _shared_rasterize_box_iou(
+        box,
+        image_size=image_size,
+        mask_h=mask_h,
+        mask_w=mask_w,
+        iou_thresh=iou_thresh,
+        transform="resize_center_crop",
+        input_size=input_size,
+        resize_size=PREPROCESS_RESIZE_SIZE,
+    )
 
 
 def rasterize_box_soft_occupancy(
@@ -956,29 +871,15 @@ def rasterize_box_soft_occupancy(
     mask_h: int,
     mask_w: int,
 ) -> Optional[np.ndarray]:
-    norm = transform_box_for_model_input(box, image_size=image_size, input_size=input_size)
-    if norm is None:
-        return None
-    x1, y1, x2, y2 = norm
-    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    if box_area <= 0.0:
-        return None
-    mask = np.zeros((mask_h, mask_w), dtype=np.float32)
-    patch_area = 1.0 / float(mask_h * mask_w)
-    for r in range(mask_h):
-        py1 = r / float(mask_h)
-        py2 = (r + 1) / float(mask_h)
-        for c in range(mask_w):
-            px1 = c / float(mask_w)
-            px2 = (c + 1) / float(mask_w)
-            ix1 = max(px1, x1)
-            iy1 = max(py1, y1)
-            ix2 = min(px2, x2)
-            iy2 = min(py2, y2)
-            inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-            if inter > 0.0:
-                mask[r, c] = float(np.clip(inter / patch_area, 0.0, 1.0))
-    return mask
+    return _shared_rasterize_box_soft_occupancy(
+        box,
+        image_size=image_size,
+        mask_h=mask_h,
+        mask_w=mask_w,
+        transform="resize_center_crop",
+        input_size=input_size,
+        resize_size=PREPROCESS_RESIZE_SIZE,
+    )
 
 
 def rasterize_box_target(
@@ -986,24 +887,17 @@ def rasterize_box_target(
     image_size: Tuple[int, int],
     cfg: Config,
 ) -> Optional[np.ndarray]:
-    if cfg.spatial_target_mode == "hard_iou":
-        return rasterize_box_iou(
-            box,
-            image_size=image_size,
-            input_size=cfg.input_size,
-            mask_h=cfg.mask_h,
-            mask_w=cfg.mask_w,
-            iou_thresh=cfg.patch_iou_thresh,
-        )
-    if cfg.spatial_target_mode == "soft_box":
-        return rasterize_box_soft_occupancy(
-            box,
-            image_size=image_size,
-            input_size=cfg.input_size,
-            mask_h=cfg.mask_h,
-            mask_w=cfg.mask_w,
-        )
-    raise ValueError(f"Unsupported spatial_target_mode: {cfg.spatial_target_mode}")
+    return _shared_rasterize_box_target(
+        box,
+        image_size=image_size,
+        target_mode=cfg.spatial_target_mode,
+        mask_h=cfg.mask_h,
+        mask_w=cfg.mask_w,
+        iou_thresh=cfg.patch_iou_thresh,
+        transform="resize_center_crop",
+        input_size=cfg.input_size,
+        resize_size=PREPROCESS_RESIZE_SIZE,
+    )
 
 
 def annotation_entries(sample_annotations: Sequence[Dict[str, Any]]) -> Sequence[Dict[str, Any]]:

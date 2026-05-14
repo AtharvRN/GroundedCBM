@@ -533,6 +533,7 @@ def main():
         savlg_spatial_branch_mode="multiscale_conv45",
         savlg_spatial_stage="conv5",
         savlg_stream_supervision=False,
+        savlg_target_transform="original",
         savlg_topk_fraction=0.2,
         skip_concept_filter=False,
         skip_train_val_eval=False,

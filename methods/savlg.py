@@ -18,6 +18,7 @@ from tqdm import tqdm
 from data import utils as data_utils
 from data.concept_dataset import get_filtered_concepts_and_counts
 from gcbm.losses import sgcbm_concept_losses
+from gcbm.spatial_targets import rasterize_box_target as shared_rasterize_box_target
 from glm_saga.elasticnet import IndexedTensorDataset
 from methods.common import build_run_dir, save_args, write_artifacts
 from methods.lf import TransformedSubset, subset_targets, use_original_label_free_protocol
@@ -296,123 +297,21 @@ def _load_or_build_image_sizes(
     return sizes
 
 
-def _normalize_box(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-) -> Optional[Tuple[float, float, float, float]]:
-    if not isinstance(box, (list, tuple)) or len(box) != 4:
-        return None
-    x1, y1, x2, y2 = [float(v) for v in box]
-    w, h = int(image_size[0]), int(image_size[1])
-    if max(abs(x1), abs(y1), abs(x2), abs(y2)) > 1.5:
-        if w <= 0 or h <= 0:
-            return None
-        x1, x2 = x1 / w, x2 / w
-        y1, y2 = y1 / h, y2 / h
-    x1, x2 = sorted((x1, x2))
-    y1, y2 = sorted((y1, y2))
-    x1 = float(np.clip(x1, 0.0, 1.0))
-    x2 = float(np.clip(x2, 0.0, 1.0))
-    y1 = float(np.clip(y1, 0.0, 1.0))
-    y2 = float(np.clip(y2, 0.0, 1.0))
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return x1, y1, x2, y2
-
-
-def _rasterize_box_patch_iou(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-    mask_h: int,
-    mask_w: int,
-    iou_thresh: float,
-) -> Optional[np.ndarray]:
-    norm = _normalize_box(box, image_size=image_size)
-    if norm is None:
-        return None
-    x1, y1, x2, y2 = norm
-    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    if box_area <= 0.0:
-        return None
-
-    mask = np.zeros((mask_h, mask_w), dtype=np.float32)
-    patch_area = 1.0 / float(mask_h * mask_w)
-    for r in range(mask_h):
-        py1 = r / float(mask_h)
-        py2 = (r + 1) / float(mask_h)
-        for c in range(mask_w):
-            px1 = c / float(mask_w)
-            px2 = (c + 1) / float(mask_w)
-            ix1 = max(px1, x1)
-            iy1 = max(py1, y1)
-            ix2 = min(px2, x2)
-            iy2 = min(py2, y2)
-            inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-            if inter <= 0.0:
-                continue
-            union = patch_area + box_area - inter
-            if union > 0.0 and (inter / union) > float(iou_thresh):
-                mask[r, c] = 1.0
-    return mask
-
-
-def _rasterize_box_soft_occupancy(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-    mask_h: int,
-    mask_w: int,
-) -> Optional[np.ndarray]:
-    norm = _normalize_box(box, image_size=image_size)
-    if norm is None:
-        return None
-    x1, y1, x2, y2 = norm
-    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    if box_area <= 0.0:
-        return None
-
-    mask = np.zeros((mask_h, mask_w), dtype=np.float32)
-    patch_area = 1.0 / float(mask_h * mask_w)
-    for r in range(mask_h):
-        py1 = r / float(mask_h)
-        py2 = (r + 1) / float(mask_h)
-        for c in range(mask_w):
-            px1 = c / float(mask_w)
-            px2 = (c + 1) / float(mask_w)
-            ix1 = max(px1, x1)
-            iy1 = max(py1, y1)
-            ix2 = min(px2, x2)
-            iy2 = min(py2, y2)
-            inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-            if inter <= 0.0:
-                continue
-            mask[r, c] = float(np.clip(inter / patch_area, 0.0, 1.0))
-    return mask
-
-
 def _rasterize_box_target(
     box: Sequence[float],
     image_size: Tuple[int, int],
     args,
 ) -> Optional[np.ndarray]:
-    target_mode = str(getattr(args, "savlg_target_mode", "hard_iou")).lower()
-    mask_h = int(args.mask_h)
-    mask_w = int(args.mask_w)
-    if target_mode == "hard_iou":
-        return _rasterize_box_patch_iou(
-            box=box,
-            image_size=image_size,
-            mask_h=mask_h,
-            mask_w=mask_w,
-            iou_thresh=float(getattr(args, "patch_iou_thresh", 0.5)),
-        )
-    if target_mode == "soft_box":
-        return _rasterize_box_soft_occupancy(
-            box=box,
-            image_size=image_size,
-            mask_h=mask_h,
-            mask_w=mask_w,
-        )
-    raise ValueError(f"Unsupported SAVLG target mode: {target_mode}")
+    return shared_rasterize_box_target(
+        box,
+        image_size=image_size,
+        target_mode=str(getattr(args, "savlg_target_mode", "hard_iou")).lower(),
+        mask_h=int(args.mask_h),
+        mask_w=int(args.mask_w),
+        iou_thresh=float(getattr(args, "patch_iou_thresh", 0.5)),
+        transform=str(getattr(args, "savlg_target_transform", "original")),
+        input_size=getattr(args, "input_size", None),
+    )
 
 
 def load_spatial_supervision(
