@@ -10,12 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from gcbm.imagenet_core import (  # noqa: E402
-    Config,
-    SafeImageFolderWithAnnotations,
-    load_concepts,
-    precompute_target_store,
-)
+from gcbm.imagenet_config import Config  # noqa: E402
+from gcbm.imagenet_data import SafeImageFolderWithAnnotations  # noqa: E402
+from gcbm.imagenet_targets import load_concepts, precompute_target_store  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

@@ -12,12 +12,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from gcbm.features import MemmapFeatureDataset, compute_feature_stats_memmap, feature_storage_dtype
-from gcbm.imagenet_core import (
-    autocast_context,
-    cuda_peak_stats_mb,
-    prepare_images,
-    reset_cuda_peak_stats_if_needed,
-)
+from gcbm.runtime import autocast_context, cuda_peak_stats_mb, reset_cuda_peak_stats_if_needed
+from gcbm.training_utils import prepare_images
 from glm_saga.elasticnet import glm_saga
 
 

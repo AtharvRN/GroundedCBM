@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from gcbm.imagenet_core import build_gdino_target_sample
+from gcbm.imagenet_targets import build_gdino_target_sample
 
 
 def test_build_gdino_target_sample_maps_labels_and_filters_scores():

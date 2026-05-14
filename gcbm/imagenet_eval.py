@@ -6,7 +6,7 @@ import re
 from dataclasses import fields
 from pathlib import Path
 
-from gcbm.imagenet_core import Config
+from gcbm.imagenet_config import Config
 
 
 VAL_RE = re.compile(r"ILSVRC2012_val_(\d{8})\.JPEG$")

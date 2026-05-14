@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import ResNet50_Weights, resnet50
 
-from gcbm.imagenet_core import load_concepts
+from gcbm.imagenet_targets import load_concepts
 from gcbm.sg_model import pool_residual_spatial_logits as shared_pool_residual_spatial_logits
 
 
