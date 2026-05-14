@@ -21,7 +21,7 @@ from gcbm.imagenet_final_layers import MemmapFeatureDataset
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a standalone GLM-SAGA lambda path sweep on saved SAVLG features.")
+    parser = argparse.ArgumentParser(description="Run a standalone GLM-SAGA lambda path sweep on saved SG-CBM features.")
     parser.add_argument("--artifact_dir", required=True)
     parser.add_argument("--output_dir", default="")
     parser.add_argument("--device", default="cuda")

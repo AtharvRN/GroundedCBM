@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, TensorDataset
+from tqdm import tqdm
 
 from glm_saga.elasticnet import IndexedTensorDataset
 
@@ -54,6 +56,51 @@ def make_feature_loader(
 ) -> DataLoader:
     dataset = IndexedTensorDataset(features, labels) if indexed else TensorDataset(features, labels)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+
+def default_labeled_batch(batch: Any) -> tuple[Any, torch.Tensor]:
+    """Return model input and class label from common CBM dataloader batches."""
+    if not isinstance(batch, (tuple, list)) or len(batch) < 2:
+        raise TypeError(f"Expected a tuple/list batch with labels, got {type(batch).__name__}")
+    return batch[0], batch[-1]
+
+
+def extract_labeled_feature_tensors(
+    loader: DataLoader,
+    feature_fn: Callable[[Any], torch.Tensor | tuple[torch.Tensor, Any]],
+    *,
+    batch_unpacker: Callable[[Any], tuple[Any, torch.Tensor]] = default_labeled_batch,
+    progress: bool = True,
+    accuracy_fn: Callable[[Any, torch.Tensor], torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, float | None]:
+    """Extract feature and label tensors from a dataloader.
+
+    ``feature_fn`` may return just features or ``(features, aux)`` where
+    ``aux`` is passed to ``accuracy_fn``. Features and labels are stored on CPU.
+    """
+    feature_chunks: list[torch.Tensor] = []
+    label_chunks: list[torch.Tensor] = []
+    correct = 0.0
+    total = 0
+    iterator = tqdm(loader) if progress else loader
+    with torch.no_grad():
+        for batch in iterator:
+            inputs, labels = batch_unpacker(batch)
+            output = feature_fn(inputs)
+            if isinstance(output, tuple):
+                features, aux = output
+            else:
+                features, aux = output, None
+            feature_chunks.append(features.detach().cpu())
+            label_chunks.append(labels.detach().cpu())
+            if accuracy_fn is not None:
+                if aux is None:
+                    raise ValueError("accuracy_fn requires feature_fn to return (features, aux)")
+                batch_correct = accuracy_fn(aux, labels).detach().float().sum().item()
+                correct += float(batch_correct)
+                total += int(labels.numel())
+    accuracy = None if accuracy_fn is None else correct / max(total, 1)
+    return torch.cat(feature_chunks, dim=0), torch.cat(label_chunks, dim=0), accuracy
 
 
 def standardize_from_train(

@@ -12,7 +12,7 @@ from tqdm import tqdm
 import model.utils as utils
 import data.utils as data_utils
 from data.concept_dataset import get_concept_dataloader, get_final_layer_dataset
-from gcbm.features import make_feature_loader, standardize_from_train
+from gcbm.features import extract_labeled_feature_tensors, make_feature_loader, standardize_from_train
 from glm_saga.elasticnet import IndexedTensorDataset, glm_saga
 from methods.lf import TransformedSubset, use_original_label_free_protocol
 from methods.salf import SpatialBackbone, build_spatial_concept_layer
@@ -184,6 +184,66 @@ def _save_nec_outputs(load_dir: str, concepts: list[str], path, truncated_weight
         torch.save(bias, os.path.join(load_dir, f"b_g@NEC={nec:d}.pt"))
 
 
+def _make_nec_feature_set(
+    concepts: list[str],
+    classes: list[str],
+    train_features: torch.Tensor,
+    train_labels: torch.Tensor,
+    test_features: torch.Tensor,
+    test_labels: torch.Tensor,
+    *,
+    val_features: Optional[torch.Tensor] = None,
+    val_labels: Optional[torch.Tensor] = None,
+) -> NECFeatureSet:
+    return NECFeatureSet(
+        concepts=concepts,
+        classes=classes,
+        train_features=train_features,
+        train_labels=train_labels,
+        val_features=val_features,
+        val_labels=val_labels,
+        test_features=test_features,
+        test_labels=test_labels,
+    )
+
+
+def _load_projection_stats(load_dir: str) -> tuple[torch.Tensor, torch.Tensor]:
+    mean = torch.load(os.path.join(load_dir, "proj_mean.pt"), map_location="cpu")
+    std = torch.load(os.path.join(load_dir, "proj_std.pt"), map_location="cpu")
+    return mean, std
+
+
+def _normalize_with_saved_projection(
+    load_dir: str,
+    *features: torch.Tensor,
+) -> tuple[torch.Tensor, ...]:
+    mean, std = _load_projection_stats(load_dir)
+    return tuple((feature - mean) / std for feature in features)
+
+
+def _run_sparse_for_extractor(
+    load_dir: str,
+    extractor,
+    *,
+    lam_max=0.1,
+    n_iters=None,
+    max_glm_steps=MAX_GLM_STEP,
+    **extractor_kwargs,
+):
+    feature_set, args = extractor(load_dir, **extractor_kwargs)
+    default_n_iters = getattr(args, "saga_n_iters", getattr(args, "n_iters", 500))
+    return run_nec_sweep_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
+        saga_step_size=getattr(args, "saga_step_size", 0.1),
+        saga_n_iters=n_iters if n_iters is not None else default_n_iters,
+        device=args.device,
+        lam_max=lam_max,
+        max_glm_steps=max_glm_steps,
+    )
+
+
 def run_nec_sweep_from_features(
     load_dir: str,
     features: NECFeatureSet,
@@ -323,19 +383,17 @@ def extract_vlg_nec_features(
         filter=filtered_idx,
     )
     normalization = NormalizationLayer.from_pretrained(load_dir, args.device)
-    with torch.no_grad():
-        test_concept_features = []
-        test_concept_labels = []
-        for features, _, labels in tqdm(test_cbl_loader):
-            features = features.to(args.device)
-            concept_logits = normalization(cbl(backbone(features)))
-            test_concept_features.append(concept_logits.detach().cpu())
-            test_concept_labels.append(labels)
-    test_concept_features = torch.cat(test_concept_features, dim=0)
-    concept_labels = torch.cat(test_concept_labels, dim=0)
+    def forward_vlg_concepts(images):
+        images = images.to(args.device)
+        return normalization(cbl(backbone(images)))
+
+    test_concept_features, concept_labels, _ = extract_labeled_feature_tensors(
+        test_cbl_loader,
+        forward_vlg_concepts,
+    )
     train_features, train_labels = _indexed_dataset_tensors(train_concept_loader.dataset)
     val_features, val_labels = _tensor_dataset_tensors(val_concept_loader.dataset)
-    feature_set = NECFeatureSet(
+    feature_set = _make_nec_feature_set(
         concepts=concepts,
         classes=classes,
         train_features=train_features,
@@ -360,24 +418,18 @@ def sparsity_acc_test(
     num_workers=None,
     max_images=None,
 ):
-    feature_set, args = extract_vlg_nec_features(
+    return _run_sparse_for_extractor(
         load_dir,
+        extract_vlg_nec_features,
+        lam_max=lam_max,
+        n_iters=n_iters,
+        max_glm_steps=max_glm_steps,
         bot_filter=bot_filter,
         anno=anno,
         cbl_batch_size=cbl_batch_size,
         saga_batch_size=saga_batch_size,
         num_workers=num_workers,
         max_images=max_images,
-    )
-    return run_nec_sweep_from_features(
-        load_dir,
-        feature_set,
-        saga_batch_size=args.saga_batch_size,
-        saga_step_size=args.saga_step_size,
-        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
-        device=args.device,
-        lam_max=lam_max,
-        max_glm_steps=max_glm_steps,
     )
 
 
@@ -421,24 +473,27 @@ def extract_lf_nec_features(
     test_dataloader = torch.utils.data.DataLoader(
         test_dataset, shuffle=False, num_workers=args.num_workers, batch_size=args.batch_size
     )
-    with torch.no_grad():
-        final_features = []
-        for loader in [train_dataloader, test_dataloader]:
-            concept_features = []
-            concept_labels = []
-            correct = 0
-            for features, labels in tqdm(loader):
-                features = features.to(args.device)
-                pred, concept_logits = cbm(features)
-                concept_features.append(concept_logits.detach().cpu())
-                correct += (pred.argmax(dim=-1) == labels.to(args.device)).float().sum()
-                concept_labels.append(labels)
-            print("Accuracy: ", correct / len(loader.dataset))
-            concept_features = torch.cat(concept_features, dim=0)
-            concept_labels = torch.cat(concept_labels, dim=0)
-            final_features.append((concept_features, concept_labels))
-    (train_features, train_labels), (test_features, test_labels) = final_features
-    feature_set = NECFeatureSet(
+    def forward_lf_concepts(images):
+        images = images.to(args.device)
+        pred, concept_logits = cbm(images)
+        return concept_logits, pred
+
+    def lf_accuracy(pred, labels):
+        return pred.argmax(dim=-1).cpu() == labels.cpu()
+
+    train_features, train_labels, train_acc = extract_labeled_feature_tensors(
+        train_dataloader,
+        forward_lf_concepts,
+        accuracy_fn=lf_accuracy,
+    )
+    test_features, test_labels, test_acc = extract_labeled_feature_tensors(
+        test_dataloader,
+        forward_lf_concepts,
+        accuracy_fn=lf_accuracy,
+    )
+    print("Train Accuracy: ", train_acc)
+    print("Test Accuracy: ", test_acc)
+    feature_set = _make_nec_feature_set(
         concepts=concepts,
         classes=classes,
         train_features=train_features,
@@ -459,38 +514,32 @@ def sparsity_acc_test_lf_cbm(
     num_workers=None,
     max_images=None,
 ):
-    feature_set, args = extract_lf_nec_features(
+    return _run_sparse_for_extractor(
         load_dir,
+        extract_lf_nec_features,
+        lam_max=lam_max,
+        n_iters=n_iters,
+        max_glm_steps=max_glm_steps,
         cbl_batch_size=cbl_batch_size,
         saga_batch_size=saga_batch_size,
         num_workers=num_workers,
         max_images=max_images,
-    )
-    return run_nec_sweep_from_features(
-        load_dir,
-        feature_set,
-        saga_batch_size=args.saga_batch_size,
-        saga_step_size=getattr(args, "saga_step_size", 0.1),
-        saga_n_iters=n_iters if n_iters is not None else args.n_iters,
-        device=args.device,
-        lam_max=lam_max,
-        max_glm_steps=max_glm_steps,
     )
 
 
 def _extract_salf_concepts(backbone, concept_layer, loader, device):
     backbone.eval()
     concept_layer.eval()
-    concept_features = []
-    concept_labels = []
-    with torch.no_grad():
-        for images, labels in tqdm(loader):
-            images = images.to(device)
-            maps = concept_layer(backbone(images))
-            pooled = torch.nn.functional.adaptive_avg_pool2d(maps, 1).flatten(1)
-            concept_features.append(pooled.cpu())
-            concept_labels.append(labels)
-    return torch.cat(concept_features, dim=0), torch.cat(concept_labels, dim=0)
+    def forward_salf_concepts(images):
+        images = images.to(device)
+        maps = concept_layer(backbone(images))
+        return torch.nn.functional.adaptive_avg_pool2d(maps, 1).flatten(1)
+
+    features, labels, _ = extract_labeled_feature_tensors(
+        loader,
+        forward_salf_concepts,
+    )
+    return features, labels
 
 
 def _extract_savlg_concept_components(args, backbone, concept_layer, loader):
@@ -640,16 +689,12 @@ def _subset_component_cache(component_cache, max_images: int | None):
 
 
 def _normalize_savlg_final_concepts(load_dir, train_concepts, val_concepts, test_concepts):
-    train_mean = torch.load(
-        os.path.join(load_dir, "proj_mean.pt"), map_location="cpu"
+    return _normalize_with_saved_projection(
+        load_dir,
+        train_concepts,
+        val_concepts,
+        test_concepts,
     )
-    train_std = torch.load(
-        os.path.join(load_dir, "proj_std.pt"), map_location="cpu"
-    )
-    train_concepts = (train_concepts - train_mean) / train_std
-    val_concepts = (val_concepts - train_mean) / train_std
-    test_concepts = (test_concepts - train_mean) / train_std
-    return train_concepts, val_concepts, test_concepts
 
 
 def extract_salf_nec_features(
@@ -733,16 +778,13 @@ def extract_salf_nec_features(
         backbone, concept_layer, test_loader, args.device
     )
 
-    train_mean = torch.load(
-        os.path.join(load_dir, "proj_mean.pt"), map_location="cpu"
+    train_concepts, test_concepts = _normalize_with_saved_projection(
+        load_dir,
+        train_concepts,
+        test_concepts,
     )
-    train_std = torch.load(
-        os.path.join(load_dir, "proj_std.pt"), map_location="cpu"
-    )
-    train_concepts = (train_concepts - train_mean) / train_std
-    test_concepts = (test_concepts - train_mean) / train_std
 
-    feature_set = NECFeatureSet(
+    feature_set = _make_nec_feature_set(
         concepts=concepts,
         classes=classes,
         train_features=train_concepts,
@@ -763,22 +805,16 @@ def sparsity_acc_test_salf_cbm(
     num_workers=None,
     max_images=None,
 ):
-    feature_set, args = extract_salf_nec_features(
+    return _run_sparse_for_extractor(
         load_dir,
+        extract_salf_nec_features,
+        lam_max=lam_max,
+        n_iters=n_iters,
+        max_glm_steps=max_glm_steps,
         cbl_batch_size=cbl_batch_size,
         saga_batch_size=saga_batch_size,
         num_workers=num_workers,
         max_images=max_images,
-    )
-    return run_nec_sweep_from_features(
-        load_dir,
-        feature_set,
-        saga_batch_size=args.saga_batch_size,
-        saga_step_size=args.saga_step_size,
-        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
-        device=args.device,
-        lam_max=lam_max,
-        max_glm_steps=max_glm_steps,
     )
 
 
@@ -868,7 +904,7 @@ def extract_savlg_nec_features(
             test_concepts,
         )
 
-    feature_set = NECFeatureSet(
+    feature_set = _make_nec_feature_set(
         concepts=concepts,
         classes=classes,
         train_features=train_concepts,
@@ -894,8 +930,12 @@ def sparsity_acc_test_savlg_cbm(
     max_images=None,
     branch_norm_mode="none",
 ):
-    feature_set, args = extract_savlg_nec_features(
+    return _run_sparse_for_extractor(
         load_dir,
+        extract_savlg_nec_features,
+        lam_max=lam_max,
+        n_iters=n_iters,
+        max_glm_steps=max_glm_steps,
         cbl_batch_size=cbl_batch_size,
         saga_batch_size=saga_batch_size,
         num_workers=num_workers,
@@ -903,16 +943,6 @@ def sparsity_acc_test_savlg_cbm(
         disable_activation_cache_override=disable_activation_cache_override,
         max_images=max_images,
         branch_norm_mode=branch_norm_mode,
-    )
-    return run_nec_sweep_from_features(
-        load_dir,
-        feature_set,
-        saga_batch_size=args.saga_batch_size,
-        saga_step_size=args.saga_step_size,
-        saga_n_iters=n_iters if n_iters is not None else args.saga_n_iters,
-        device=args.device,
-        lam_max=lam_max,
-        max_glm_steps=max_glm_steps,
     )
 
 

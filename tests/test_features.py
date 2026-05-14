@@ -2,8 +2,15 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
+from torch.utils.data import DataLoader, TensorDataset
 
-from gcbm.features import MemmapFeatureDataset, compute_feature_stats_memmap, feature_storage_dtype, standardize_from_train
+from gcbm.features import (
+    MemmapFeatureDataset,
+    compute_feature_stats_memmap,
+    extract_labeled_feature_tensors,
+    feature_storage_dtype,
+    standardize_from_train,
+)
 
 
 def test_memmap_feature_dataset_reads_and_normalizes(tmp_path):
@@ -42,3 +49,26 @@ def test_standardize_from_train_clamps_constant_features():
 def test_feature_storage_dtype_defaults_to_fp16():
     assert feature_storage_dtype(SimpleNamespace(feature_storage_dtype="fp32")) == np.float32
     assert feature_storage_dtype(SimpleNamespace()) == np.float16
+
+
+def test_extract_labeled_feature_tensors_supports_accuracy_aux():
+    loader = DataLoader(
+        TensorDataset(torch.tensor([[1.0, 2.0], [3.0, 4.0]]), torch.tensor([0, 0])),
+        batch_size=1,
+        shuffle=False,
+    )
+
+    def feature_fn(inputs):
+        logits = torch.stack([inputs[:, 1], inputs[:, 0]], dim=1)
+        return inputs + 1.0, logits
+
+    features, labels, accuracy = extract_labeled_feature_tensors(
+        loader,
+        feature_fn,
+        progress=False,
+        accuracy_fn=lambda logits, y: logits.argmax(dim=1) == y,
+    )
+
+    assert torch.allclose(features, torch.tensor([[2.0, 3.0], [4.0, 5.0]]))
+    assert torch.equal(labels, torch.tensor([0, 0]))
+    assert accuracy == 1.0

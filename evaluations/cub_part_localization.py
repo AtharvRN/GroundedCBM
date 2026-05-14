@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate SAVLG localization on CUB part annotations.
+"""Evaluate SG-CBM localization on CUB part annotations.
 
 This script uses a concept->part mapping artifact plus the official CUB part
 point annotations. It filters to concepts that were mapped to supported parts,
