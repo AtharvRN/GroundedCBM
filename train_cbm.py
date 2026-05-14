@@ -5,41 +5,12 @@ import os
 import random
 import sys
 
-import numpy as np
-import torch
-import torch.nn as nn
-from loguru import logger
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-
-import model.utils as utils
-from data import utils as data_utils
-from data.concept_dataset import (
-    get_concept_dataloader,
-    get_filtered_concepts_and_counts,
-    get_final_layer_dataset,
-    get_or_create_backbone_embedding_cache,
-)
 from gcbm.config import (
     config_to_argv,
     load_flat_config,
     model_from_argv_or_config,
     option_value,
     strip_dispatcher_args,
-)
-from gcbm.losses import get_loss
-from methods.common import get_model_name, write_artifacts
-from methods.registry import get_train_handler
-from model.cbm import (
-    Backbone,
-    BackboneCLIP,
-    ConceptLayer,
-    FinalLayer,
-    per_class_accuracy,
-    test_model,
-    train_cbl,
-    train_dense_final,
-    train_sparse_final,
 )
 
 
@@ -69,6 +40,35 @@ def _run_imagenet_training(argv: list[str], config=None) -> None:
 
 
 def train_cbm_and_save(args):
+    import numpy as np
+    import torch
+    import torch.nn as nn
+    from loguru import logger
+    from torch.utils.tensorboard import SummaryWriter
+    from tqdm import tqdm
+
+    import model.utils as utils
+    from data import utils as data_utils
+    from data.concept_dataset import (
+        get_concept_dataloader,
+        get_filtered_concepts_and_counts,
+        get_final_layer_dataset,
+        get_or_create_backbone_embedding_cache,
+    )
+    from gcbm.losses import get_loss
+    from methods.common import get_model_name, write_artifacts
+    from model.cbm import (
+        Backbone,
+        BackboneCLIP,
+        ConceptLayer,
+        FinalLayer,
+        per_class_accuracy,
+        test_model,
+        train_cbl,
+        train_dense_final,
+        train_sparse_final,
+    )
+
     # Setup log directory and logger
     save_dir = "{}/{}_cbm_{}".format(
         args.save_dir,
@@ -556,6 +556,12 @@ def main():
     
     # run the training
     args = parser.parse_args(argv)
+
+    import numpy as np
+    import torch
+    from loguru import logger
+    from methods.registry import get_train_handler
+
     args.use_activation_cache = not args.disable_activation_cache
     logger.info(args)
     

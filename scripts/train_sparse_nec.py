@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-import pandas as pd
 import runpy
 import sys
 from pathlib import Path
@@ -9,9 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from evaluations.sparse_utils import DEFAULT_MEASURE_LEVEL, train_sparse_nec_from_checkpoint
-from methods.common import load_run_info
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
@@ -59,6 +55,11 @@ def cub_nec_parser() -> argparse.ArgumentParser:
 
 
 def run_cub_nec(load_path: str, remaining: list[str]) -> None:
+    import pandas as pd
+
+    from evaluations.sparse_utils import DEFAULT_MEASURE_LEVEL, train_sparse_nec_from_checkpoint
+    from methods.common import load_run_info
+
     cub_args = cub_nec_parser().parse_args(remaining)
     run_info = load_run_info(load_path)
     model_name = "lf_cbm" if cub_args.lf_cbm else run_info.get("model_name", "vlg_cbm")

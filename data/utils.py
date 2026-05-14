@@ -15,7 +15,6 @@ from pytorchcv.model_provider import get_model as ptcv_get_model
 from torchvision import datasets, models, transforms
 from tqdm import tqdm
 from loguru import logger
-import data.data_lp as data_lp
 import clip
 from PIL import Image, ImageFile, UnidentifiedImageError
 
@@ -38,24 +37,14 @@ def get_dataset_roots() -> Dict[str, str]:
         "cub_train": os.environ.get("CUB_TRAIN_ROOT", f"{cub_root}/train"),
         "cub_val": os.environ.get("CUB_VAL_ROOT", f"{cub_root}/test"),
     }
-    broden_root = os.environ.get("BRODEN_ROOT")
-    if broden_root:
-        roots["broden"] = broden_root
     return roots
 
 
 DATASET_ROOTS = get_dataset_roots()
 
 LABEL_FILES = {
-    "places365": "concept_files/categories_places365_clean.txt",
     "imagenet": "concept_files/imagenet_classes.txt",
-    "cifar10": "concept_files/cifar10_classes.txt",
-    "cifar100": "concept_files/cifar100_classes.txt",
     "cub": "concept_files/cub_classes.txt",
-    "food": "concept_files/food_classes.txt",
-    "flower": "concept_files/flower_classes.txt",
-    "aircraft": "concept_files/aircraft_classes.txt",
-    "dtd": "concept_files/dtd_classes.txt",
 }
 
 BACKBONE_ENCODING_DIMENSION = {
@@ -171,141 +160,7 @@ def _safe_imagenet_pil_loader(path: str) -> Image.Image:
 
 
 def get_data(dataset_name, preprocess=None):
-    if dataset_name == "cifar100_train":
-        data = datasets.CIFAR100(
-            root=os.path.expanduser(DATASET_FOLDER),
-            download=True,
-            train=True,
-            transform=preprocess,
-        )
-
-    elif dataset_name == "cifar100_val":
-        data = datasets.CIFAR100(
-            root=os.path.expanduser(DATASET_FOLDER),
-            download=True,
-            train=False,
-            transform=preprocess,
-        )
-
-    elif dataset_name == "cifar10_train":
-        data = datasets.CIFAR10(
-            root=os.path.expanduser(DATASET_FOLDER),
-            download=True,
-            train=True,
-            transform=preprocess,
-        )
-
-    elif dataset_name == "cifar10_val":
-        data = datasets.CIFAR10(
-            root=os.path.expanduser(DATASET_FOLDER),
-            download=True,
-            train=False,
-            transform=preprocess,
-        )
-
-    elif dataset_name == "places365_train":
-        try:
-            data = datasets.Places365(
-                root=f"{os.path.expanduser(DATASET_FOLDER)}/places365_torch",
-                split="train-standard",
-                small=True,
-                download=True,
-                transform=preprocess,
-            )
-        except RuntimeError:
-            data = datasets.Places365(
-                root=f"{os.path.expanduser(DATASET_FOLDER)}/places365_torch",
-                split="train-standard",
-                small=True,
-                download=False,
-                transform=preprocess,
-            )
-    elif dataset_name == "places365_val":
-        try:
-            data = datasets.Places365(
-                root=f"{os.path.expanduser(DATASET_FOLDER)}/places365_torch",
-                split="val",
-                small=True,
-                download=True,
-                transform=preprocess,
-            )
-        except RuntimeError:
-            data = datasets.Places365(
-                root=f"{os.path.expanduser(DATASET_FOLDER)}/places365_torch",
-                split="val",
-                small=True,
-                download=False,
-                transform=preprocess,
-            )
-    elif dataset_name == "food_train":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/food",
-            split="train",
-            transform=preprocess,
-            img_ext="",
-            cls_names_file=LABEL_FILES["food"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "food_val":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/food",
-            split="test",
-            transform=preprocess,
-            img_ext="",
-            cls_names_file=LABEL_FILES["food"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "dtd_train":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/dtd",
-            split="train",
-            transform=preprocess,
-            img_ext="",
-            cls_names_file=LABEL_FILES["dtd"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "dtd_val":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/dtd",
-            split="test",
-            transform=preprocess,
-            img_ext="",
-            cls_names_file=LABEL_FILES["dtd"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "flower_train":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/flower",
-            split="train",
-            transform=preprocess,
-            cls_names_file=LABEL_FILES["flower"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "flower_val":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/flower",
-            split="test",
-            transform=preprocess,
-            cls_names_file=LABEL_FILES["flower"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "aircraft_train":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/aircraft",
-            split="train",
-            transform=preprocess,
-            cls_names_file=LABEL_FILES["aircraft"],
-        )
-        data.targets = data.labels
-    elif dataset_name == "aircraft_val":
-        data = data_lp.LinearProbeDataset(
-            data_path=f"datasets/aircraft",
-            split="test",
-            transform=preprocess,
-            cls_names_file=LABEL_FILES["aircraft"],
-        )
-        data.targets = data.labels
-    elif dataset_name in get_dataset_roots().keys():
+    if dataset_name in get_dataset_roots().keys():
         dataset_roots = get_dataset_roots()
         print(
             f"[get_data] building ImageFolder for dataset_name={dataset_name} root={dataset_roots[dataset_name]}",
@@ -323,15 +178,8 @@ def get_data(dataset_name, preprocess=None):
             f"[get_data] ready ImageFolder for dataset_name={dataset_name} len={len(data)}",
             flush=True,
         )
-    elif dataset_name == "imagenet_broden":
-        dataset_roots = get_dataset_roots()
-        data = torch.utils.data.ConcatDataset(
-            [
-                datasets.ImageFolder(dataset_roots["imagenet_val"], preprocess),
-                datasets.ImageFolder(dataset_roots["broden"], preprocess),
-            ]
-        )
-    return data
+        return data
+    raise ValueError(f"Unsupported dataset {dataset_name!r}. This release supports CUB and ImageNet only.")
 
 
 def get_targets_only(dataset_name):
@@ -345,17 +193,6 @@ def get_target_model(target_name, device):
         target_name = target_name[5:]
         model, preprocess = clip.load(target_name, device=device)
         target_model = lambda x: model.encode_image(x).float()
-
-    elif target_name == "resnet18_places":
-        target_model = models.resnet18(pretrained=False, num_classes=365).to(device)
-        state_dict = torch.load("data/resnet18_places365.pth.tar")["state_dict"]
-        new_state_dict = {}
-        for key in state_dict:
-            if key.startswith("module."):
-                new_state_dict[key[7:]] = state_dict[key]
-        target_model.load_state_dict(new_state_dict)
-        target_model.eval()
-        preprocess = get_resnet_imagenet_preprocess()
 
     elif target_name in {"resnet18_cub", "resnet50_cub"}:
         target_model = _load_ptcv_cub_model_from_local_cache(target_name, device)
