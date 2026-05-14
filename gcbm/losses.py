@@ -1,9 +1,59 @@
 from __future__ import annotations
 
-from typing import Optional, Tuple
+import logging
+from typing import List, Optional, Tuple
 
+import torch.nn as nn
 import torch
 import torch.nn.functional as F
+
+
+NINF = -100
+LOGGER = logging.getLogger(__name__)
+
+
+class TwoWayLoss(nn.Module):
+    def __init__(self, tp: float = 4.0, tn: float = 1.0) -> None:
+        super().__init__()
+        self.tp = float(tp)
+        self.tn = float(tn)
+        LOGGER.info("Initializing TwoWayLoss with Tp=%s and Tn=%s", self.tp, self.tn)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        class_mask = (y > 0).any(dim=0)
+        sample_mask = (y > 0).any(dim=1)
+        positive_mask = y.masked_fill(y <= 0, NINF).masked_fill(y > 0, 0.0)
+        positive_class = torch.logsumexp(-x / self.tp + positive_mask, dim=0).mul(self.tp)[class_mask]
+        positive_sample = torch.logsumexp(-x / self.tp + positive_mask, dim=1).mul(self.tp)[sample_mask]
+        negative_mask = y.masked_fill(y != 0, NINF).masked_fill(y == 0, 0.0)
+        negative_class = torch.logsumexp(x / self.tn + negative_mask, dim=0).mul(self.tn)[class_mask]
+        negative_sample = torch.logsumexp(x / self.tn + negative_mask, dim=1).mul(self.tn)[sample_mask]
+        return F.softplus(negative_class + positive_class).mean() + F.softplus(negative_sample + positive_sample).mean()
+
+
+def get_loss(
+    loss_type: str,
+    num_concepts: int,
+    num_samples: int,
+    concept_counts: List[float],
+    cbl_pos_weight: float,
+    cbl_auto_weight: bool = False,
+    tp: float = 4.0,
+    device: str = "cuda",
+) -> nn.Module:
+    if loss_type == "bce":
+        LOGGER.info("Using BCE loss for training CBL")
+        if cbl_auto_weight:
+            LOGGER.info("Using automatic positive weighting with scale %s", cbl_pos_weight)
+            pos_count = torch.tensor(concept_counts, device=device)
+            neg_count = num_samples - pos_count
+            scale = (neg_count / pos_count) * cbl_pos_weight
+            return nn.BCEWithLogitsLoss(pos_weight=scale).to(device)
+        return nn.BCEWithLogitsLoss(pos_weight=torch.tensor([cbl_pos_weight] * num_concepts, device=device)).to(device)
+    if loss_type == "twoway":
+        LOGGER.info("Using TwoWay loss for training CBL")
+        return TwoWayLoss(tp=tp).to(device)
+    raise NotImplementedError(f"Loss {loss_type} is not implemented")
 
 
 def weighted_concept_bce(

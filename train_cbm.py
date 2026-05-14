@@ -27,7 +27,7 @@ from gcbm.config import (
     option_value,
     strip_dispatcher_args,
 )
-from loss import get_loss
+from gcbm.losses import get_loss
 from methods.common import get_model_name, write_artifacts
 from methods.registry import get_train_handler
 from model.cbm import (

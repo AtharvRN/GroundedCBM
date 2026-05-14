@@ -11,7 +11,7 @@ pip install -r requirements.txt
 
 ## Public Scripts
 
-The release has six user-facing entry points:
+The release has five main user-facing entry points:
 
 ```text
 train_cbm.py                         Train CBM concept layers.
@@ -19,7 +19,7 @@ scripts/precompute_imagenet_targets.py Precompute ImageNet GDINO target tensors.
 scripts/train_sparse_nec.py          Train sparse GLM heads with an NEC sweep.
 scripts/eval_nec.py                  Evaluate/report CBM+sparse accuracy at NEC values.
 scripts/eval_gdino_localization.py   Evaluate localization against GDINO pseudo-GT boxes.
-scripts/eval_cub_part_localization.py Evaluate localization against CUB part points.
+gcbm/evaluate_savlg_cub_parts.py     Evaluate localization against CUB part points.
 ```
 
 Other Python files under `gcbm/`, `methods/`, `model/`, `data/`, and
@@ -219,7 +219,7 @@ This evaluates CUB part-point localization using official CUB part annotations
 and a concept-to-part mapping.
 
 ```bash
-python scripts/eval_cub_part_localization.py \
+python gcbm/evaluate_savlg_cub_parts.py \
   --load_path /path/to/cub_sgcbm_run \
   --annotation_dir annotations \
   --cub_root /path/to/CUB_200_2011 \
@@ -232,7 +232,7 @@ To report the concept oracle, where all concept maps are evaluated for each
 part target and the best concept is selected per metric:
 
 ```bash
-python scripts/eval_cub_part_localization.py \
+python gcbm/evaluate_savlg_cub_parts.py \
   --load_path /path/to/cub_sgcbm_run \
   --annotation_dir annotations \
   --cub_root /path/to/CUB_200_2011 \
