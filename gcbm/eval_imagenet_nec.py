@@ -21,11 +21,11 @@ if str(REPO_ROOT) not in sys.path:
 from gcbm.imagenet_core import (
     Config,
     amp_dtype,
-    build_model,
     configure_runtime,
     cuda_peak_stats_mb,
     prepare_images,
 )
+from gcbm.imagenet_models import build_model
 
 
 VAL_RE = "ILSVRC2012_val_"

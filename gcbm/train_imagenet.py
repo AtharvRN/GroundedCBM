@@ -31,6 +31,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from gcbm.losses import sgcbm_concept_losses  # noqa: E402
+from gcbm.imagenet_final_layers import (  # noqa: E402
+    compute_feature_stats_memmap,
+    extract_concept_features_to_memmap,
+    train_dense_final_layer,
+    train_sparse_final_layer,
+)
+from gcbm.imagenet_models import build_model, init_global_head_from_vlg  # noqa: E402
 from gcbm.imagenet_core import (  # noqa: E402
     Config,
     DatasetView,
@@ -40,13 +47,9 @@ from gcbm.imagenet_core import (  # noqa: E402
     batch_targets_to_device,
     build_loader,
     build_gdino_targets,
-    build_model,
     build_run_dir,
-    compute_feature_stats_memmap,
     configure_runtime,
     cuda_peak_stats_mb,
-    extract_concept_features_to_memmap,
-    init_global_head_from_vlg,
     load_run_concepts,
     make_optimizer,
     make_scheduler,
@@ -55,8 +58,6 @@ from gcbm.imagenet_core import (  # noqa: E402
     save_checkpoint,
     select_subset_indices,
     split_train_val,
-    train_dense_final_layer,
-    train_sparse_final_layer,
 )
 
 

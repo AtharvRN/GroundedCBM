@@ -16,7 +16,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from glm_saga.elasticnet import glm_saga
-from gcbm.imagenet_core import Config, MemmapFeatureDataset
+from gcbm.imagenet_core import Config
+from gcbm.imagenet_final_layers import MemmapFeatureDataset
 
 
 def parse_args() -> argparse.Namespace:
