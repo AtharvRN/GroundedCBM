@@ -12,6 +12,7 @@ from tqdm import tqdm
 import model.utils as utils
 import data.utils as data_utils
 from data.concept_dataset import get_concept_dataloader, get_final_layer_dataset
+from gcbm.features import make_feature_loader, standardize_from_train
 from glm_saga.elasticnet import IndexedTensorDataset, glm_saga
 from methods.lf import TransformedSubset, use_original_label_free_protocol
 from methods.salf import SpatialBackbone, build_spatial_concept_layer
@@ -166,12 +167,7 @@ def measure_acc(
 
 
 def _feature_loader(features, labels, batch_size, *, indexed: bool, shuffle: bool):
-    dataset = (
-        IndexedTensorDataset(features, labels)
-        if indexed
-        else TensorDataset(features, labels)
-    )
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return make_feature_loader(features, labels, batch_size, indexed=indexed, shuffle=shuffle)
 
 
 def _save_nec_outputs(load_dir: str, concepts: list[str], path, truncated_weights) -> None:
@@ -593,15 +589,8 @@ def _compose_savlg_final_concepts(component_cache, alpha: float):
 
 
 def _zscore_from_train(train_x, val_x, test_x):
-    mean = train_x.mean(dim=0)
-    std = train_x.std(dim=0, unbiased=False).clamp_min(1e-6)
-    return (
-        (train_x - mean) / std,
-        (val_x - mean) / std,
-        (test_x - mean) / std,
-        mean,
-        std,
-    )
+    train_z, val_z, test_z, mean, std = standardize_from_train(train_x, val_x, test_x, unbiased=False)
+    return train_z, val_z, test_z, mean.squeeze(0), std.squeeze(0)
 
 
 def _compose_savlg_final_concepts_with_branch_norm(

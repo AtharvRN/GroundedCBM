@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import Any, Dict, Sequence, Tuple
 
 import torch
@@ -9,6 +8,7 @@ import torch.nn.functional as F
 from torchvision.models import ResNet50_Weights, resnet50
 
 from gcbm.imagenet_core import load_concepts
+from gcbm.sg_model import pool_residual_spatial_logits as shared_pool_residual_spatial_logits
 
 
 def get_resnet50_weights(version: str) -> ResNet50_Weights:
@@ -65,15 +65,7 @@ class SharedConceptHead(nn.Module):
 
 
 def pool_residual_spatial_logits(spatial_maps: torch.Tensor, pooling: str) -> torch.Tensor:
-    flat = spatial_maps.flatten(2)
-    if pooling == "avg":
-        return flat.mean(dim=-1)
-    if pooling == "lse":
-        # Constant maps keep the same logit scale while localized peaks can
-        # still affect the residual branch.
-        num_patches = flat.shape[-1]
-        return torch.logsumexp(flat, dim=-1) - math.log(max(num_patches, 1))
-    raise ValueError(f"Unsupported residual spatial pooling mode: {pooling}")
+    return shared_pool_residual_spatial_logits(spatial_maps, pooling=pooling)
 
 
 class DualBranchConceptHead(nn.Module):
@@ -88,14 +80,15 @@ class DualBranchConceptHead(nn.Module):
         super().__init__()
         in_channels = 1024 if spatial_stage == "conv4" else 2048
         self.spatial_stage = spatial_stage
-        self.residual_alpha = residual_alpha
-        self.residual_spatial_pooling = residual_spatial_pooling
-        self.log_spatial_scale = nn.Parameter(torch.zeros(())) if learn_spatial_residual_scale else None
         self.global_head = nn.Linear(2048, n_concepts, bias=True)
         self.spatial = nn.Conv2d(in_channels, n_concepts, kernel_size=1, bias=True)
+        self.residual_alpha = float(residual_alpha)
+        self.residual_spatial_pooling = residual_spatial_pooling
+        self.log_spatial_scale = nn.Parameter(torch.zeros(())) if learn_spatial_residual_scale else None
 
     def forward(self, feats: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        global_logits = self.global_head(feats["conv5"].mean(dim=(2, 3)))
+        global_feats = F.adaptive_avg_pool2d(feats["conv5"], 1).flatten(1)
+        global_logits = self.global_head(global_feats)
         spatial_maps = self.spatial(feats[self.spatial_stage])
         spatial_logits = pool_residual_spatial_logits(spatial_maps, self.residual_spatial_pooling)
         spatial_scale = 1.0 if self.log_spatial_scale is None else torch.exp(self.log_spatial_scale)
@@ -118,24 +111,28 @@ class MultiScaleDualBranchConceptHead(nn.Module):
         fusion_dim: int = 2048,
     ) -> None:
         super().__init__()
-        self.residual_alpha = residual_alpha
-        self.residual_spatial_pooling = residual_spatial_pooling
-        self.log_spatial_scale = nn.Parameter(torch.zeros(())) if learn_spatial_residual_scale else None
         self.global_head = nn.Linear(2048, n_concepts, bias=True)
         self.conv4_proj = nn.Conv2d(1024, fusion_dim, kernel_size=1, bias=False)
         self.conv5_proj = nn.Conv2d(2048, fusion_dim, kernel_size=1, bias=False)
         self.spatial = nn.Conv2d(fusion_dim, n_concepts, kernel_size=1, bias=True)
+        self.residual_alpha = float(residual_alpha)
+        self.residual_spatial_pooling = residual_spatial_pooling
+        self.log_spatial_scale = nn.Parameter(torch.zeros(())) if learn_spatial_residual_scale else None
 
-    def forward(self, feats: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        global_logits = self.global_head(feats["conv5"].mean(dim=(2, 3)))
+    def _fuse(self, feats: Dict[str, torch.Tensor]) -> torch.Tensor:
+        conv4 = feats["conv4"]
         conv5_up = F.interpolate(
             self.conv5_proj(feats["conv5"]),
-            size=feats["conv4"].shape[-2:],
+            size=conv4.shape[-2:],
             mode="bilinear",
             align_corners=False,
         )
-        fused = F.relu(self.conv4_proj(feats["conv4"]) + conv5_up, inplace=False)
-        spatial_maps = self.spatial(fused)
+        return F.relu(self.conv4_proj(conv4) + conv5_up, inplace=False)
+
+    def forward(self, feats: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        global_feats = F.adaptive_avg_pool2d(feats["conv5"], 1).flatten(1)
+        global_logits = self.global_head(global_feats)
+        spatial_maps = self.spatial(self._fuse(feats))
         spatial_logits = pool_residual_spatial_logits(spatial_maps, self.residual_spatial_pooling)
         spatial_scale = 1.0 if self.log_spatial_scale is None else torch.exp(self.log_spatial_scale)
         final_logits = global_logits + self.residual_alpha * spatial_scale * spatial_logits

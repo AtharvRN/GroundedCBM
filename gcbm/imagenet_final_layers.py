@@ -3,14 +3,15 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
+from gcbm.features import MemmapFeatureDataset, compute_feature_stats_memmap, feature_storage_dtype
 from gcbm.imagenet_core import (
     autocast_context,
     cuda_peak_stats_mb,
@@ -18,41 +19,6 @@ from gcbm.imagenet_core import (
     reset_cuda_peak_stats_if_needed,
 )
 from glm_saga.elasticnet import glm_saga
-
-
-class MemmapFeatureDataset(Dataset):
-    def __init__(
-        self,
-        feature_path: Path,
-        target_path: Path,
-        mean: Optional[np.ndarray] = None,
-        std: Optional[np.ndarray] = None,
-        include_index: bool = False,
-    ) -> None:
-        self.features = np.load(feature_path, mmap_mode="r")
-        self.targets = np.load(target_path, mmap_mode="r")
-        self.mean = None if mean is None else np.asarray(mean, dtype=np.float32)
-        self.std = None if std is None else np.asarray(std, dtype=np.float32)
-        self.include_index = include_index
-
-    def __len__(self) -> int:
-        return int(self.features.shape[0])
-
-    def __getitem__(self, index: int):
-        feature = np.asarray(self.features[index], dtype=np.float32)
-        if self.mean is not None and self.std is not None:
-            feature = (feature - self.mean) / self.std
-        tensor = torch.from_numpy(np.ascontiguousarray(feature))
-        target = int(self.targets[index])
-        if self.include_index:
-            return tensor, target, int(index)
-        return tensor, target
-
-
-def feature_storage_dtype(cfg: Any) -> np.dtype:
-    if cfg.feature_storage_dtype == "fp32":
-        return np.float32
-    return np.float16
 
 
 @torch.no_grad()
@@ -121,39 +87,6 @@ def extract_concept_features_to_memmap(
     }
     print(json.dumps(summary), flush=True)
     return feature_path, target_path, summary
-
-
-def compute_feature_stats_memmap(
-    feature_path: Path,
-    cfg: Any,
-    chunk_size: int = 8192,
-) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
-    features = np.load(feature_path, mmap_mode="r")
-    n_examples, n_features = int(features.shape[0]), int(features.shape[1])
-    start_time = time.perf_counter()
-    sum_vec = np.zeros((n_features,), dtype=np.float64)
-    sum_sq_vec = np.zeros((n_features,), dtype=np.float64)
-    for start in range(0, n_examples, chunk_size):
-        end = min(start + chunk_size, n_examples)
-        batch = np.asarray(features[start:end], dtype=np.float32)
-        sum_vec += batch.sum(axis=0, dtype=np.float64)
-        sum_sq_vec += np.square(batch, dtype=np.float32).sum(axis=0, dtype=np.float64)
-    mean = sum_vec / max(n_examples, 1)
-    if n_examples > 1:
-        var = (sum_sq_vec - (sum_vec * sum_vec) / n_examples) / (n_examples - 1)
-    else:
-        var = np.ones_like(mean)
-    var = np.maximum(var, 1e-6)
-    std = np.sqrt(var).astype(np.float32)
-    mean = mean.astype(np.float32)
-    summary = {
-        "stage": "train_feature_normalization_summary",
-        "n_examples": n_examples,
-        "n_features": n_features,
-        "elapsed_sec": time.perf_counter() - start_time,
-    }
-    return torch.from_numpy(mean), torch.from_numpy(std), summary
-
 
 def topk_accuracy(logits: torch.Tensor, targets: torch.Tensor, k: int) -> float:
     k = min(k, int(logits.shape[1]))

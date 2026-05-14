@@ -19,7 +19,6 @@ RELEASE_MANIFEST.md
 
 # Local-only release/deployment scaffolding
 k8s/
-tests/
 
 # OS / Python noise
 .DS_Store
