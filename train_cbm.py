@@ -5,12 +5,41 @@ import os
 import random
 import sys
 
+import numpy as np
+import torch
+import torch.nn as nn
+from loguru import logger
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+import model.utils as utils
+from data import utils as data_utils
+from data.concept_dataset import (
+    get_concept_dataloader,
+    get_filtered_concepts_and_counts,
+    get_final_layer_dataset,
+    get_or_create_backbone_embedding_cache,
+)
 from gcbm.config import (
     config_to_argv,
     load_flat_config,
     model_from_argv_or_config,
     option_value,
     strip_dispatcher_args,
+)
+from loss import get_loss
+from methods.common import get_model_name, write_artifacts
+from methods.registry import get_train_handler
+from model.cbm import (
+    Backbone,
+    BackboneCLIP,
+    ConceptLayer,
+    FinalLayer,
+    per_class_accuracy,
+    test_model,
+    train_cbl,
+    train_dense_final,
+    train_sparse_final,
 )
 
 
@@ -37,45 +66,6 @@ def _run_imagenet_training(argv: list[str], config=None) -> None:
         imagenet_main()
     finally:
         sys.argv = old_argv
-
-
-def _load_cub_dependencies() -> None:
-    global np, torch, nn, logger, SummaryWriter, tqdm
-    global utils, data_utils, get_concept_dataloader, get_filtered_concepts_and_counts
-    global get_final_layer_dataset, get_or_create_backbone_embedding_cache
-    global get_loss, Backbone, BackboneCLIP, ConceptLayer, FinalLayer
-    global per_class_accuracy, test_model, train_cbl, train_dense_final, train_sparse_final
-    global get_model_name, write_artifacts, get_train_handler, SUPPORTED_MODELS
-
-    import numpy as np
-    import torch
-    import torch.nn as nn
-    from loguru import logger
-    from torch.utils.tensorboard import SummaryWriter
-    from tqdm import tqdm
-
-    import model.utils as utils
-    from data import utils as data_utils
-    from data.concept_dataset import (
-        get_concept_dataloader,
-        get_filtered_concepts_and_counts,
-        get_final_layer_dataset,
-        get_or_create_backbone_embedding_cache,
-    )
-    from loss import get_loss
-    from model.cbm import (
-        Backbone,
-        BackboneCLIP,
-        ConceptLayer,
-        FinalLayer,
-        per_class_accuracy,
-        test_model,
-        train_cbl,
-        train_dense_final,
-        train_sparse_final,
-    )
-    from methods.common import get_model_name, write_artifacts
-    from methods.registry import get_train_handler, SUPPORTED_MODELS
 
 
 def train_cbm_and_save(args):
@@ -448,58 +438,33 @@ def main():
         return
 
     parser = argparse.ArgumentParser(description="Train CUB CBM baselines or SG-CBM. Use --dataset imagenet for the ImageNet SG-CBM trainer.")
+    parser.add_argument("--config", type=str, default=None, help="Flat JSON/YAML config. CLI values override config values.")
     parser.add_argument("--model_name", type=str, default="savlg_cbm", choices=CUB_MODEL_CHOICES, help="CUB model to train: savlg_cbm is SG-CBM.")
     parser.add_argument("--dataset", type=str, default="cub", help="Dataset name. Use cub here; imagenet dispatches to the ImageNet trainer.")
-    parser.add_argument("--concept_set", type=str, default="concept_files/cub_filtered.txt", help="Concept list file.")
-    parser.add_argument("--filter_set", type=str, default=None, help="Optional concept filter file.")
     parser.add_argument("--annotation_dir", type=str, default="outputs", help="GDINO/SALF annotation directory.")
     parser.add_argument("--save_dir", type=str, default="saved_models", help="Output directory for trained runs.")
     parser.add_argument("--load_dir", type=str, default=None, help="Optional existing CBL checkpoint directory.")
-    parser.add_argument("--backbone", type=str, default="resnet50_cub_mm", help="Backbone name.")
-    parser.add_argument("--feature_layer", type=str, default="layer4", help="Backbone feature layer for VLG/LF style heads.")
     parser.add_argument("--device", type=str, default="cuda", help="Torch device.")
     parser.add_argument("--num_workers", type=int, default=8, help="DataLoader worker count.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--max_train_images", type=int, default=0, help="If >0, limit training images for smoke tests.")
-    parser.add_argument("--max_test_images", type=int, default=0, help="If >0, limit test images for smoke tests.")
-    parser.add_argument("--val_split", type=float, default=0.1, help="Validation split fraction.")
+    parser.add_argument("--max_train_images", type=int, default=0, help="If >0, limit training images for quick checks.")
+    parser.add_argument("--max_test_images", type=int, default=0, help="If >0, limit test images for quick checks.")
     parser.add_argument("--skip_test_eval", action="store_true", help="Skip final test-set evaluation.")
-    parser.add_argument("--skip_train_val_eval", action="store_true", help="Skip final train/val accuracy evaluation.")
-    parser.add_argument("--skip_concept_filter", action="store_true", help="Use all concepts without annotation-frequency filtering.")
+    parser.add_argument("--concept_set", type=str, default="concept_files/cub_filtered.txt", help="Concept list file.")
+    parser.add_argument("--backbone", type=str, default="resnet50_cub_mm", help="Backbone name.")
     parser.add_argument("--cbl_batch_size", type=int, default=32, help="Concept-layer batch size.")
     parser.add_argument("--cbl_epochs", type=int, default=20, help="Concept-layer training epochs.")
     parser.add_argument("--cbl_lr", type=float, default=5e-4, help="Concept-layer learning rate.")
-    parser.add_argument("--cbl_weight_decay", type=float, default=1e-5, help="Concept-layer weight decay.")
-    parser.add_argument("--cbl_hidden_layers", type=int, default=1, help="Hidden layers for CUB concept heads.")
-    parser.add_argument("--cbl_optimizer", choices=["adam", "sgd"], default="sgd", help="Concept-layer optimizer.")
-    parser.add_argument("--cbl_scheduler", choices=[None, "cosine"], default=None, help="Concept-layer scheduler.")
-    parser.add_argument("--saga_batch_size", type=int, default=512, help="Final-layer/SAGA batch size.")
-    parser.add_argument("--saga_step_size", type=float, default=0.1, help="SAGA step size.")
-    parser.add_argument("--saga_lam", type=float, default=0.0007, help="Sparse final-layer regularization.")
-    parser.add_argument("--saga_n_iters", type=int, default=2000, help="Final-layer solver iterations.")
-    parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
-    parser.add_argument("--dense_lr", type=float, default=0.001, help="Dense final-layer learning rate.")
-    parser.add_argument("--activation_cache_dir", type=str, default=None, help="Optional shared deterministic backbone embedding cache.")
-    parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
-    parser.add_argument("--clip_cutoff", type=float, default=0.20, help="LF/SALF concept filter threshold.")
-    parser.add_argument("--grid_h", type=int, default=7, help="SALF spatial grid height.")
-    parser.add_argument("--grid_w", type=int, default=7, help="SALF spatial grid width.")
     parser.add_argument("--mask_h", type=int, default=14, help="SG-CBM spatial supervision mask height.")
     parser.add_argument("--mask_w", type=int, default=14, help="SG-CBM spatial supervision mask width.")
-    parser.add_argument("--prompt_radius", type=int, default=3, help="SALF prompt radius in raw-image pixels.")
-    parser.add_argument("--spatial_source", type=str, default="prompt_grid", choices=["prompt_grid", "patch_tokens"], help="SALF spatial target source.")
     parser.add_argument("--loss_mask_w", type=float, default=1.0, help="SG-CBM spatial soft-align KL weight.")
-    parser.add_argument("--savlg_spatial_stage", type=str, default="conv5", choices=["conv3", "conv4", "conv5"], help="Spatial backbone stage.")
-    parser.add_argument("--savlg_branch_arch", type=str, default="dual", choices=["shared", "dual"], help="SG-CBM concept-head architecture.")
-    parser.add_argument("--savlg_spatial_branch_mode", type=str, default="multiscale_conv45", choices=["shared_stage", "multiscale_conv45"], help="SG-CBM spatial branch source.")
     parser.add_argument("--savlg_residual_spatial_alpha", type=float, default=0.2, help="Residual spatial-logit coupling weight.")
-    parser.add_argument("--savlg_residual_spatial_pooling", type=str, default="lse", choices=["lse", "avg"], help="Pooling mode for residual spatial logits.")
     parser.add_argument("--savlg_target_mode", type=str, default="soft_box", choices=["hard_iou", "soft_box"], help="SG-CBM spatial target rasterization.")
-    parser.add_argument("--savlg_stream_supervision", action="store_true", help="Build SG-CBM spatial supervision on the fly instead of saving *_supervision.pt caches.")
-    parser.add_argument("--patch_iou_thresh", type=float, default=0.5, help="IoU threshold for hard_iou spatial targets.")
-    parser.add_argument("--clip_score_mode", type=str, default="topk", choices=["mean", "topk", "quantile"], help="SALF reduction from spatial target maps to concept scores.")
+    parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
+    parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
     parser.set_defaults(
         activation_dir="saved_activations",
+        activation_cache_dir=None,
         allones_concept=False,
         cbl_auto_weight=False,
         cbl_bb_lr_rate=1.0,
@@ -510,15 +475,26 @@ def main():
         cbl_loss_type="bce",
         cbl_min_delta=0.0,
         cbl_min_epochs=0,
+        cbl_hidden_layers=1,
+        cbl_optimizer="sgd",
         cbl_pos_weight=1.0,
+        cbl_scheduler=None,
         cbl_twoway_tp=4.0,
         cbl_type="linear",
         cbl_use_batchnorm=False,
+        cbl_weight_decay=1e-5,
+        clip_cutoff=0.20,
         clip_quantile=0.995,
+        clip_score_mode="topk",
         clip_topk=500,
         crop_to_concept_prob=0.0,
         data_parallel=False,
+        dense_lr=0.001,
+        feature_layer="layer4",
+        filter_set=None,
         global_bce_pos_weight=1.0,
+        grid_h=7,
+        grid_w=7,
         interpretability_cutoff=0.40,
         lf_batch_size=64,
         lf_clip_name="clip_RN50",
@@ -533,7 +509,14 @@ def main():
         proj_min_steps_before_early_stop=0,
         proj_steps=20000,
         prompt_batch_size=1024,
+        prompt_radius=3,
+        patch_iou_thresh=0.5,
         recompute_spatial_sims=False,
+        saga_batch_size=512,
+        saga_lam=0.0007,
+        saga_n_iters=2000,
+        saga_step_size=0.1,
+        savlg_branch_arch="dual",
         savlg_concept_filter_mode="spatial_threshold",
         savlg_freeze_global_head=False,
         savlg_global_head_mode="spatial_pool",
@@ -546,28 +529,32 @@ def main():
         savlg_local_weight_mode="uniform",
         savlg_local_weight_power=1.0,
         savlg_pooling="avg",
+        savlg_residual_spatial_pooling="lse",
+        savlg_spatial_branch_mode="multiscale_conv45",
+        savlg_spatial_stage="conv5",
+        savlg_stream_supervision=False,
         savlg_topk_fraction=0.2,
+        skip_concept_filter=False,
+        skip_train_val_eval=False,
+        spatial_source="prompt_grid",
         spatial_batch_size=128,
         spatial_num_workers=8,
         use_clip_penultimate=False,
+        val_split=0.1,
         visualize_concepts=False,
     )
 
-    config_parser = argparse.ArgumentParser(add_help=False)
-    config_parser.add_argument("--config", type=str, default=None)
-    config_arg, remaining_args = config_parser.parse_known_args()
-    if config_arg.config is not None:
-        with open(config_arg.config, "r") as f:
-            config_arg = json.load(f)
-        if "mask_h" in config_arg and "grid_h" not in config_arg:
-            config_arg["grid_h"] = config_arg["mask_h"]
-        if "mask_w" in config_arg and "grid_w" not in config_arg:
-            config_arg["grid_w"] = config_arg["mask_w"]
-        parser.set_defaults(**config_arg)
+    config_path = option_value(argv, "--config")
+    if config_path is not None:
+        config_defaults = dict(config)
+        if "mask_h" in config_defaults and "grid_h" not in config_defaults:
+            config_defaults["grid_h"] = config_defaults["mask_h"]
+        if "mask_w" in config_defaults and "grid_w" not in config_defaults:
+            config_defaults["grid_w"] = config_defaults["mask_w"]
+        parser.set_defaults(**config_defaults)
     
     # run the training
-    args = parser.parse_args(remaining_args)
-    _load_cub_dependencies()
+    args = parser.parse_args(argv)
     args.use_activation_cache = not args.disable_activation_cache
     logger.info(args)
     
