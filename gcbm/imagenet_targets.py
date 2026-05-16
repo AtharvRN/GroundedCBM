@@ -167,6 +167,12 @@ class PrecomputedTargetStore:
             "mask_targets": mask_targets,
         }
 
+    def get_global(self, index: int) -> Dict[str, torch.Tensor]:
+        global_row = np.asarray(self.global_targets[index], dtype=np.float32)
+        if self.keep_indices is not None:
+            global_row = global_row[self.keep_indices]
+        return {"global_target": torch.from_numpy(np.ascontiguousarray(global_row).copy())}
+
 
 def transform_box_for_model_input(
     box: Sequence[float],
@@ -319,6 +325,32 @@ def build_gdino_targets(
         mask_pad.to(device, non_blocking=True),
         valid.to(device, non_blocking=True),
     )
+
+
+def build_gdino_global_targets(
+    annotations: Sequence[List[Dict[str, Any]]],
+    concept_to_idx: Dict[str, int],
+    n_concepts: int,
+    cfg: Config,
+    device: str,
+) -> torch.Tensor:
+    global_targets = torch.zeros((len(annotations), n_concepts), dtype=torch.float32)
+    for sample_idx, sample_annotations in enumerate(annotations):
+        scores = np.zeros((n_concepts,), dtype=np.float32)
+        for ann in annotation_entries(sample_annotations):
+            if not isinstance(ann, dict):
+                continue
+            label = ann.get("label")
+            if not isinstance(label, str):
+                continue
+            concept_idx = concept_to_idx.get(canonicalize_concept_label(label))
+            if concept_idx is None:
+                continue
+            score = float(ann.get("logit", 0.0))
+            if score > scores[concept_idx]:
+                scores[concept_idx] = score
+        global_targets[sample_idx] = torch.from_numpy((scores > cfg.concept_threshold).astype(np.float32))
+    return global_targets.to(device, non_blocking=True)
 
 
 def batch_targets_to_device(batch: Dict[str, Any], cfg: Config) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -502,4 +534,3 @@ def precompute_target_store(
     }
     (split_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     return metadata
-

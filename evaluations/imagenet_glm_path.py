@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 from glm_saga.elasticnet import glm_saga
 from gcbm.imagenet_config import Config
 from gcbm.imagenet_final_layers import MemmapFeatureDataset
+from gcbm.sparse import threshold_weight_truncation
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,6 +78,14 @@ def parse_nec_values(raw: str) -> List[int]:
     if not values:
         raise ValueError("--nec_values must contain at least one integer")
     return values
+
+
+def link_source_artifacts(source_run_dir: Path, output_dir: Path) -> None:
+    for name in ("config.json", "concepts.txt", "concept_head_best.pt", "final_layer_normalization.pt"):
+        source = source_run_dir / name
+        target = output_dir / name
+        if source.exists() and not target.exists():
+            target.symlink_to(source)
 
 
 def resolve_source_run_dir(artifact_dir: Path) -> Path:
@@ -257,6 +266,22 @@ def select_path_points_for_nec(path: Sequence[Dict[str, Any]], n_concepts: int, 
     return selections
 
 
+def save_thresholded_nec_weights(path: Sequence[Dict[str, Any]], selections: Sequence[Dict[str, Any]], output_dir: Path) -> List[Dict[str, Any]]:
+    updated = []
+    for item in selections:
+        params = path[int(item["path_index"])]
+        weight = threshold_weight_truncation(params["weight"], float(item["target_sparsity"]))
+        bias = params["bias"]
+        nnz = int((weight.abs() > 1e-5).sum().item())
+        torch.save(weight.cpu(), output_dir / f"W_g@NEC={item['nec']}.pt")
+        torch.save(bias.cpu(), output_dir / f"b_g@NEC={item['nec']}.pt")
+        item = dict(item)
+        item["truncated_nnz"] = nnz
+        item["truncated_weight_sparsity"] = 1.0 - (nnz / max(int(weight.numel()), 1))
+        updated.append(item)
+    return updated
+
+
 def serializable_path(path: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     payload = []
     for idx, params in enumerate(path):
@@ -284,6 +309,7 @@ def main() -> None:
     source_run_dir = resolve_source_run_dir(artifact_dir)
     output_dir = Path(args.output_dir).resolve() if args.output_dir else artifact_dir / f"glm_path_sweep_lam{str(args.lam_max).replace('.', 'p')}_k{args.max_glm_steps}"
     output_dir.mkdir(parents=True, exist_ok=True)
+    link_source_artifacts(source_run_dir, output_dir)
 
     cfg = load_config(source_run_dir, args.device)
     normalization_path = artifact_dir / "final_layer_normalization.pt"
@@ -403,11 +429,7 @@ def main() -> None:
     best = output["best"]
     nec_values = parse_nec_values(args.nec_values)
     nec_selection = select_path_points_for_nec(path, n_features, nec_values)
-
-    for item in nec_selection:
-        params = path[item["path_index"]]
-        torch.save(params["weight"].cpu(), output_dir / f"W_g@NEC={item['nec']}.pt")
-        torch.save(params["bias"].cpu(), output_dir / f"b_g@NEC={item['nec']}.pt")
+    nec_selection = save_thresholded_nec_weights(path, nec_selection, output_dir)
 
     torch.save({"path": path, "best": best}, output_dir / "glm_path.pt")
 

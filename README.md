@@ -104,8 +104,8 @@ validation directory.
 ## 1. Train CBM
 
 `train_cbm.py` is the unified training entry point. It supports CUB training for
-SG-CBM, SALF-CBM, VLG-CBM, and LF-CBM, plus ImageNet SG-CBM training. SG-CBM
-spatial supervision is GDINO-box based.
+SG-CBM, SALF-CBM, VLG-CBM, and LF-CBM, plus ImageNet SG-CBM and VLG-CBM
+training. SG-CBM spatial supervision is GDINO-box based.
 
 ```bash
 python train_cbm.py --config configs/cub_gcbm.json
@@ -114,10 +114,40 @@ python train_cbm.py --config configs/cub_gcbm.json --model_name vlg_cbm
 python train_cbm.py --config configs/cub_gcbm.json --model_name lf_cbm
 
 python train_cbm.py --config configs/imagenet_gcbm.yaml
+python train_cbm.py --config configs/imagenet_vlg.yaml
 ```
 
-For ImageNet-v1 checkpoint reproduction, keep the saved checkpoint
-configuration, including `resnet50_weights=v1`.
+The ImageNet config is set to the verified SG-CBM-v1 defaults:
+torchvision ResNet-50 `IMAGENET1K_V1`, deterministic resize/center-crop,
+`mask_h=14`, `mask_w=14`, multiscale `conv4+conv5` spatial branch, soft-box
+targets, and soft-align KL loss. `patch_iou_thresh` is ignored by this
+soft-align setting; it is kept only for hard-IoU target experiments.
+
+For a full ImageNet-1K run, update the three path fields in
+`configs/imagenet_gcbm.yaml`:
+
+```text
+train_root: /path/to/imagenet/train
+annotation_dir: /path/to/imagenet_annotations
+precomputed_target_dir: /path/to/precomputed_targets
+```
+
+Then run:
+
+```bash
+python train_cbm.py --config configs/imagenet_gcbm.yaml
+```
+
+For the ImageNet VLG-CBM baseline, use:
+
+```bash
+python train_cbm.py --config configs/imagenet_vlg.yaml
+```
+
+This uses the same frozen ResNet-50 `IMAGENET1K_V1` backbone and global GDINO
+concept targets, but sets `branch_arch=global_only`. That path builds only the
+pooled-conv5 linear concept head and skips spatial branch computation, mask
+target loading, and soft-align loss.
 
 ## 2. Train Sparse NEC Heads
 
@@ -136,8 +166,28 @@ ImageNet:
 python scripts/train_sparse_nec.py \
   --dataset imagenet \
   --artifact_dir /path/to/imagenet_run \
-  --nec_values 1,5,10,15,20,25,30
+  --output_dir /path/to/imagenet_sparse_sweep \
+  --device cuda \
+  --saga_batch_size 512 \
+  --saga_workers 4 \
+  --saga_prefetch_factor 2 \
+  --step_size 0.1 \
+  --n_iters 500 \
+  --lam_max 0.0007 \
+  --max_glm_steps 150 \
+  --epsilon 1e-3 \
+  --alpha 0.99 \
+  --tol 1e-4 \
+  --table_device cuda \
+  --nec_values 5,10,15,20,25,30 \
+  --max_sparsity 0.01 \
+  --cache_features_device cuda \
+  --cache_chunk_rows 8192
 ```
+
+`W_g@NEC=<k>.pt` is saved after VLG-CBM-style global threshold truncation, so
+ImageNet `NEC=5` has approximately `5 * 1000 = 5000` nonzero final-layer
+weights.
 
 ## 3. Evaluate NEC Accuracy
 
@@ -159,7 +209,11 @@ python scripts/eval_nec.py \
   --artifact_dir /path/to/imagenet_run_or_sparse_sweep \
   --val_root /path/to/imagenet_val \
   --devkit_dir /path/to/ILSVRC2012_devkit_t12 \
-  --nec_values 1,5,10,20,50,4309 \
+  --batch_size 128 \
+  --workers 8 \
+  --prefetch_factor 2 \
+  --device cuda \
+  --nec_values 5,10,15,20,25,30 \
   --output_json results/imagenet_nec.json
 ```
 

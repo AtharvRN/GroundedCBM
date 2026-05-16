@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from gcbm.imagenet_models import DualBranchConceptHead, MultiScaleDualBranchConceptHead
+from gcbm.imagenet_models import DualBranchConceptHead, GlobalOnlyConceptHead, MultiScaleDualBranchConceptHead
 from gcbm.sg_model import DualBranchConceptLayer, MultiScaleConceptLayer, pool_concept_maps, pool_residual_spatial_logits
 
 
@@ -48,3 +48,12 @@ def test_imagenet_head_state_dict_keys_remain_checkpoint_compatible():
     multi_keys = set(MultiScaleDualBranchConceptHead(2, 0.1, "avg").state_dict())
     assert {"global_head.weight", "spatial.weight", "conv4_proj.weight", "conv5_proj.weight"} <= multi_keys
     assert not any(key.startswith("spatial_layer.") for key in multi_keys)
+
+
+def test_global_only_concept_head_skips_spatial_outputs():
+    head = GlobalOnlyConceptHead(3)
+    feats = {"conv4": torch.randn(2, 1024, 14, 14), "conv5": torch.randn(2, 2048, 7, 7)}
+    out = head(feats)
+    assert out["global_logits"].shape == (2, 3)
+    assert torch.equal(out["global_logits"], out["final_logits"])
+    assert "spatial_maps" not in out

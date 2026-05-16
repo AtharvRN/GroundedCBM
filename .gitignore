@@ -8,6 +8,7 @@
 .env.*
 
 # Local discussion / scratch notes
+local_docs/
 DISCUSSION.md
 DISCUSSION.txt
 NOTES.md

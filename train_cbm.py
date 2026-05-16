@@ -15,6 +15,7 @@ from gcbm.config import (
 
 
 IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "gcbm", "g-cbm", "savlg", "savlg-cbm"}
+IMAGENET_VLG_ALIASES = {"vlg", "vlg-cbm", "vlg_cbm"}
 CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
 
@@ -22,8 +23,16 @@ def _run_imagenet_training(argv: list[str], config=None) -> None:
     if config is None:
         config = load_flat_config(option_value(argv, "--config"))
     model = model_from_argv_or_config(argv, config)
-    if model not in IMAGENET_MODEL_ALIASES:
-        raise SystemExit("ImageNet training in this repository supports SG-CBM only.")
+    if model not in IMAGENET_MODEL_ALIASES and model not in IMAGENET_VLG_ALIASES:
+        raise SystemExit("ImageNet training supports SG-CBM and VLG-CBM.")
+    if model in IMAGENET_VLG_ALIASES:
+        config = {
+            **config,
+            "branch_arch": "global_only",
+            "loss_mask_w": 0.0,
+            "residual_alpha": 0.0,
+            "run_name": config.get("run_name") or "vlg_cbm_imagenet",
+        }
 
     from gcbm.train_imagenet import main as imagenet_main
 

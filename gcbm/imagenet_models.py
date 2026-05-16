@@ -64,6 +64,20 @@ class SharedConceptHead(nn.Module):
         }
 
 
+class GlobalOnlyConceptHead(nn.Module):
+    def __init__(self, n_concepts: int) -> None:
+        super().__init__()
+        self.global_head = nn.Linear(2048, n_concepts, bias=True)
+
+    def forward(self, feats: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        global_feats = F.adaptive_avg_pool2d(feats["conv5"], 1).flatten(1)
+        global_logits = self.global_head(global_feats)
+        return {
+            "global_logits": global_logits,
+            "final_logits": global_logits,
+        }
+
+
 def pool_residual_spatial_logits(spatial_maps: torch.Tensor, pooling: str) -> torch.Tensor:
     return shared_pool_residual_spatial_logits(spatial_maps, pooling=pooling)
 
@@ -151,7 +165,9 @@ def build_model(cfg: Any, n_concepts: int) -> Tuple[nn.Module, nn.Module]:
     backbone.eval()
     if cfg.channels_last:
         backbone.to(memory_format=torch.channels_last)
-    if cfg.spatial_branch_mode == "multiscale_conv45":
+    if cfg.branch_arch == "global_only":
+        head = GlobalOnlyConceptHead(n_concepts=n_concepts)
+    elif cfg.spatial_branch_mode == "multiscale_conv45":
         if cfg.branch_arch != "dual":
             raise ValueError("multiscale_conv45 requires branch_arch=dual")
         head = MultiScaleDualBranchConceptHead(
