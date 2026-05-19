@@ -18,35 +18,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from gcbm.imagenet_core import (
-    Config,
-    amp_dtype,
-    build_model,
-    configure_runtime,
-    cuda_peak_stats_mb,
-    prepare_images,
-)
+from gcbm.imagenet_config import Config
+from gcbm.sparse import threshold_weight_truncation
+from gcbm.runtime import amp_dtype, configure_runtime, cuda_peak_stats_mb
+from gcbm.training_utils import prepare_images
+from gcbm.imagenet_models import build_model
 
 
 VAL_RE = "ILSVRC2012_val_"
 
 
 def weight_truncation(weight: torch.Tensor, sparsity: float) -> torch.Tensor:
-    """Keep the top-k concept weights for each output class.
-
-    NEC is defined per class, not globally over the full class-by-concept
-    matrix. A global top-k can starve low-magnitude classes at small NEC.
-    """
-    num_concepts = int(weight.shape[1])
-    k = int(round(float(sparsity) * num_concepts))
-    if k <= 0:
-        return torch.zeros_like(weight)
-    if k >= num_concepts:
-        return weight.clone().detach()
-    topk_idx = weight.abs().topk(k=k, dim=1).indices
-    sparse_weight = torch.zeros_like(weight)
-    sparse_weight.scatter_(1, topk_idx, weight.gather(1, topk_idx))
-    return sparse_weight
+    return threshold_weight_truncation(weight, sparsity)
 
 
 def parse_args() -> argparse.Namespace:
@@ -485,7 +468,10 @@ def main() -> None:
     if args.inference_alpha_override is not None and hasattr(head, "residual_alpha"):
         head.residual_alpha = float(args.inference_alpha_override)
 
-    normalization_payload = torch.load(artifact_dir / "final_layer_normalization.pt", map_location="cpu")
+    normalization_path = artifact_dir / "final_layer_normalization.pt"
+    if not normalization_path.exists():
+        normalization_path = source_run_dir / "final_layer_normalization.pt"
+    normalization_payload = torch.load(normalization_path, map_location="cpu")
     feature_mean = normalization_payload["mean"].to(cfg.device).float()
     feature_std = normalization_payload["std"].to(cfg.device).float().clamp_min(1e-6)
     sweep = None if args.save_truncated_weights else load_saved_weight_sweep(artifact_dir, nec_values)

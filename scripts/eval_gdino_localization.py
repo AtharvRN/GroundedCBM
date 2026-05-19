@@ -35,14 +35,11 @@ from gcbm.imagenet_annotation_index import (  # noqa: E402
     load_annotation_payload,
     resolve_val_annotation_dir,
 )
-from gcbm.imagenet_core import (  # noqa: E402
-    Config,
-    build_gdino_targets,
-    build_model,
-    configure_runtime,
-    load_concepts,
-    prepare_images,
-)
+from gcbm.imagenet_config import Config  # noqa: E402
+from gcbm.imagenet_targets import build_gdino_targets, load_concepts  # noqa: E402
+from gcbm.runtime import configure_runtime  # noqa: E402
+from gcbm.training_utils import prepare_images  # noqa: E402
+from gcbm.imagenet_models import build_model  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

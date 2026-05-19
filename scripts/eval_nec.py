@@ -84,7 +84,7 @@ def main() -> None:
         if args.output_json:
             argv.extend(["--output_json", args.output_json])
         sys.argv = [*argv, *remaining]
-        runpy.run_path(str(ROOT / "gcbm" / "eval_imagenet_nec.py"), run_name="__main__")
+        runpy.run_path(str(ROOT / "gcbm" / "imagenet_nec.py"), run_name="__main__")
         return
 
     if not args.load_path:

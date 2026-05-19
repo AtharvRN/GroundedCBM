@@ -1,7 +1,0 @@
-artifact_dir: /path/to/imagenet_run
-saga_lam: 0.0005
-saga_n_iters: 200
-saga_step_size: 0.02
-saga_batch_size: 4096
-saga_workers: 0
-saga_table_device: cpu

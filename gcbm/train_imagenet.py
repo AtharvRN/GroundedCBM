@@ -30,34 +30,31 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from gcbm.losses import sgcbm_concept_losses  # noqa: E402
-from gcbm.imagenet_core import (  # noqa: E402
-    Config,
-    DatasetView,
-    SafeImageFolderWithAnnotations,
-    apply_count_concept_filter,
-    autocast_context,
-    batch_targets_to_device,
-    build_loader,
-    build_gdino_targets,
-    build_model,
-    build_run_dir,
+from gcbm.losses import sgcbm_concept_losses, weighted_concept_bce  # noqa: E402
+from gcbm.imagenet_final_layers import (  # noqa: E402
     compute_feature_stats_memmap,
-    configure_runtime,
-    cuda_peak_stats_mb,
     extract_concept_features_to_memmap,
-    init_global_head_from_vlg,
-    load_run_concepts,
-    make_optimizer,
-    make_scheduler,
-    prepare_images,
-    reset_cuda_peak_stats_if_needed,
-    save_checkpoint,
-    select_subset_indices,
-    split_train_val,
     train_dense_final_layer,
     train_sparse_final_layer,
 )
+from gcbm.imagenet_models import build_model, init_global_head_from_vlg  # noqa: E402
+from gcbm.imagenet_config import Config  # noqa: E402
+from gcbm.imagenet_data import (  # noqa: E402
+    DatasetView,
+    SafeImageFolderWithAnnotations,
+    apply_count_concept_filter,
+    build_loader,
+    select_subset_indices,
+    split_train_val,
+)
+from gcbm.imagenet_targets import batch_targets_to_device, build_gdino_global_targets, build_gdino_targets, load_run_concepts  # noqa: E402
+from gcbm.runtime import (  # noqa: E402
+    autocast_context,
+    configure_runtime,
+    cuda_peak_stats_mb,
+    reset_cuda_peak_stats_if_needed,
+)
+from gcbm.training_utils import build_run_dir, make_optimizer, make_scheduler, prepare_images, save_checkpoint  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -137,9 +134,9 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--branch_arch",
-        choices=["shared", "dual"],
+        choices=["shared", "dual", "global_only"],
         default="dual",
-        help="Concept-head architecture. Use dual for SG-CBM residual spatial logits.",
+        help="Concept-head architecture. Use global_only for VLG-CBM style ImageNet training.",
     )
     parser.add_argument(
         "--spatial_branch_mode",
@@ -200,6 +197,7 @@ def parse_args() -> argparse.Namespace:
 
 def build_config(args: argparse.Namespace) -> Config:
     """Populate the full standalone Config schema for eval compatibility."""
+    global_only = str(args.branch_arch) == "global_only"
     return Config(
         mode="train",
         train_root=args.train_root,
@@ -249,11 +247,11 @@ def build_config(args: argparse.Namespace) -> Config:
         global_pos_weight=args.global_pos_weight,
         patch_pos_weight=1.0,
         loss_global_w=args.loss_global_w,
-        loss_mask_w=args.loss_mask_w,
+        loss_mask_w=0.0 if global_only else args.loss_mask_w,
         branch_arch=str(args.branch_arch),
         spatial_branch_mode=args.spatial_branch_mode,
         spatial_stage=args.spatial_stage,
-        residual_alpha=args.residual_alpha,
+        residual_alpha=0.0 if global_only else args.residual_alpha,
         profile_steps=0,
         warmup_steps=0,
         log_every=max(1, int(args.log_every)),
@@ -290,9 +288,12 @@ def validate_config(cfg: Config) -> None:
         raise ValueError("--train_root is required")
     if not cfg.annotation_dir:
         raise ValueError("--annotation_dir is required")
-    if cfg.spatial_branch_mode == "multiscale_conv45" and cfg.branch_arch != "dual":
+    if cfg.branch_arch == "global_only":
+        if cfg.loss_mask_w != 0:
+            print("[config] branch_arch=global_only ignores spatial masks; setting effective mask loss to zero", flush=True)
+    elif cfg.spatial_branch_mode == "multiscale_conv45" and cfg.branch_arch != "dual":
         raise ValueError("--spatial_branch_mode=multiscale_conv45 requires --branch_arch=dual")
-    if cfg.spatial_loss_mode != "soft_align":
+    if cfg.branch_arch != "global_only" and cfg.spatial_loss_mode != "soft_align":
         raise ValueError("This release trainer only supports soft-align KL spatial loss")
     if cfg.freeze_global_head and not cfg.vlg_init_path:
         raise ValueError("--freeze_global_head requires --vlg_init_path")
@@ -317,6 +318,18 @@ def compute_cbl_losses(
     cfg: Config,
 ) -> Dict[str, torch.Tensor]:
     """Global weighted BCE plus soft-align KL over precomputed target masks."""
+    if cfg.branch_arch == "global_only":
+        loss_global = weighted_concept_bce(
+            outputs["final_logits"],
+            global_targets,
+            pos_weight=float(cfg.global_pos_weight),
+        )
+        loss_mask = outputs["final_logits"].sum() * 0.0
+        return {
+            "total": cfg.loss_global_w * loss_global,
+            "global": loss_global.detach(),
+            "mask": loss_mask.detach(),
+        }
     loss_global, loss_mask = sgcbm_concept_losses(
         outputs["final_logits"],
         outputs["spatial_maps"],
@@ -339,6 +352,22 @@ def batch_cbl_targets(
     dataset: DatasetView,
     cfg: Config,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    if cfg.branch_arch == "global_only":
+        if "global_targets" in batch:
+            global_targets = batch["global_targets"].to(cfg.device, non_blocking=True)
+        else:
+            global_targets = build_gdino_global_targets(
+                batch["annotations"],
+                dataset.concept_to_idx,
+                len(dataset.concepts),
+                cfg,
+                cfg.device,
+            )
+        batch_size = int(global_targets.shape[0])
+        idx_pad = torch.zeros((batch_size, 0), dtype=torch.long, device=cfg.device)
+        mask_pad = torch.zeros((batch_size, 0, cfg.mask_h, cfg.mask_w), dtype=torch.float32, device=cfg.device)
+        valid_pad = torch.zeros((batch_size, 0), dtype=torch.bool, device=cfg.device)
+        return global_targets, idx_pad, mask_pad, valid_pad
     if "global_targets" in batch:
         return batch_targets_to_device(batch, cfg)
     return build_gdino_targets(
@@ -478,7 +507,7 @@ def build_datasets(cfg: Config) -> Tuple[DatasetView, DatasetView, Optional[Dict
                 flush=True,
             )
             return
-        dataset.attach_precomputed_targets(cfg.precomputed_target_dir, cfg)
+        dataset.attach_precomputed_targets(cfg.precomputed_target_dir, cfg, global_only=(cfg.branch_arch == "global_only"))
         print(f"[targets] using precomputed targets from {target_dir}", flush=True)
 
     train_dataset_full = SafeImageFolderWithAnnotations(

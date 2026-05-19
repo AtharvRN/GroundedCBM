@@ -8,6 +8,7 @@
 .env.*
 
 # Local discussion / scratch notes
+local_docs/
 DISCUSSION.md
 DISCUSSION.txt
 NOTES.md
@@ -20,8 +21,13 @@ RELEASE_MANIFEST.md
 # Local-only release/deployment scaffolding
 k8s/
 tests/
+artifacts/
+results/
+saved_models/
+saved_activations/
 
 # OS / Python noise
 .DS_Store
 __pycache__/
 *.pyc
+.pytest_cache/

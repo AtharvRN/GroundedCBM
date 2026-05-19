@@ -18,6 +18,14 @@ from tqdm import tqdm
 from data import utils as data_utils
 from data.concept_dataset import get_filtered_concepts_and_counts
 from gcbm.losses import sgcbm_concept_losses
+from gcbm.sg_model import (
+    DualBranchConceptLayer as SharedDualBranchConceptLayer,
+    MultiScaleConceptLayer,
+    pool_concept_maps as shared_pool_concept_maps,
+    pool_residual_spatial_logits as shared_pool_residual_spatial_logits,
+)
+from gcbm.spatial_targets import rasterize_box_target as shared_rasterize_box_target
+from gcbm.target_batches import pad_sparse_targets
 from glm_saga.elasticnet import IndexedTensorDataset
 from methods.common import build_run_dir, save_args, write_artifacts
 from methods.lf import TransformedSubset, subset_targets, use_original_label_free_protocol
@@ -296,123 +304,21 @@ def _load_or_build_image_sizes(
     return sizes
 
 
-def _normalize_box(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-) -> Optional[Tuple[float, float, float, float]]:
-    if not isinstance(box, (list, tuple)) or len(box) != 4:
-        return None
-    x1, y1, x2, y2 = [float(v) for v in box]
-    w, h = int(image_size[0]), int(image_size[1])
-    if max(abs(x1), abs(y1), abs(x2), abs(y2)) > 1.5:
-        if w <= 0 or h <= 0:
-            return None
-        x1, x2 = x1 / w, x2 / w
-        y1, y2 = y1 / h, y2 / h
-    x1, x2 = sorted((x1, x2))
-    y1, y2 = sorted((y1, y2))
-    x1 = float(np.clip(x1, 0.0, 1.0))
-    x2 = float(np.clip(x2, 0.0, 1.0))
-    y1 = float(np.clip(y1, 0.0, 1.0))
-    y2 = float(np.clip(y2, 0.0, 1.0))
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return x1, y1, x2, y2
-
-
-def _rasterize_box_patch_iou(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-    mask_h: int,
-    mask_w: int,
-    iou_thresh: float,
-) -> Optional[np.ndarray]:
-    norm = _normalize_box(box, image_size=image_size)
-    if norm is None:
-        return None
-    x1, y1, x2, y2 = norm
-    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    if box_area <= 0.0:
-        return None
-
-    mask = np.zeros((mask_h, mask_w), dtype=np.float32)
-    patch_area = 1.0 / float(mask_h * mask_w)
-    for r in range(mask_h):
-        py1 = r / float(mask_h)
-        py2 = (r + 1) / float(mask_h)
-        for c in range(mask_w):
-            px1 = c / float(mask_w)
-            px2 = (c + 1) / float(mask_w)
-            ix1 = max(px1, x1)
-            iy1 = max(py1, y1)
-            ix2 = min(px2, x2)
-            iy2 = min(py2, y2)
-            inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-            if inter <= 0.0:
-                continue
-            union = patch_area + box_area - inter
-            if union > 0.0 and (inter / union) > float(iou_thresh):
-                mask[r, c] = 1.0
-    return mask
-
-
-def _rasterize_box_soft_occupancy(
-    box: Sequence[float],
-    image_size: Tuple[int, int],
-    mask_h: int,
-    mask_w: int,
-) -> Optional[np.ndarray]:
-    norm = _normalize_box(box, image_size=image_size)
-    if norm is None:
-        return None
-    x1, y1, x2, y2 = norm
-    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    if box_area <= 0.0:
-        return None
-
-    mask = np.zeros((mask_h, mask_w), dtype=np.float32)
-    patch_area = 1.0 / float(mask_h * mask_w)
-    for r in range(mask_h):
-        py1 = r / float(mask_h)
-        py2 = (r + 1) / float(mask_h)
-        for c in range(mask_w):
-            px1 = c / float(mask_w)
-            px2 = (c + 1) / float(mask_w)
-            ix1 = max(px1, x1)
-            iy1 = max(py1, y1)
-            ix2 = min(px2, x2)
-            iy2 = min(py2, y2)
-            inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-            if inter <= 0.0:
-                continue
-            mask[r, c] = float(np.clip(inter / patch_area, 0.0, 1.0))
-    return mask
-
-
 def _rasterize_box_target(
     box: Sequence[float],
     image_size: Tuple[int, int],
     args,
 ) -> Optional[np.ndarray]:
-    target_mode = str(getattr(args, "savlg_target_mode", "hard_iou")).lower()
-    mask_h = int(args.mask_h)
-    mask_w = int(args.mask_w)
-    if target_mode == "hard_iou":
-        return _rasterize_box_patch_iou(
-            box=box,
-            image_size=image_size,
-            mask_h=mask_h,
-            mask_w=mask_w,
-            iou_thresh=float(getattr(args, "patch_iou_thresh", 0.5)),
-        )
-    if target_mode == "soft_box":
-        return _rasterize_box_soft_occupancy(
-            box=box,
-            image_size=image_size,
-            mask_h=mask_h,
-            mask_w=mask_w,
-        )
-    raise ValueError(f"Unsupported SAVLG target mode: {target_mode}")
+    return shared_rasterize_box_target(
+        box,
+        image_size=image_size,
+        target_mode=str(getattr(args, "savlg_target_mode", "hard_iou")).lower(),
+        mask_h=int(args.mask_h),
+        mask_w=int(args.mask_w),
+        iou_thresh=float(getattr(args, "patch_iou_thresh", 0.5)),
+        transform=str(getattr(args, "savlg_target_transform", "original")),
+        input_size=getattr(args, "input_size", None),
+    )
 
 
 def load_spatial_supervision(
@@ -769,25 +675,9 @@ def collate_spatial_batch(batch):
     global_concepts = torch.stack(global_concepts, dim=0)
     labels = torch.tensor(labels, dtype=torch.long)
 
-    max_k = max(x.numel() for x in c_idx)
-    bsz = len(batch)
-    if max_k == 0:
-        idx_pad = torch.full((bsz, 1), -1, dtype=torch.long)
-        mask_pad = torch.zeros((bsz, 1, c_mask[0].shape[-2] if c_mask else 1, c_mask[0].shape[-1] if c_mask else 1), dtype=torch.float32)
-        valid = torch.zeros((bsz, 1), dtype=torch.bool)
-    else:
-        mask_h = c_mask[0].shape[-2]
-        mask_w = c_mask[0].shape[-1]
-        idx_pad = torch.full((bsz, max_k), -1, dtype=torch.long)
-        mask_pad = torch.zeros((bsz, max_k, mask_h, mask_w), dtype=torch.float32)
-        valid = torch.zeros((bsz, max_k), dtype=torch.bool)
-        for i, (idx_i, mask_i) in enumerate(zip(c_idx, c_mask)):
-            k = idx_i.numel()
-            if k == 0:
-                continue
-            idx_pad[i, :k] = idx_i
-            mask_pad[i, :k] = mask_i
-            valid[i, :k] = True
+    mask_h = c_mask[0].shape[-2] if c_mask else 1
+    mask_w = c_mask[0].shape[-1] if c_mask else 1
+    idx_pad, mask_pad, valid = pad_sparse_targets(c_idx, c_mask, mask_h=mask_h, mask_w=mask_w)
     return images, global_concepts, idx_pad, mask_pad, valid, labels
 
 
@@ -1015,17 +905,7 @@ def build_savlg_global_head(args, in_features: int, n_concepts: int) -> nn.Modul
     return build_single_spatial_concept_layer(args, in_features, n_concepts)
 
 
-def apply_savlg_global_head(global_layer: nn.Module, feats, args) -> torch.Tensor:
-    if isinstance(feats, dict):
-        # Dual/multiscale branches keep the global path on conv5 features.
-        feats = feats["conv5"]
-    if savlg_uses_vlg_global_head(args):
-        pooled_feats = feats.mean(dim=[2, 3])
-        return global_layer(pooled_feats)
-    return global_layer(feats)
-
-
-class DualBranchMixedConceptLayer(nn.Module):
+class DualBranchMixedConceptLayer(SharedDualBranchConceptLayer):
     def __init__(
         self,
         global_layer: nn.Module,
@@ -1033,36 +913,27 @@ class DualBranchMixedConceptLayer(nn.Module):
         args,
         spatial_stage: Optional[str] = None,
     ):
-        super().__init__()
-        self.global_layer = global_layer
-        self.spatial_layer = spatial_layer
+        super().__init__(
+            global_layer,
+            spatial_layer,
+            spatial_stage=spatial_stage or getattr(args, "savlg_spatial_stage", "conv5"),
+            global_stage="conv5",
+            global_pool=savlg_uses_vlg_global_head(args),
+            residual_alpha=float(getattr(args, "savlg_residual_spatial_alpha", 0.0)),
+            residual_spatial_pooling=str(getattr(args, "savlg_residual_spatial_pooling", "lse")),
+            learn_spatial_residual_scale=bool(getattr(args, "savlg_learnable_alpha", False)),
+        )
         self.args = args
-        self.spatial_stage = str(spatial_stage or getattr(args, "savlg_spatial_stage", "conv5")).lower()
-        if getattr(args, "savlg_learnable_alpha", False):
+        if self.log_spatial_scale is not None:
             init_alpha = max(1e-4, float(getattr(args, "savlg_residual_spatial_alpha", 0.1)))
-            self.log_spatial_scale = nn.Parameter(torch.tensor(math.log(init_alpha)))
-
-    def _spatial_feats(self, x):
-        if isinstance(x, dict):
-            return x[self.spatial_stage]
-        return x
+            self.log_spatial_scale.data.fill_(math.log(init_alpha))
 
     def forward(self, x) -> torch.Tensor:
-        return self.spatial_layer(self._spatial_feats(x))
-
-    def forward_global(self, x):
-        return apply_savlg_global_head(self.global_layer, x, self.args)
-
-    def forward_spatial(self, x) -> torch.Tensor:
-        return self.spatial_layer(self._spatial_feats(x))
-
-    def forward_both(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.forward_global(x), self.forward_spatial(x)
+        return self.forward_spatial(x)
 
 
-class MultiScaleSAVLGConceptLayer(nn.Module):
+class MultiScaleSAVLGConceptLayer(MultiScaleConceptLayer):
     def __init__(self, args, backbone: SpatialBackbone, n_concepts: int):
-        super().__init__()
         if str(getattr(args, "savlg_branch_arch", "shared")).lower() != "dual":
             raise ValueError("Multi-scale SAVLG spatial fusion requires savlg_branch_arch='dual'.")
         if str(getattr(args, "savlg_spatial_stage", "conv5")).lower() != "conv5":
@@ -1072,40 +943,26 @@ class MultiScaleSAVLGConceptLayer(nn.Module):
         conv5_dim = backbone.get_stage_dim("conv5")
         fusion_dim = int(getattr(args, "savlg_multiscale_fusion_dim", conv5_dim) or conv5_dim)
 
-        self.global_layer = build_savlg_global_head(args, conv5_dim, n_concepts)
-        self.conv4_proj = nn.Conv2d(conv4_dim, fusion_dim, kernel_size=1, bias=False).to(args.device)
-        self.conv5_proj = nn.Conv2d(conv5_dim, fusion_dim, kernel_size=1, bias=False).to(args.device)
-        self.spatial_layer = build_single_spatial_concept_layer(args, fusion_dim, n_concepts)
-        self.args = args
-        if getattr(args, "savlg_learnable_alpha", False):
-            init_alpha = max(1e-4, float(getattr(args, "savlg_residual_spatial_alpha", 0.1)))
-            self.log_spatial_scale = nn.Parameter(torch.tensor(math.log(init_alpha)))
-
-    def _fuse_spatial_features(self, feats) -> torch.Tensor:
-        if not isinstance(feats, dict):
-            raise TypeError("MultiScaleSAVLGConceptLayer expects a stage dict with conv4 and conv5 features.")
-        conv4 = feats["conv4"]
-        conv5 = feats["conv5"]
-        conv5_up = F.interpolate(
-            self.conv5_proj(conv5),
-            size=conv4.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
+        global_layer = build_savlg_global_head(args, conv5_dim, n_concepts)
+        spatial_layer = build_single_spatial_concept_layer(args, fusion_dim, n_concepts)
+        super().__init__(
+            global_layer,
+            spatial_layer,
+            conv4_dim=conv4_dim,
+            conv5_dim=conv5_dim,
+            fusion_dim=fusion_dim,
+            global_pool=savlg_uses_vlg_global_head(args),
+            residual_alpha=float(getattr(args, "savlg_residual_spatial_alpha", 0.0)),
+            residual_spatial_pooling=str(getattr(args, "savlg_residual_spatial_pooling", "lse")),
+            learn_spatial_residual_scale=bool(getattr(args, "savlg_learnable_alpha", False)),
         )
-        fused = self.conv4_proj(conv4) + conv5_up
-        return F.relu(fused, inplace=False)
+        self.args = args
+        if self.log_spatial_scale is not None:
+            init_alpha = max(1e-4, float(getattr(args, "savlg_residual_spatial_alpha", 0.1)))
+            self.log_spatial_scale.data.fill_(math.log(init_alpha))
 
     def forward(self, feats) -> torch.Tensor:
-        return self.spatial_layer(self._fuse_spatial_features(feats))
-
-    def forward_global(self, feats) -> torch.Tensor:
-        return apply_savlg_global_head(self.global_layer, feats, self.args)
-
-    def forward_spatial(self, feats) -> torch.Tensor:
-        return self.spatial_layer(self._fuse_spatial_features(feats))
-
-    def forward_both(self, feats) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.forward_global(feats), self.forward_spatial(feats)
+        return self.forward_spatial(feats)
 
 
 def build_savlg_concept_layer(args, backbone: SpatialBackbone, n_concepts: int) -> nn.Module:
@@ -1302,19 +1159,11 @@ def pool_global_concept_outputs(outputs: torch.Tensor, args) -> torch.Tensor:
 
 
 def pool_concept_maps(maps: torch.Tensor, args) -> torch.Tensor:
-    pooling = str(getattr(args, "savlg_pooling", "avg")).lower()
-    if pooling == "avg":
-        return F.adaptive_avg_pool2d(maps, 1).flatten(1)
-    if pooling != "topk":
-        raise ValueError(f"Unsupported SAVLG pooling mode: {pooling}")
-
-    flat = maps.flatten(2)
-    num_patches = flat.shape[-1]
-    topk_fraction = float(getattr(args, "savlg_topk_fraction", 0.2))
-    topk_fraction = min(max(topk_fraction, 0.0), 1.0)
-    k = max(1, int(math.ceil(num_patches * topk_fraction)))
-    values, _ = flat.topk(k=k, dim=-1)
-    return values.mean(dim=-1)
+    return shared_pool_concept_maps(
+        maps,
+        pooling=str(getattr(args, "savlg_pooling", "avg")).lower(),
+        topk_fraction=float(getattr(args, "savlg_topk_fraction", 0.2)),
+    )
 
 
 def savlg_residual_coupling_enabled(args) -> bool:
@@ -1322,19 +1171,10 @@ def savlg_residual_coupling_enabled(args) -> bool:
 
 
 def pool_residual_spatial_logits(map_logits: torch.Tensor, args) -> torch.Tensor:
-    pooling = str(getattr(args, "savlg_residual_spatial_pooling", "lse")).lower()
-    flat = map_logits.flatten(2)
-    if pooling == "lse":
-        temperature = float(getattr(args, "savlg_mil_temperature", 1.0))
-        temperature = max(temperature, 1e-6)
-        num_patches = flat.shape[-1]
-        pooled = temperature * torch.logsumexp(flat / temperature, dim=-1)
-        return pooled - temperature * math.log(max(num_patches, 1))
-    if pooling == "avg":
-        return flat.mean(dim=-1)
-    raise ValueError(
-        f"Unsupported SAVLG residual spatial pooling mode: {pooling}. "
-        "Supported modes are lse and avg."
+    return shared_pool_residual_spatial_logits(
+        map_logits,
+        pooling=str(getattr(args, "savlg_residual_spatial_pooling", "lse")).lower(),
+        temperature=float(getattr(args, "savlg_mil_temperature", 1.0)),
     )
 
 
@@ -1347,8 +1187,9 @@ def compute_savlg_concept_logits(
     global_logits = pool_global_concept_outputs(global_outputs, args)
     if savlg_residual_coupling_enabled(args):
         spatial_logits = pool_residual_spatial_logits(spatial_maps, args)
-        if concept_layer is not None and hasattr(concept_layer, "log_spatial_scale"):
-            alpha = concept_layer.log_spatial_scale.exp()
+        learned_scale = getattr(concept_layer, "log_spatial_scale", None) if concept_layer is not None else None
+        if learned_scale is not None:
+            alpha = learned_scale.exp()
         else:
             alpha = float(getattr(args, "savlg_residual_spatial_alpha", 0.0))
         final_logits = global_logits + alpha * spatial_logits
@@ -1543,8 +1384,9 @@ def train_concept_head(
         elif (epoch + 1) >= min_epochs:
             epochs_without_improvement += 1
         alpha_str = ""
-        if hasattr(concept_layer, "log_spatial_scale"):
-            alpha_str = f" alpha={concept_layer.log_spatial_scale.exp().item():.4f}"
+        learned_scale = getattr(concept_layer, "log_spatial_scale", None)
+        if learned_scale is not None:
+            alpha_str = f" alpha={learned_scale.exp().item():.4f}"
         logger.info(
             "[SAVLG CBL] epoch={} train_loss={:.6f} val_loss={:.6f} best_val={:.6f}{}",
             epoch,
