@@ -32,7 +32,7 @@ def main() -> None:
     if not args.artifact_dir:
         raise SystemExit("--artifact_dir is required for --dataset imagenet")
     sys.argv = ["imagenet_glm_path.py", "--artifact_dir", args.artifact_dir, *remaining]
-    runpy.run_path(str(ROOT / "evaluations" / "imagenet_glm_path.py"), run_name="__main__")
+    runpy.run_path(str(ROOT / "gcbm" / "imagenet_glm_path.py"), run_name="__main__")
 
 
 def cub_nec_parser() -> argparse.ArgumentParser:

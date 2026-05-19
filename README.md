@@ -51,6 +51,12 @@ annotations/cub_val/0.json
 annotations/imagenet_val/0.json
 ```
 
+The annotation archives are distributed separately from this code repository.
+For CUB, the original VLG-CBM release also links the compatible annotation
+archive: https://github.com/Trustworthy-ML-Lab/VLG-CBM. For ImageNet, use the
+SG-CBM annotation archive released with this project and extract it so that
+`annotations/imagenet_val/*.json` exists.
+
 For ImageNet validation, use a filename-to-annotation mapping JSON when the
 annotation filenames are not in `ILSVRC2012_val_00000001.JPEG -> 0.json` order.
 The concept accuracy and localization scripts expose `--annotation_mapping_json`
