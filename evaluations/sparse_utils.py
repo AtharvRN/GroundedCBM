@@ -79,9 +79,11 @@ def _apply_common_overrides(
 
 
 def _indexed_dataset_tensors(dataset) -> tuple[torch.Tensor, torch.Tensor]:
-    if not hasattr(dataset, "features") or not hasattr(dataset, "targets"):
-        raise TypeError(f"Expected IndexedTensorDataset, got {type(dataset).__name__}")
-    return dataset.features, dataset.targets
+    if hasattr(dataset, "features") and hasattr(dataset, "targets"):
+        return dataset.features, dataset.targets
+    if hasattr(dataset, "tensors") and len(dataset.tensors) >= 2:
+        return dataset.tensors[0], dataset.tensors[1]
+    raise TypeError(f"Expected indexed tensor-like dataset, got {type(dataset).__name__}")
 
 
 def _tensor_dataset_tensors(dataset) -> tuple[torch.Tensor, torch.Tensor]:
@@ -715,10 +717,22 @@ def extract_salf_nec_features(
     classes = data_utils.get_classes(args.dataset)
 
     backbone = SpatialBackbone(args.backbone, device=args.device)
-    concept_layer = build_savlg_concept_layer(args, backbone, len(concepts))
-    concept_layer.load_state_dict(
-        torch.load(os.path.join(load_dir, "concept_layer.pt"), map_location=args.device)
-    )
+    state_dict = torch.load(os.path.join(load_dir, "concept_layer.pt"), map_location=args.device)
+    if (
+        "weight" in state_dict
+        and "bias" not in state_dict
+        and getattr(args, "cbl_type", "linear") == "linear"
+        and state_dict["weight"].ndim == 4
+    ):
+        concept_layer = torch.nn.Conv2d(
+            int(state_dict["weight"].shape[1]),
+            int(state_dict["weight"].shape[0]),
+            kernel_size=1,
+            bias=False,
+        ).to(args.device)
+    else:
+        concept_layer = build_savlg_concept_layer(args, backbone, len(concepts))
+    concept_layer.load_state_dict(state_dict)
 
     if use_original_label_free_protocol(args):
         train_dataset = data_utils.get_data(
@@ -852,6 +866,11 @@ def extract_savlg_nec_features(
 
     print("[SAVLG NEC] creating SAVLG splits", flush=True)
     _, _, train_dataset, val_dataset, test_dataset, backbone = create_savlg_splits(args)
+    if max_images is not None:
+        max_images_int = max(1, int(max_images))
+        train_dataset = torch.utils.data.Subset(train_dataset, list(range(min(max_images_int, len(train_dataset)))))
+        val_dataset = torch.utils.data.Subset(val_dataset, list(range(min(max_images_int, len(val_dataset)))))
+        test_dataset = torch.utils.data.Subset(test_dataset, list(range(min(max_images_int, len(test_dataset)))))
     print(
         f"[SAVLG NEC] splits ready: train={len(train_dataset)} val={len(val_dataset)} test={len(test_dataset)}",
         flush=True,
