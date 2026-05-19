@@ -1,0 +1,225 @@
+Clear lung fields throughout
+Sharp costophrenic angles
+Smooth pleural margins
+Normal pulmonary vascularity
+Midline tracheal air column
+Symmetric lung expansion
+Normal mediastinal contours
+Normal hilar contours
+Cardiac size within normal limits
+Intact diaphragmatic domes
+Preserved retrosternal clear space
+Normal gastric bubble position
+No focal airspace density
+No subdiaphragmatic free air
+Bony thorax without acute change
+Widened superior mediastinal shadow
+Thickened right paratracheal stripe
+Left mediastinal contour convexity
+Prominent aortic knuckle
+Unfolded tortuous thoracic aorta
+Azygos arch enlargement
+Main pulmonary artery segment prominence
+Bilateral hilar fullness
+Dilated superior vena cava contour
+Aortopulmonary window effacement
+Mediastinal contour lobulation
+Left paraspinal line bulge
+Azygoesophageal recess convexity
+Prominent descending aortic border
+Increased vascular pedicle width
+Increased cardiothoracic ratio
+Heart width exceeds half thorax
+Globular water-bottle silhouette
+Prominent left ventricular border
+Right atrial appendage prominence
+Upturned cardiac apex
+Straightened left cardiac contour
+Double density behind right heart
+Splayed carina angle
+Elevated left main bronchus
+Prominent left atrial appendage
+Increased transverse cardiac diameter
+Cardiac silhouette contacts left chest wall
+Reduced retrocardiac clear space
+Right ventricular contour prominence
+Patchy airspace shadowing
+Diffuse ground-glass haze
+Perihilar hazy density
+Basilar streaky densities
+Upper lobe hazy density
+Peripheral patchy shadowing
+Reticular interstitial markings
+Nodular parenchymal densities
+Patchy peribronchovascular haze
+Hazy alveolar filling pattern
+Diffuse bilateral haziness
+Linear bandlike parenchymal density
+Segmental wedge-shaped density
+Patchy subpleural haziness
+Blurring of vascular margins
+Solitary pulmonary nodule
+Spiculated margin mass
+Lobulated parenchymal mass
+Smooth round mass
+Thick-walled cavity
+Thin-walled cystic lucency
+Air-fluid level in cavity
+Multiple cannonball nodules
+Miliary nodular pattern
+Calcified granuloma
+Apical mass with pleural tail
+Juxtafissural nodule
+Hilar mass effect on bronchi
+Extrapleural extension from mass
+Crescent air within cavity
+Kerley B lines at bases
+Perihilar batwing pattern
+Vascular cephalization
+Prominent upper-lobe veins
+Peribronchial interstitial thickening
+Diffuse interstitial haze
+Thickened interlobar fissure line
+Peribronchial cuffing
+Hilar vessel blurring
+Alveolar flooding centrally
+Perihilar fluffy densities
+Peripheral septal lines
+Faint perivascular haze
+Minor fissure thickening
+Perivascular hazy indistinctness
+Dense lobar airspace filling
+Segmental homogeneous whitening
+Air bronchograms in dense region
+Diaphragm border obscured by density
+Heart border obscured by density
+Bulging fissure appearance
+Right middle lobe whitening
+Left lower lobe dense focus
+Upper lobe dense focus
+Confluent perihilar dense patch
+Complete lobar whiteout
+Triangular segmental density
+Peripheral dense airspace patch
+Non-volume-loss dense area
+Sharp-margined airspace whitening
+Bronchocentric patchy densities
+Multifocal perihilar patchiness
+Segmental ill-defined infiltrate
+Lobar infiltrate pattern
+Dependent posterior basal patchiness
+Peribronchial thickening with nodules
+Rounded focal airspace density
+Cavitating infiltrate focus
+Airspace change crossing fissures
+Reticulonodular infiltrative pattern
+Upper-zone patchy infiltrates
+Periphery-predominant patchy densities
+Small airway nodular spread
+Asymmetric patchy airspace change
+Air bronchograms within infiltrate
+Plate-like linear collapse
+Discoid basilar band
+Volume loss with fissure shift
+Crowding of bronchovascular markings
+Ipsilateral hemidiaphragm elevation
+Hilar displacement toward collapse
+Mediastinum pulled toward side
+Retrocardiac triangular density
+Rib crowding on affected side
+Compensatory overinflation opposite lung
+Loss of lower lobe aeration
+Minor fissure downward displacement
+S-shaped minor fissure contour
+Obscured heart border with volume loss
+Elevated minor fissure line
+Sharp visceral pleural line
+Peripheral lung markings absent
+Deep sulcus sign on supine
+Apical hyperlucent pocket
+Collapsed lung edge medially
+Increased lucency without vessels
+Mediastinal shift away from lucency
+Depressed ipsilateral hemidiaphragm
+Hyperexpanded affected hemithorax
+Anterior pleural air on supine
+Visible pleural line at base
+Sharp costophrenic sulcus lucency
+Subcutaneous emphysema streaks
+Air outlining collapsed lung
+Lateral decubitus pleural air
+Meniscus-shaped lateral fluid level
+Posterior costophrenic sulcus blunting
+Basilar homogeneous veiling density
+Subpulmonic fluid with elevated dome
+Fluid layering on decubitus view
+Fissural pseudotumor appearance
+Complete hemithorax whiteout with shift
+Apical cap from fluid
+Contralateral mediastinal displacement
+Obscured lower lung base
+Blurring of hemidiaphragm margin by fluid
+Rounded loculated fluid pocket
+Pleural fluid tracking along fissure
+Bilateral basal fluid layers
+Anterior pleural fluid on supine
+Apical pleural thickening band
+Calcified pleural plaques
+Diffuse pleural rind thickening
+Unilateral pleural thickening tethering
+Pleural-based calcified rind
+Fibrothorax with volume loss
+Pleural tenting at apex
+Costophrenic pleural scarring
+Pleural line nodularity
+Extrapleural fat sign
+Pleural mass with obtuse angle
+Pleural air-fluid level
+Diaphragmatic pleural calcification
+Pleural adhesion bands
+Thickened lateral pleural stripe
+Rib cortical discontinuity
+Rib step-off deformity
+Lucent line through rib
+Displaced clavicle break
+Scapular body cortical break
+Vertebral compression deformity
+Sternal cortical step deformity
+Healed rib callus formation
+Multiple rib buckle deformities
+Flail segment rib alignment
+Acute rib angulation
+Costochondral junction separation
+Transverse process cortical break
+Posterior rib discontinuity
+Proximal humeral neck break
+Endotracheal tube tip above carina
+Tracheostomy tube in trachea
+Enteric tube below diaphragm
+Right IJ central line in SVC
+Left subclavian central line in SVC
+PICC line at cavoatrial junction
+Hemodialysis catheter into right atrium
+Swan-Ganz catheter in pulmonary artery
+Chest tube coursing to apex
+Pigtail pleural catheter in base
+Cardiac pacemaker generator present
+Implantable defibrillator lead present
+Median sternotomy wires visible
+Ventricular assist device cannula
+External defibrillator pads over chest
+Hyperinflated lungs with flattened diaphragms
+Apical bullous change
+Diffuse hyperlucent lungs with paucity vessels
+Coarse reticular fibrotic pattern
+Basilar scarring with traction lines
+Bronchiectasis tram-track lines
+Thoracic scoliosis curvature
+Increased thoracic kyphosis
+Diaphragmatic eventration
+Hiatal hernia retrocardiac air-fluid
+Dextrocardia with rightward apex
+Aortic arch calcification
+Calcified hilar lymphadenopathy
+Enlarged thyroid shadow
+Pectus excavatum cardiac displacement

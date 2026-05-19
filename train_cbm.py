@@ -16,6 +16,7 @@ from gcbm.config import (
 
 IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "gcbm", "g-cbm", "savlg", "savlg-cbm"}
 IMAGENET_VLG_ALIASES = {"vlg", "vlg-cbm", "vlg_cbm"}
+MEDICAL_DATASETS = {"chexpert", "mimic"}
 CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
 
@@ -44,6 +45,26 @@ def _run_imagenet_training(argv: list[str], config=None) -> None:
             *strip_dispatcher_args(argv),
         ]
         imagenet_main()
+    finally:
+        sys.argv = old_argv
+
+
+def _run_medical_training(argv: list[str], config=None) -> None:
+    if config is None:
+        config = load_flat_config(option_value(argv, "--config"))
+    dataset = option_value(argv, "--dataset") or config.get("dataset")
+    from gcbm.train_medical import main as medical_main
+
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "train_cbm.py",
+            "--dataset",
+            str(dataset),
+            *config_to_argv(config),
+            *strip_dispatcher_args(argv),
+        ]
+        medical_main()
     finally:
         sys.argv = old_argv
 
@@ -444,6 +465,9 @@ def main():
     dataset = option_value(argv, "--dataset") or config.get("dataset")
     if dataset is not None and str(dataset).lower() == "imagenet":
         _run_imagenet_training(argv, config)
+        return
+    if dataset is not None and str(dataset).lower() in MEDICAL_DATASETS:
+        _run_medical_training(argv, config)
         return
 
     parser = argparse.ArgumentParser(description="Train CUB CBM baselines or SG-CBM. Use --dataset imagenet for the ImageNet SG-CBM trainer.")

@@ -125,6 +125,13 @@ def elastic_loss(linear, X, y, lam, alpha, family='multinomial', sample_weight=N
         else: 
             l = 0.5*F.mse_loss(linear(X),y,reduction='none')
             l = (l*(sample_weight.unsqueeze(1))).mean()
+    elif family == 'multilabel':
+        y = y.float()
+        loss_per_class = F.binary_cross_entropy_with_logits(linear(X), y, reduction='none')
+        if sample_weight is None:
+            l = loss_per_class.sum(dim=1).mean()
+        else:
+            l = (loss_per_class.sum(dim=1) * sample_weight).mean()
     else: 
         raise ValueError(f"Unknown family: {family}")
     return l + l1 + l2
@@ -157,6 +164,10 @@ def elastic_loss_and_acc(linear, X, y, lam, alpha, family='multinomial'):
     elif family == 'gaussian':
         l = 0.5*F.mse_loss(outputs, y, reduction='mean')
         acc = (outputs == y).float().mean()
+    elif family == 'multilabel':
+        y = y.float()
+        l = F.binary_cross_entropy_with_logits(outputs, y, reduction='none').sum(dim=1).mean()
+        acc = ((outputs.sigmoid() >= 0.5) == (y >= 0.5)).float().mean()
     else: 
         raise ValueError(f"Unknown family {family}")
 
@@ -286,7 +297,7 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
         if n_classes is None: 
             if family == 'multinomial': 
                 n_classes = max(tensors[1].max().item() for tensors in loader) + 1
-            elif family == 'gaussian': 
+            elif family in {'gaussian', 'multilabel'}: 
                 for batch in loader: 
                     y = batch[1]
                     break
@@ -349,6 +360,15 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
                     # Calculate new scalar gradient 
                     logits = out
                     a = logits - target
+                elif family == 'multilabel':
+                    y_device = y.to(weight_device).float()
+                    per_class_loss = F.binary_cross_entropy_with_logits(out, y_device, reduction='none')
+                    if w is None:
+                        loss = per_class_loss.sum(dim=1).mean()
+                    else:
+                        loss = (per_class_loss.sum(dim=1) * w).mean()
+
+                    a = out.sigmoid() - y_device
                 else: 
                     raise ValueError(f"Unknown family: {family}")
                 total_loss += loss.detach()*X.size(0)
@@ -483,7 +503,7 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
 def maximum_reg(X,y, group=True, family='multinomial'): 
     if family == 'multinomial': 
         target = ch.eye(y.max()+1)[y].to(y.device)
-    elif family == 'gaussian': 
+    elif family in {'gaussian', 'multilabel'}: 
         target = y
     else: 
         raise ValueError(f"Unknown family {family}")
@@ -523,7 +543,7 @@ def maximum_reg_loader(loader, group=True, preprocess=None, metadata=None, famil
 
         if family == 'multinomial': 
             target = eye[y]
-        elif family == 'gaussian': 
+        elif family in {'gaussian', 'multilabel'}: 
             target = y
         else: 
             raise ValueError(f"Unknown family {family}")
@@ -539,7 +559,7 @@ def maximum_reg_loader(loader, group=True, preprocess=None, metadata=None, famil
 
         if family == 'multinomial': 
             target = eye[y]
-        elif family == 'gaussian': 
+        elif family in {'gaussian', 'multilabel'}: 
             target = y
         else: 
             raise ValueError(f"Unknown family {family}")
@@ -558,7 +578,7 @@ def maximum_reg_loader(loader, group=True, preprocess=None, metadata=None, famil
 
         if family == 'multinomial': 
             target = eye[y]
-        elif family == 'gaussian': 
+        elif family in {'gaussian', 'multilabel'}: 
             target = y
         else: 
             raise ValueError(f"Unknown family {family}")
@@ -692,7 +712,7 @@ def glm_saga(linear, loader, max_lr, nepochs, alpha,
             total = linear.weight.numel()
             if family == 'multinomial': 
                 logger(f"({i}) lambda {lam:.4f}, loss {loss:.4f}, acc {acc:.4f} [val acc {acc_val:.4f}] [test acc {acc_test:.4f}], sparsity {nnz/total} [{nnz}/{total}], time {time.time()-start_time}, lr {lr:.4f}")
-            elif family == 'gaussian': 
+            elif family in {'gaussian', 'multilabel'}: 
                 logger(f"({i}) lambda {lam:.4f}, loss {loss:.4f} [val loss {loss_val:.4f}] [test loss {loss_test:.4f}], sparsity {nnz/total} [{nnz}/{total}], time {time.time()-start_time}, lr {lr:.4f}")
 
             if checkpoint is not None: 

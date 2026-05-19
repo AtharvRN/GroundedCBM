@@ -1,0 +1,97 @@
+Low lung volume
+Linear atelectatic opacity
+Lobar collapse
+Lobar volume loss
+Fissure displacement
+Elevated hemidiaphragm
+Bronchovascular crowding
+Rounded atelectasis
+Enlarged cardiac silhouette
+Left atrial enlargement
+Air-space opacity
+Air bronchogram
+Silhouette sign
+Dense focal opacity
+Dense lobar opacity
+Hemithorax whiteout
+Pulmonary vascular congestion
+Cephalization
+Septal line
+Interstitial edema pattern
+Perihilar haze
+Widened vascular pedicle
+Costophrenic angle blunting
+Layering pleural fluid
+Loculated pleural effusion
+Subpulmonic pleural effusion
+Fissural fluid
+Visceral pleural line
+Deep sulcus sign
+Pleural air collection
+Hydropneumothorax
+Mediastinal shift
+Subcutaneous emphysema
+Mediastinal air
+Perihilar opacity
+Multifocal patchy opacity
+Mediastinal widening
+Hilar enlargement
+Pulmonary artery enlargement
+Aortic ectasia
+Solitary pulmonary nodule
+Spiculated pulmonary nodule
+Multiple pulmonary nodules
+Cavitary pulmonary lesion
+Lung mass
+Hilar mass
+Calcified pulmonary nodule
+Ground-glass opacity
+Interstitial opacity
+Reticular opacity
+Reticulonodular opacity
+Linear opacity
+Opaque hemithorax
+Pleural thickening
+Nodular pleural thickening
+Pleural calcification
+Pleural mass
+Apical pleural cap
+Extrapleural collection
+Rib fracture
+Clavicle fracture
+Humerus fracture
+Sternal fracture
+Thoracic vertebral compression fracture
+Endotracheal tube
+Tracheostomy tube
+Endobronchial tube
+Enteric feeding tube
+Gastrostomy tube
+Central venous catheter
+Peripherally inserted central catheter
+Implanted chest port
+Pulmonary artery catheter
+Intra-aortic balloon pump
+Chest tube
+Ventriculoperitoneal shunt
+Pacemaker or ICD
+Prosthetic heart valve
+Airway stent
+Surgical drain
+Venous stent
+Inferior vena cava filter
+Cardiac assist device
+Sternotomy wire
+Spinal hardware
+Orthopedic hardware
+Endotracheal tube malposition
+Enteric tube malposition
+Central venous catheter malposition
+Chest tube malposition
+Catheter coiling
+Motion artifact
+Patient rotation
+Skinfold artifact
+Apical exclusion
+Device obscuration artifact
+Scatter artifact
