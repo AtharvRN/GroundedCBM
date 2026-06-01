@@ -35,9 +35,6 @@ spec:
           export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
           export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
           cd /workspace/GroundedCBM-MedicalCBM-dev
-          git fetch origin medical/datasets
-          git checkout medical/datasets
-          git pull --ff-only origin medical/datasets
           LOG_DIR=/workspace/logs
           mkdir -p "$LOG_DIR"
           LOG_PATH="$LOG_DIR/chexpert_salf_queries520_spatial_shard_${JOB_COMPLETION_INDEX}_$(date -u +%Y%m%dT%H%M%SZ).log"
@@ -115,9 +112,6 @@ spec:
           export PYTHONUNBUFFERED=1
           export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
           cd /workspace/GroundedCBM-MedicalCBM-dev
-          git fetch origin medical/datasets
-          git checkout medical/datasets
-          git pull --ff-only origin medical/datasets
           LOG_DIR=/workspace/logs
           mkdir -p "$LOG_DIR"
           LOG_PATH="$LOG_DIR/chexpert_salf_queries520_spatial_assemble_$(date -u +%Y%m%dT%H%M%SZ).log"
