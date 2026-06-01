@@ -1,0 +1,145 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-lf-queries520-full
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 259200
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-lf-queries520-full
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          ulimit -n 1048576 || true
+          export PYTHONUNBUFFERED=1
+          export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/chexpert_lf_queries520_full_job_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] log_path=$LOG_PATH"
+          echo "[job] ulimit_n=$(ulimit -n)"
+          date -u
+          /opt/conda/envs/cbm/bin/python -m pip install -q --upgrade "transformers==4.40.2" safetensors sentencepiece
+          /opt/conda/envs/cbm/bin/python -u train_cbm.py \
+            --config configs/chexpert_lf.yaml \
+            --concept_set concept_files/chexpert_queries_520.txt \
+            --concept_file concept_files/chexpert_queries_520.txt \
+            --lf_clip_name cxrclip_swint_mcc \
+            --save_dir /workspace/chexpert_full_runs/lf_queries520_cxrclip_a100_job \
+            --lf_batch_size 64 \
+            --proj_batch_size 512 \
+            --proj_steps 20000 \
+            --saga_batch_size 512 \
+            --num_workers 8 \
+            --device cuda
+        resources:
+          requests:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "150Gi"
+            nvidia.com/a100: "1"
+          limits:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "150Gi"
+            nvidia.com/a100: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: dev-shm
+          mountPath: /dev/shm
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti
+      - name: dev-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 100Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-lf-gpt225-full
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 259200
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-lf-gpt225-full
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          ulimit -n 1048576 || true
+          export PYTHONUNBUFFERED=1
+          export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/chexpert_lf_gpt225_full_job_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] log_path=$LOG_PATH"
+          echo "[job] ulimit_n=$(ulimit -n)"
+          date -u
+          /opt/conda/envs/cbm/bin/python -m pip install -q --upgrade "transformers==4.40.2" safetensors sentencepiece
+          /opt/conda/envs/cbm/bin/python -u train_cbm.py \
+            --config configs/chexpert_lf.yaml \
+            --concept_set concept_files/chexpert_gpt225.txt \
+            --concept_file concept_files/chexpert_gpt225.txt \
+            --lf_clip_name cxrclip_swint_mcc \
+            --save_dir /workspace/chexpert_full_runs/lf_gpt225_cxrclip_a100_job \
+            --lf_batch_size 64 \
+            --proj_batch_size 512 \
+            --proj_steps 20000 \
+            --saga_batch_size 512 \
+            --num_workers 8 \
+            --device cuda
+        resources:
+          requests:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "150Gi"
+            nvidia.com/a100: "1"
+          limits:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "150Gi"
+            nvidia.com/a100: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: dev-shm
+          mountPath: /dev/shm
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti
+      - name: dev-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 100Gi
