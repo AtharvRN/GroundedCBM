@@ -884,7 +884,7 @@ def compute_clip_scores_from_P(P_train: torch.Tensor, score_mode: str, topk: int
 def cbl_loss(pred_maps: torch.Tensor, target_maps: torch.Tensor) -> torch.Tensor:
     bsz, n_concepts, _, _ = pred_maps.shape
     pred = pred_maps.permute(0, 2, 3, 1).reshape(-1, n_concepts)
-    tgt = target_maps.reshape(-1, n_concepts)
+    tgt = target_maps.reshape(-1, n_concepts).float()
     return -cos_similarity_cubed(tgt, pred).mean()
 
 

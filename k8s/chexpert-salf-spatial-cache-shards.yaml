@@ -1,0 +1,177 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-salf-queries520-spatial-shards
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 172800
+  backoffLimit: 0
+  completionMode: Indexed
+  completions: 4
+  parallelism: 4
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-salf-queries520-spatial-shards
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-80GB
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        env:
+        - name: JOB_COMPLETION_INDEX
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONUNBUFFERED=1
+          export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          git fetch origin medical/datasets
+          git checkout medical/datasets
+          git pull --ff-only origin medical/datasets
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/chexpert_salf_queries520_spatial_shard_${JOB_COMPLETION_INDEX}_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] shard_index=${JOB_COMPLETION_INDEX} log_path=$LOG_PATH"
+          date -u
+          /opt/conda/envs/cbm/bin/python -m pip install -q --upgrade "transformers==4.40.2" safetensors sentencepiece
+          /opt/conda/envs/cbm/bin/python -u scripts/precompute_salf_spatial_cache.py \
+            --config configs/chexpert_salf.yaml \
+            --splits train val \
+            --shard_index "${JOB_COMPLETION_INDEX}" \
+            --num_shards 4 \
+            --dtype float16 \
+            --concept_set concept_files/chexpert_queries_520.txt \
+            --data_dir /workspace/CHEXPERT_DATASET \
+            --img_root /workspace/CHEXPERT_DATASET \
+            --train_csv /workspace/CHEXPERT_DATASET/train.csv \
+            --val_csv /workspace/CHEXPERT_DATASET/valid.csv \
+            --lf_clip_name cxrclip_swint_mcc \
+            --activation_dir /workspace/CHEX_CBM/saved_activations_salf_job \
+            --spatial_batch_size 32 \
+            --prompt_batch_size 512 \
+            --prompt_radius 6 \
+            --num_workers 8 \
+            --spatial_num_workers 8 \
+            --device cuda
+        resources:
+          requests:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "200Gi"
+            nvidia.com/a100: "1"
+          limits:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "200Gi"
+            nvidia.com/a100: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: dev-shm
+          mountPath: /dev/shm
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti
+      - name: dev-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 100Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-salf-queries520-spatial-assemble
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 172800
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-salf-queries520-spatial-assemble
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONUNBUFFERED=1
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          git fetch origin medical/datasets
+          git checkout medical/datasets
+          git pull --ff-only origin medical/datasets
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/chexpert_salf_queries520_spatial_assemble_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] log_path=$LOG_PATH"
+          date -u
+          TRAIN_SHARD_DIR=/workspace/CHEX_CBM/saved_activations_salf_job/chexpert_train_salf_densenet121_clip_cxrclip_swint_mcc_prompt_grid_gh7_gw7_r6_$(python - <<'PY'
+          import hashlib
+          concepts = open('concept_files/chexpert_queries_520.txt').read().strip().splitlines()
+          print(hashlib.sha1('\n'.join(concepts).encode('utf-8')).hexdigest()[:16])
+          PY
+          )_shards
+          VAL_SHARD_DIR=/workspace/CHEX_CBM/saved_activations_salf_job/chexpert_val_salf_densenet121_clip_cxrclip_swint_mcc_prompt_grid_gh7_gw7_r6_$(python - <<'PY'
+          import hashlib
+          concepts = open('concept_files/chexpert_queries_520.txt').read().strip().splitlines()
+          print(hashlib.sha1('\n'.join(concepts).encode('utf-8')).hexdigest()[:16])
+          PY
+          )_shards
+          while true; do
+            train_count=$(find "$TRAIN_SHARD_DIR" -maxdepth 1 -name 'shard_*_of_00004.pt' 2>/dev/null | wc -l)
+            val_count=$(find "$VAL_SHARD_DIR" -maxdepth 1 -name 'shard_*_of_00004.pt' 2>/dev/null | wc -l)
+            echo "[assemble] train_shards=${train_count}/4 val_shards=${val_count}/4"
+            if [ "$train_count" -eq 4 ] && [ "$val_count" -eq 4 ]; then
+              break
+            fi
+            sleep 300
+          done
+          /opt/conda/envs/cbm/bin/python -u scripts/precompute_salf_spatial_cache.py \
+            --mode assemble \
+            --config configs/chexpert_salf.yaml \
+            --splits train val \
+            --num_shards 4 \
+            --concept_set concept_files/chexpert_queries_520.txt \
+            --data_dir /workspace/CHEXPERT_DATASET \
+            --img_root /workspace/CHEXPERT_DATASET \
+            --train_csv /workspace/CHEXPERT_DATASET/train.csv \
+            --val_csv /workspace/CHEXPERT_DATASET/valid.csv \
+            --lf_clip_name cxrclip_swint_mcc \
+            --activation_dir /workspace/CHEX_CBM/saved_activations_salf_job \
+            --prompt_radius 6 \
+            --device cpu
+        resources:
+          requests:
+            cpu: "8"
+            memory: "64Gi"
+            ephemeral-storage: "200Gi"
+          limits:
+            cpu: "8"
+            memory: "64Gi"
+            ephemeral-storage: "200Gi"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti
