@@ -106,7 +106,7 @@ spec:
             --activation_dir /workspace/CHEX_CBM/saved_activations_salf_job \
             --lf_batch_size 64 \
             --spatial_batch_size 32 \
-            --prompt_batch_size 1024 \
+            --prompt_batch_size 512 \
             --cbl_batch_size 128 \
             --saga_batch_size 512 \
             --num_workers 8 \
