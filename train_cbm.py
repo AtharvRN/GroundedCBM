@@ -17,7 +17,7 @@ from gcbm.config import (
 IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "gcbm", "g-cbm", "savlg", "savlg-cbm"}
 IMAGENET_VLG_ALIASES = {"vlg", "vlg-cbm", "vlg_cbm"}
 MEDICAL_DATASETS = {"chexpert", "mimic"}
-CUB_MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
+MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm", "sgcbm", "sg_cbm")
 
 
 def _run_imagenet_training(argv: list[str], config=None) -> None:
@@ -49,24 +49,11 @@ def _run_imagenet_training(argv: list[str], config=None) -> None:
         sys.argv = old_argv
 
 
-def _run_medical_training(argv: list[str], config=None) -> None:
-    if config is None:
-        config = load_flat_config(option_value(argv, "--config"))
-    dataset = option_value(argv, "--dataset") or config.get("dataset")
-    from gcbm.train_medical import main as medical_main
-
-    old_argv = sys.argv[:]
-    try:
-        sys.argv = [
-            "train_cbm.py",
-            "--dataset",
-            str(dataset),
-            *config_to_argv(config),
-            *strip_dispatcher_args(argv),
-        ]
-        medical_main()
-    finally:
-        sys.argv = old_argv
+def _normalize_model_name(name: str) -> str:
+    normalized = str(name).lower().replace("-", "_")
+    if normalized in {"sgcbm", "sg_cbm", "savlg", "savlg_cbm"}:
+        return "savlg_cbm"
+    return normalized
 
 
 def train_cbm_and_save(args):
@@ -463,40 +450,122 @@ def main():
     argv = sys.argv[1:]
     config = load_flat_config(option_value(argv, "--config"))
     dataset = option_value(argv, "--dataset") or config.get("dataset")
+    model = model_from_argv_or_config(argv, config).replace("-", "_")
     if dataset is not None and str(dataset).lower() == "imagenet":
         _run_imagenet_training(argv, config)
         return
-    if dataset is not None and str(dataset).lower() in MEDICAL_DATASETS:
-        _run_medical_training(argv, config)
-        return
 
-    parser = argparse.ArgumentParser(description="Train CUB CBM baselines or SG-CBM. Use --dataset imagenet for the ImageNet SG-CBM trainer.")
+    parser = argparse.ArgumentParser(description="Train CBM baselines across CUB, ImageNet, and medical datasets.")
     parser.add_argument("--config", type=str, default=None, help="Flat JSON/YAML config. CLI values override config values.")
-    parser.add_argument("--model_name", type=str, default="savlg_cbm", choices=CUB_MODEL_CHOICES, help="CUB model to train: savlg_cbm is SG-CBM.")
+    parser.add_argument("--model_name", type=str, default="savlg_cbm", choices=MODEL_CHOICES, help="CBM variant to train. sgcbm is an alias for savlg_cbm.")
     parser.add_argument("--dataset", type=str, default="cub", help="Dataset name. Use cub here; imagenet dispatches to the ImageNet trainer.")
     parser.add_argument("--annotation_dir", type=str, default="outputs", help="GDINO/SALF annotation directory.")
+    parser.add_argument("--data_dir", type=str, default="", help="Dataset root for medical datasets.")
+    parser.add_argument("--img_root", type=str, default="", help="Optional image root override for medical datasets.")
+    parser.add_argument("--train_csv", type=str, default="", help="Optional train CSV override for CheXpert.")
+    parser.add_argument("--val_csv", type=str, default="", help="Optional val CSV override for CheXpert.")
+    parser.add_argument("--mimic_label_csv", type=str, default="", help="Optional label CSV override for MIMIC-CXR.")
+    parser.add_argument("--mimic_split_csv", type=str, default="", help="Optional split CSV override for MIMIC-CXR.")
+    parser.add_argument("--mimic_metadata_csv", type=str, default="", help="Optional metadata CSV override for MIMIC-CXR.")
+    parser.add_argument("--label_subset", type=str, default="all", choices=["all", "competition", "pathology"], help="Medical multilabel subset.")
+    parser.add_argument("--uncertain_strategy", type=str, default="ones", choices=["ones", "zeros", "ignore"], help="How to map uncertain medical labels.")
+    parser.add_argument("--frontal_only", action=argparse.BooleanOptionalAction, default=True, help="Use frontal-only images for medical datasets.")
     parser.add_argument("--save_dir", type=str, default="saved_models", help="Output directory for trained runs.")
     parser.add_argument("--load_dir", type=str, default=None, help="Optional existing CBL checkpoint directory.")
     parser.add_argument("--device", type=str, default="cuda", help="Torch device.")
     parser.add_argument("--num_workers", type=int, default=8, help="DataLoader worker count.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--max_train_images", type=int, default=0, help="If >0, limit training images for quick checks.")
+    parser.add_argument("--max_val_images", type=int, default=0, help="If >0, limit validation images for medical VLG quick checks.")
     parser.add_argument("--max_test_images", type=int, default=0, help="If >0, limit test images for quick checks.")
     parser.add_argument("--skip_test_eval", action="store_true", help="Skip final test-set evaluation.")
     parser.add_argument("--concept_set", type=str, default="concept_files/cub_filtered.txt", help="Concept list file.")
+    parser.add_argument("--concept_file", type=str, default="", help="Medical concept list file; defaults to concept_set when omitted.")
+    parser.add_argument("--train_annotation_dir", type=str, default="", help="Medical train grounded annotation directory.")
+    parser.add_argument("--val_annotation_dir", type=str, default="", help="Medical validation grounded annotation directory.")
+    parser.add_argument("--train_concept_cache", type=str, default="", help="Medical VLG train concept cache.")
+    parser.add_argument("--val_concept_cache", type=str, default="", help="Medical VLG validation concept cache.")
+    parser.add_argument("--train_presence_cache", type=str, default="", help="Medical train concept-presence cache.")
+    parser.add_argument("--val_presence_cache", type=str, default="", help="Medical validation concept-presence cache.")
+    parser.add_argument("--train_target_cache", type=str, default="", help="Medical train SG/VLG target cache.")
+    parser.add_argument("--val_target_cache", type=str, default="", help="Medical validation SG/VLG target cache.")
+    parser.add_argument("--precomputed_target_dir", type=str, default="", help="Medical ImageNet-style target cache root.")
     parser.add_argument("--backbone", type=str, default="resnet50_cub_mm", help="Backbone name.")
+    parser.add_argument("--backbone_ckpt", type=str, default="", help="Optional medical backbone checkpoint.")
+    parser.add_argument("--concept_head_ckpt", type=str, default="", help="Optional trained medical concept-head checkpoint.")
+    parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True, help="Use torchvision pretrained weights if no checkpoint is supplied.")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Probability threshold for multilabel metrics.")
+    parser.add_argument("--val_split", type=float, default=0.1, help="Train/val split ratio for generic methods.")
+    parser.add_argument("--img_size", type=int, default=224, help="Medical image crop size.")
+    parser.add_argument("--resize_size", type=int, default=256, help="Medical resize size before crop.")
     parser.add_argument("--cbl_batch_size", type=int, default=32, help="Concept-layer batch size.")
     parser.add_argument("--cbl_epochs", type=int, default=20, help="Concept-layer training epochs.")
     parser.add_argument("--cbl_lr", type=float, default=5e-4, help="Concept-layer learning rate.")
+    parser.add_argument("--cbl_confidence_threshold", type=float, default=0.15, help="Concept filtering / supervision threshold.")
+    parser.add_argument("--concept_threshold", type=float, default=0.70, help="Medical positive concept confidence threshold.")
+    parser.add_argument("--neg_threshold", type=float, default=0.02, help="Medical soft target lower calibration threshold.")
+    parser.add_argument("--presence_mode", type=str, default="binary", choices=["binary", "soft"], help="Medical global concept target mode.")
+    parser.add_argument("--min_concept_freq", type=float, default=0.01, help="Medical minimum train-set concept frequency.")
+    parser.add_argument("--max_concept_freq", type=float, default=0.99, help="Medical maximum train-set concept frequency.")
     parser.add_argument("--mask_h", type=int, default=14, help="SG-CBM spatial supervision mask height.")
     parser.add_argument("--mask_w", type=int, default=14, help="SG-CBM spatial supervision mask width.")
+    parser.add_argument("--target_mode", type=str, default="soft_box", choices=["soft_box", "hard_iou"], help="Medical box-to-mask target mode.")
+    parser.add_argument("--grid_h", type=int, default=7, help="Spatial grid height for SALF/SAVLG.")
+    parser.add_argument("--grid_w", type=int, default=7, help="Spatial grid width for SALF/SAVLG.")
     parser.add_argument("--loss_mask_w", type=float, default=1.0, help="SG-CBM spatial soft-align KL weight.")
+    parser.add_argument("--loss_global_w", type=float, default=1.0, help="Global concept loss weight.")
+    parser.add_argument("--global_pos_weight", type=float, default=1.0, help="Positive weight for medical global concept BCE.")
+    parser.add_argument("--residual_alpha", type=float, default=0.2, help="Medical SG-CBM spatial residual logit coupling.")
+    parser.add_argument("--epochs", type=int, default=10, help="Medical VLG concept-layer training epochs.")
+    parser.add_argument("--early_stop_patience", type=int, default=0, help="Medical VLG early stopping patience.")
+    parser.add_argument("--early_stop_min_delta", type=float, default=0.0, help="Medical VLG early stopping minimum delta.")
+    parser.add_argument("--batch_size", type=int, default=64, help="Medical VLG concept-layer batch size.")
+    parser.add_argument("--extract_batch_size", type=int, default=0, help="Medical VLG feature-extraction batch size.")
+    parser.add_argument("--extract_chunk_size", type=int, default=10000, help="Medical VLG feature-extraction chunk size.")
+    parser.add_argument("--final_batch_size", type=int, default=256, help="Medical final-layer batch size.")
+    parser.add_argument("--final_epochs", type=int, default=100, help="Medical dense final-layer epochs.")
+    parser.add_argument("--final_lr", type=float, default=1e-3, help="Medical dense final-layer learning rate.")
+    parser.add_argument("--lr", type=float, default=5e-4, help="Medical VLG concept-layer learning rate.")
+    parser.add_argument("--weight_decay", type=float, default=1e-4, help="Medical VLG concept-layer weight decay.")
+    parser.add_argument("--use_saga", action="store_true", help="Use sparse GLM-SAGA final layer.")
+    parser.add_argument("--saga_lam", type=float, default=0.0007, help="GLM-SAGA regularization strength.")
+    parser.add_argument("--saga_iters", type=int, default=1000, help="Medical GLM-SAGA epochs.")
+    parser.add_argument("--saga_n_iters", type=int, default=2000, help="Generic method GLM-SAGA epochs.")
+    parser.add_argument("--saga_batch_size", type=int, default=512, help="GLM-SAGA batch size.")
+    parser.add_argument("--saga_max_lr", type=float, default=0.1, help="Medical GLM-SAGA max learning rate.")
+    parser.add_argument("--saga_step_size", type=float, default=0.1, help="Single-label GLM-SAGA step size.")
+    parser.add_argument("--nec_values", type=str, default="", help="Comma-separated NEC values for sparse medical evaluation.")
     parser.add_argument("--savlg_residual_spatial_alpha", type=float, default=0.2, help="Residual spatial-logit coupling weight.")
     parser.add_argument("--savlg_target_mode", type=str, default="soft_box", choices=["hard_iou", "soft_box"], help="SG-CBM spatial target rasterization.")
+    parser.add_argument("--savlg_concept_filter_mode", type=str, default="spatial_threshold", choices=["spatial_threshold", "vlg_global"], help="SAVLG concept filtering mode.")
+    parser.add_argument("--savlg_stream_supervision", action="store_true", help="Stream SAVLG supervision from annotation JSONs.")
     parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
     parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
+    parser.add_argument("--dense_lr", type=float, default=1e-3, help="Dense final-layer learning rate.")
+    parser.add_argument(
+        "--lf_clip_name",
+        type=str,
+        default=None,
+        help="Alignment backbone used by LF/SALF. CheXpert supports `cxrclip_swint_mcc` and `biomedclip`; default is CXR-CLIP. CUB/ImageNet default to clip_RN50.",
+    )
+    parser.add_argument("--clip_cutoff", type=float, default=0.20, help="Concept cutoff for LF/SALF.")
+    parser.add_argument("--interpretability_cutoff", type=float, default=0.40, help="Interpretability cutoff for LF.")
+    parser.add_argument("--lf_batch_size", type=int, default=64, help="LF feature-extraction batch size.")
+    parser.add_argument("--proj_batch_size", type=int, default=512, help="LF projection batch size.")
+    parser.add_argument("--proj_steps", type=int, default=20000, help="LF projection optimization steps.")
+    parser.add_argument("--proj_eval_every", type=int, default=50, help="LF projection eval frequency.")
+    parser.add_argument("--prompt_batch_size", type=int, default=1024, help="SALF prompt-grid batch size.")
+    parser.add_argument("--prompt_radius", type=int, default=3, help="SALF prompt-grid radius.")
+    parser.add_argument("--spatial_batch_size", type=int, default=128, help="SALF spatial similarity batch size.")
+    parser.add_argument("--spatial_num_workers", type=int, default=8, help="SALF spatial similarity worker count.")
+    parser.add_argument("--spatial_source", type=str, default="prompt_grid", help="Spatial supervision source for SALF.")
+    parser.add_argument("--activation_dir", type=str, default="saved_activations", help="Directory for cached activations and spatial supervision.")
+    parser.add_argument("--savlg_branch_arch", type=str, default="dual", help="SGCBM branch architecture.")
+    parser.add_argument("--savlg_spatial_stage", type=str, default="conv5", help="Backbone stage used by SGCBM spatial branch.")
+    parser.add_argument("--savlg_spatial_branch_mode", type=str, default="multiscale_conv45", help="SGCBM spatial branch feature mode.")
+    parser.add_argument("--allow_annotation_index_fallback", action="store_true", help="Allow medical annotation row-index fallback.")
+    parser.add_argument("--run_name", type=str, default="", help="Optional run directory name.")
     parser.set_defaults(
-        activation_dir="saved_activations",
         activation_cache_dir=None,
         allones_concept=False,
         cbl_auto_weight=False,
@@ -530,7 +599,7 @@ def main():
         grid_w=7,
         interpretability_cutoff=0.40,
         lf_batch_size=64,
-        lf_clip_name="clip_RN50",
+        lf_clip_name=None,
         lf_original_protocol=False,
         loss_global_concept_w=None,
         loss_presence_w=None,
@@ -549,7 +618,6 @@ def main():
         saga_lam=0.0007,
         saga_n_iters=2000,
         saga_step_size=0.1,
-        savlg_branch_arch="dual",
         savlg_concept_filter_mode="spatial_threshold",
         savlg_freeze_global_head=False,
         savlg_global_head_mode="spatial_pool",
@@ -563,8 +631,6 @@ def main():
         savlg_local_weight_power=1.0,
         savlg_pooling="avg",
         savlg_residual_spatial_pooling="lse",
-        savlg_spatial_branch_mode="multiscale_conv45",
-        savlg_spatial_stage="conv5",
         savlg_stream_supervision=False,
         savlg_target_transform="original",
         savlg_topk_fraction=0.2,
@@ -592,10 +658,33 @@ def main():
 
     import numpy as np
     import torch
-    from loguru import logger
+    try:
+        from loguru import logger  # type: ignore
+    except Exception:  # pragma: no cover
+        class _FallbackLogger:
+            def info(self, *args, **kwargs):
+                if args:
+                    print(str(args[0]).format(*args[1:]))
+
+        logger = _FallbackLogger()  # type: ignore
+    from gcbm.clip_utils import resolve_lf_clip_name
+    from gcbm.task_utils import is_medical_dataset
     from methods.registry import get_train_handler
 
+    args.model_name = _normalize_model_name(args.model_name)
+    if getattr(args, "concept_file", "") and (
+        not getattr(args, "concept_set", "") or args.concept_set == parser.get_default("concept_set")
+    ):
+        args.concept_set = args.concept_file
+    if not getattr(args, "concept_file", ""):
+        args.concept_file = args.concept_set
+    if int(getattr(args, "max_test_images", 0) or 0) <= 0 and int(getattr(args, "max_val_images", 0) or 0) > 0:
+        args.max_test_images = args.max_val_images
     args.use_activation_cache = not args.disable_activation_cache
+    args.lf_clip_name = resolve_lf_clip_name(
+        getattr(args, "lf_clip_name", None),
+        getattr(args, "dataset", None),
+    )
     logger.info(args)
     
     # set random seed for reproducibility
@@ -603,7 +692,7 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    if args.model_name == "vlg_cbm":
+    if args.model_name == "vlg_cbm" and not is_medical_dataset(args.dataset):
         _ = train_cbm_and_save(args)
     else:
         train_handler = get_train_handler(args.model_name)

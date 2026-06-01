@@ -5,7 +5,7 @@ import os
 import struct
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -18,6 +18,7 @@ from tqdm import tqdm
 from data import utils as data_utils
 from data.concept_dataset import get_filtered_concepts_and_counts
 from gcbm.losses import sgcbm_concept_losses
+from gcbm.medical_target_store import MedicalPrecomputedTargetStore
 from gcbm.sg_model import (
     DualBranchConceptLayer as SharedDualBranchConceptLayer,
     MultiScaleConceptLayer,
@@ -26,7 +27,18 @@ from gcbm.sg_model import (
 )
 from gcbm.spatial_targets import rasterize_box_target as shared_rasterize_box_target
 from gcbm.target_batches import pad_sparse_targets
-from glm_saga.elasticnet import IndexedTensorDataset
+from gcbm.task_utils import (
+    build_task_spec,
+    load_task_base_dataset,
+    summarize_task_metrics,
+    train_task_final_layer,
+    unpack_sample,
+)
+from gcbm.train_medical import (
+    concept_frequency_filter_indices,
+    filter_target_payload,
+    resolve_precomputed_cache_paths,
+)
 from methods.common import build_run_dir, save_args, write_artifacts
 from methods.lf import TransformedSubset, subset_targets, use_original_label_free_protocol
 from methods.salf import (
@@ -35,7 +47,7 @@ from methods.salf import (
     build_single_spatial_concept_layer,
     build_spatial_concept_layer,
 )
-from model.cbm import Backbone, BackboneCLIP, ConceptLayer, train_dense_final, train_sparse_final
+from model.cbm import Backbone, BackboneCLIP, ConceptLayer
 from PIL import Image
 
 
@@ -44,10 +56,11 @@ def create_savlg_splits(args):
         args.backbone,
         device=args.device,
         spatial_stage=getattr(args, "savlg_spatial_stage", "conv5"),
+        checkpoint=getattr(args, "backbone_ckpt", ""),
     )
     if use_original_label_free_protocol(args):
-        base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
-        base_val_raw = data_utils.get_data(f"{args.dataset}_val", None)
+        base_train_raw = load_task_base_dataset(args, "train", transform=None, raw=True)
+        base_val_raw = load_task_base_dataset(args, "val", transform=None, raw=True)
         print(
             f"[create_savlg_splits] raw datasets ready train={len(base_train_raw)} val={len(base_val_raw)}",
             flush=True,
@@ -82,7 +95,7 @@ def create_savlg_splits(args):
         print("[create_savlg_splits] returning original LF protocol splits", flush=True)
         return train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone
 
-    base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
+    base_train_raw = load_task_base_dataset(args, "train", transform=None, raw=True)
     max_train = int(getattr(args, "max_train_images", 0) or 0)
     total = len(base_train_raw)
     if max_train > 0:
@@ -104,7 +117,7 @@ def create_savlg_splits(args):
     if getattr(args, "skip_test_eval", False):
         test_dataset = val_dataset
     else:
-        base_test = data_utils.get_data(f"{args.dataset}_val", None)
+        base_test = load_task_base_dataset(args, "val", transform=None, raw=True)
         max_test = int(getattr(args, "max_test_images", 0) or 0)
         test_total = len(base_test)
         if max_test > 0:
@@ -499,6 +512,111 @@ class SpatialSupervisionDataset(Dataset):
         return image, global_concepts, concept_indices, mask_stack, target
 
 
+class PrecomputedSpatialSupervisionDataset(Dataset):
+    """Attach precomputed medical SG-CBM targets to SAVLG image samples."""
+
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        target_payload: Dict[str, Any],
+        mask_h: int,
+        mask_w: int,
+    ):
+        self.base_dataset = base_dataset
+        self.global_concept_targets = target_payload["global_targets"].float().cpu()
+        self.mask_indices, self.mask_targets = self._compact_masks(target_payload)
+        self.mask_h = int(mask_h)
+        self.mask_w = int(mask_w)
+        if len(self.base_dataset) != int(self.global_concept_targets.shape[0]):
+            raise ValueError(
+                f"base_dataset and precomputed targets length mismatch: "
+                f"{len(self.base_dataset)} vs {int(self.global_concept_targets.shape[0])}"
+            )
+        self.targets = (
+            subset_targets(base_dataset.base_dataset, base_dataset.indices)
+            if hasattr(base_dataset, "indices")
+            else subset_targets(base_dataset, range(len(base_dataset)))
+        )
+
+    @staticmethod
+    def _compact_masks(target_payload: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+        indices = target_payload["mask_indices"]
+        masks = target_payload["mask_targets"]
+        valid = target_payload.get("mask_valid")
+        if isinstance(indices, torch.Tensor):
+            if indices.ndim != 2 or not isinstance(masks, torch.Tensor) or valid is None:
+                raise ValueError("Padded target payload must include 2D mask_indices, mask_targets, and mask_valid")
+            compact_indices: List[torch.Tensor] = []
+            compact_masks: List[torch.Tensor] = []
+            valid = valid.bool()
+            for row in range(indices.shape[0]):
+                row_valid = valid[row]
+                compact_indices.append(indices[row][row_valid].long().cpu())
+                compact_masks.append(masks[row][row_valid].float().cpu())
+            return compact_indices, compact_masks
+        return [item.long().cpu() for item in indices], [item.float().cpu() for item in masks]
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        image, target = self.base_dataset[idx]
+        return (
+            image,
+            self.global_concept_targets[idx],
+            self.mask_indices[idx],
+            self.mask_targets[idx],
+            target,
+        )
+
+
+class TargetStoreSpatialSupervisionDataset(Dataset):
+    """Attach memory-mapped medical SG-CBM targets to image samples."""
+
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        target_store: MedicalPrecomputedTargetStore,
+    ):
+        self.base_dataset = base_dataset
+        self.target_store = target_store
+        candidate_indices = getattr(base_dataset, "indices", None)
+        if len(base_dataset) == len(target_store):
+            self.store_indices = list(range(len(base_dataset)))
+        elif candidate_indices is not None and len(candidate_indices) == len(base_dataset):
+            store_indices = [int(idx) for idx in candidate_indices]
+            if store_indices and max(store_indices) >= len(target_store):
+                raise ValueError(
+                    f"base_dataset references target index {max(store_indices)} "
+                    f"but store has only {len(target_store)} rows"
+                )
+            self.store_indices = store_indices
+        else:
+            raise ValueError(
+                f"base_dataset and target store length mismatch: "
+                f"{len(base_dataset)} vs {len(target_store)}"
+            )
+        self.targets = (
+            subset_targets(base_dataset.base_dataset, base_dataset.indices)
+            if hasattr(base_dataset, "indices")
+            else subset_targets(base_dataset, range(len(base_dataset)))
+        )
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        image, target = self.base_dataset[idx]
+        item = self.target_store.get(self.store_indices[idx])
+        return (
+            image,
+            item["global_targets"],
+            item["mask_indices"],
+            item["mask_targets"],
+            target,
+        )
+
+
 class OnTheFlySpatialSupervisionDataset(Dataset):
     """Spatial supervision dataset that parses per-image annotation JSONs on-demand.
 
@@ -562,7 +680,7 @@ class OnTheFlySpatialSupervisionDataset(Dataset):
 
     def __getitem__(self, idx):
         base_idx = int(self.indices[idx])
-        image, target = self.base_dataset[base_idx]
+        image, target = unpack_sample(self.base_dataset[base_idx])
         image_size = (int(image.size[0]), int(image.size[1])) if hasattr(image, "size") else None
         if self.transform is not None:
             image = self.transform(image)
@@ -597,7 +715,7 @@ class OnTheFlySpatialSupervisionDataset(Dataset):
             concept_indices = torch.zeros((0,), dtype=torch.long)
             mask_stack = torch.zeros((0, self.mask_h, self.mask_w), dtype=torch.float32)
 
-        return image, global_concepts, concept_indices, mask_stack, int(target)
+        return image, global_concepts, concept_indices, mask_stack, torch.as_tensor(target)
 
 
 class CachedSpatialSupervisionDataset(Dataset):
@@ -673,7 +791,11 @@ def collate_spatial_batch(batch):
     else:
         images = torch.stack(images, dim=0)
     global_concepts = torch.stack(global_concepts, dim=0)
-    labels = torch.tensor(labels, dtype=torch.long)
+    label_tensors = [torch.as_tensor(label) for label in labels]
+    if label_tensors and label_tensors[0].ndim == 0:
+        labels = torch.stack([label.long() for label in label_tensors], dim=0)
+    else:
+        labels = torch.stack(label_tensors, dim=0)
 
     mask_h = c_mask[0].shape[-2] if c_mask else 1
     mask_w = c_mask[0].shape[-1] if c_mask else 1
@@ -765,7 +887,7 @@ def get_or_create_savlg_feature_cache(
                 for key, value in feats.items():
                     feat_store.setdefault(key, []).append(value.detach().cpu())
             else:
-                feat_store["__single__"].append(feats.detach().cpu())
+                feat_store.setdefault("__single__", []).append(feats.detach().cpu())
             cached_labels.append(labels.cpu())
     cached = {
         "feats": (
@@ -811,7 +933,7 @@ def build_savlg_feature_cache_in_memory(
                 for key, value in feats.items():
                     feat_store.setdefault(key, []).append(value.detach().cpu())
             else:
-                feat_store["__single__"].append(feats.detach().cpu())
+                feat_store.setdefault("__single__", []).append(feats.detach().cpu())
             cached_labels.append(labels.cpu())
     return {
         "feats": (
@@ -858,6 +980,18 @@ class SAVLGCBM(nn.Module):
 
 def savlg_uses_multiscale_branch(args) -> bool:
     return str(getattr(args, "savlg_spatial_branch_mode", "shared_stage")).lower() == "multiscale_conv45"
+
+
+def savlg_can_use_multiscale_branch(args, backbone: Optional[SpatialBackbone] = None) -> bool:
+    if not savlg_uses_multiscale_branch(args):
+        return False
+    if backbone is None:
+        return True
+    try:
+        backbone.get_stage_dim("conv4")
+    except Exception:
+        return False
+    return True
 
 
 def savlg_uses_split_stage_dual_branch(args) -> bool:
@@ -966,8 +1100,14 @@ class MultiScaleSAVLGConceptLayer(MultiScaleConceptLayer):
 
 
 def build_savlg_concept_layer(args, backbone: SpatialBackbone, n_concepts: int) -> nn.Module:
-    if savlg_uses_multiscale_branch(args):
+    if savlg_can_use_multiscale_branch(args, backbone):
         return MultiScaleSAVLGConceptLayer(args, backbone, n_concepts).to(args.device)
+    if savlg_uses_multiscale_branch(args):
+        logger.warning(
+            "SAVLG multiscale_conv45 requested for backbone={} but conv4 is unavailable; falling back to stage={} branch construction.",
+            backbone.backbone_name,
+            str(getattr(args, "savlg_spatial_stage", "conv5")).lower(),
+        )
     if savlg_uses_vlg_global_head(args):
         branch_arch = str(getattr(args, "savlg_branch_arch", "shared")).lower()
         if branch_arch != "dual":
@@ -1131,7 +1271,7 @@ def forward_savlg_backbone(
     images: torch.Tensor,
     args,
 ):
-    if savlg_uses_multiscale_branch(args):
+    if savlg_can_use_multiscale_branch(args, backbone):
         return backbone.forward_multistage(images, ("conv4", "conv5"))
     if savlg_uses_split_stage_dual_branch(args):
         spatial_stage = str(getattr(args, "savlg_spatial_stage", "conv5")).lower()
@@ -1443,7 +1583,7 @@ def extract_global_concepts(
     return torch.cat(concept_features, dim=0), torch.cat(labels, dim=0)
 
 
-def evaluate_savlg_accuracy(
+def evaluate_savlg_split(
     args,
     backbone: SpatialBackbone,
     concept_layer: nn.Module,
@@ -1451,15 +1591,16 @@ def evaluate_savlg_accuracy(
     std: torch.Tensor,
     final_layer: nn.Module,
     dataset: Dataset,
-) -> float:
+    task,
+) -> dict:
     loader = DataLoader(
         dataset,
         batch_size=args.cbl_batch_size,
         shuffle=False,
         num_workers=args.num_workers,
     )
-    correct = 0
-    total = 0
+    logits_chunks = []
+    target_chunks = []
     with torch.no_grad():
         for images, target in tqdm(loader, desc="SAVLG eval", leave=False):
             if _savlg_batch_already_features(images):
@@ -1475,10 +1616,14 @@ def evaluate_savlg_accuracy(
                 concept_layer=concept_layer,
             )
             final_logits = (final_logits - mean.to(args.device)) / std.to(args.device)
-            pred = final_layer(final_logits).argmax(dim=-1).cpu()
-            correct += int((pred == target).sum().item())
-            total += int(target.numel())
-    return correct / max(total, 1)
+            logits_chunks.append(final_layer(final_logits).detach().cpu())
+            target_chunks.append(target.detach().cpu())
+    return summarize_task_metrics(
+        torch.cat(target_chunks, dim=0),
+        torch.cat(logits_chunks, dim=0),
+        task,
+        threshold=float(getattr(args, "threshold", 0.5)),
+    )
 
 
 def train_savlg_cbm(args):
@@ -1491,7 +1636,7 @@ def train_savlg_cbm(args):
     logger.info("Saving SAVLG-CBM model to {}", save_dir)
     save_args(args, save_dir)
 
-    classes = data_utils.get_classes(args.dataset)
+    task = build_task_spec(args)
     raw_concepts = data_utils.get_concepts(args.concept_set, args.filter_set)
     train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone = create_savlg_splits(args)
     train_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "train")
@@ -1501,88 +1646,192 @@ def train_savlg_cbm(args):
     else:
         val_ann_dir = train_ann_dir
 
-    filter_mode = _savlg_concept_filter_mode(args)
-    if filter_mode == "vlg_global":
-        logger.info("Filtering SAVLG concepts with VLG concept-dataset path")
-        filtered_concepts, _, _ = get_filtered_concepts_and_counts(
-            args.dataset,
-            raw_concepts,
-            preprocess=backbone.preprocess,
-            val_split=args.val_split,
-            batch_size=args.cbl_batch_size,
-            num_workers=args.num_workers,
-            confidence_threshold=args.cbl_confidence_threshold,
-            label_dir=args.annotation_dir,
-            use_allones=args.allones_concept,
-            seed=args.seed,
-        )
-        filtered_concept_set = set(filtered_concepts)
-        keep_idx = [idx for idx, concept in enumerate(raw_concepts) if concept in filtered_concept_set]
-        if not keep_idx:
-            raise RuntimeError("VLG-style SAVLG concept filtering removed all concepts.")
-    elif filter_mode == "spatial_threshold":
-        # The default behavior scans every annotation JSON to determine which
-        # concepts survive thresholding, then precomputes dense supervision
-        # tensors. For ImageNet this is extremely expensive.
-        #
-        # When streaming supervision, keep all provided concepts and let the
-        # per-sample dataset build targets on-demand.
-        keep_idx = None if not bool(getattr(args, "savlg_stream_supervision", False)) else list(range(len(raw_concepts)))
-    else:
-        raise ValueError(
-            f"Unsupported SAVLG concept filter mode: {filter_mode}. Expected one of ['spatial_threshold', 'vlg_global']."
-        )
+    precomputed_cache_paths = resolve_precomputed_cache_paths(getattr(args, "precomputed_target_dir", ""))
+    train_target_store = precomputed_cache_paths.get("train_target_store", "")
+    val_target_store = precomputed_cache_paths.get("val_target_store", "")
+    args.train_target_cache = getattr(args, "train_target_cache", "") or precomputed_cache_paths.get("train_target_cache", "")
+    args.val_target_cache = getattr(args, "val_target_cache", "") or precomputed_cache_paths.get("val_target_cache", "")
+    use_precomputed_target_store = bool(train_target_store and val_target_store)
+    use_precomputed_targets = bool(args.train_target_cache and args.val_target_cache)
 
-    stream_supervision = bool(getattr(args, "savlg_stream_supervision", False))
-    if stream_supervision:
-        if keep_idx is None:
-            keep_idx = list(range(len(raw_concepts)))
-        concepts = [raw_concepts[i] for i in keep_idx]
-        # Stream per-image targets/masks from the annotation JSONs during training.
-        train_supervision_ds = OnTheFlySpatialSupervisionDataset(
-            train_raw.base_dataset,
-            train_raw.indices,
-            backbone.preprocess,
-            train_ann_dir,
-            concepts,
-            args,
+    if use_precomputed_target_store:
+        logger.info(
+            "Streaming precomputed SAVLG medical target stores train={} val={}",
+            train_target_store,
+            val_target_store,
         )
-        val_supervision_ds = OnTheFlySpatialSupervisionDataset(
-            val_raw.base_dataset,
-            val_raw.indices,
-            backbone.preprocess,
-            val_ann_dir,
-            concepts,
-            args,
+        train_store = MedicalPrecomputedTargetStore(train_target_store)
+        val_store = MedicalPrecomputedTargetStore(val_target_store)
+        store_concepts = [str(item) for item in train_store.metadata.get("concepts", [])]
+        if store_concepts and len(store_concepts) == train_store.n_concepts and store_concepts != list(raw_concepts):
+            logger.info(
+                "Using {} concepts from target-store metadata instead of {} concepts from concept file",
+                len(store_concepts),
+                len(raw_concepts),
+            )
+            raw_concepts = store_concepts
+        if train_store.n_concepts != len(raw_concepts):
+            raise ValueError(
+                f"Train target store has {train_store.n_concepts} concepts, "
+                f"but concept set has {len(raw_concepts)}"
+            )
+        if val_store.n_concepts != len(raw_concepts):
+            raise ValueError(
+                f"Val target store has {val_store.n_concepts} concepts, "
+                f"but concept set has {len(raw_concepts)}"
+            )
+        frequencies = train_store.compute_frequencies()
+        keep_mask = (
+            (frequencies >= float(getattr(args, "min_concept_freq", 0.0)))
+            & (frequencies <= float(getattr(args, "max_concept_freq", 1.0)))
+        )
+        if int(keep_mask.sum()) == 0:
+            raise ValueError("Concept frequency filtering removed every concept")
+        kept_indices = torch.nonzero(keep_mask, as_tuple=False).flatten()
+        concepts = [raw_concepts[int(index)] for index in kept_indices]
+        keep_idx = kept_indices.tolist()
+        print(f"[medical] filtered concepts: {len(raw_concepts)} -> {len(concepts)}", flush=True)
+        train_store.set_concept_filter(keep_idx)
+        val_store.set_concept_filter(keep_idx)
+        logger.info(
+            "Using streamed SAVLG target stores kept {}/{} concepts",
+            len(concepts),
+            len(raw_concepts),
+        )
+        train_supervision_ds = TargetStoreSpatialSupervisionDataset(train_dataset, train_store)
+        val_supervision_ds = TargetStoreSpatialSupervisionDataset(val_dataset, val_store)
+        train_global_concepts = None
+        train_mask_entries = None
+        val_global_concepts = None
+        val_mask_entries = None
+    elif use_precomputed_targets:
+        logger.info(
+            "Loading precomputed SAVLG medical targets train={} val={}",
+            args.train_target_cache,
+            args.val_target_cache,
+        )
+        train_targets = torch.load(args.train_target_cache, map_location="cpu", weights_only=False)
+        val_targets = torch.load(args.val_target_cache, map_location="cpu", weights_only=False)
+        concepts, kept_indices, frequencies = concept_frequency_filter_indices(
+            list(raw_concepts),
+            train_targets,
+            min_freq=float(getattr(args, "min_concept_freq", 0.0)),
+            max_freq=float(getattr(args, "max_concept_freq", 1.0)),
+        )
+        train_targets = filter_target_payload(train_targets, kept_indices, len(raw_concepts))
+        val_targets = filter_target_payload(val_targets, kept_indices, len(raw_concepts))
+        keep_idx = kept_indices.tolist()
+        logger.info(
+            "Using precomputed SAVLG targets kept {}/{} concepts",
+            len(concepts),
+            len(raw_concepts),
+        )
+        train_supervision_ds = PrecomputedSpatialSupervisionDataset(
+            train_dataset,
+            train_targets,
+            args.mask_h,
+            args.mask_w,
+        )
+        val_supervision_ds = PrecomputedSpatialSupervisionDataset(
+            val_dataset,
+            val_targets,
+            args.mask_h,
+            args.mask_w,
         )
         train_global_concepts = None
         train_mask_entries = None
         val_global_concepts = None
         val_mask_entries = None
     else:
-        train_global_concepts, train_mask_entries, keep_idx = load_spatial_supervision(
-            train_raw, train_ann_dir, raw_concepts, args, "train", keep_idx=keep_idx
-        )
-        concepts = [raw_concepts[i] for i in keep_idx]
-        val_global_concepts, val_mask_entries, _ = load_spatial_supervision(
-            val_raw, val_ann_dir, raw_concepts, args, "val", keep_idx=keep_idx
-        )
+        filter_mode = _savlg_concept_filter_mode(args)
+        if filter_mode == "vlg_global":
+            logger.info("Filtering SAVLG concepts with VLG concept-dataset path")
+            filtered_concepts, _, _ = get_filtered_concepts_and_counts(
+                args.dataset,
+                raw_concepts,
+                preprocess=backbone.preprocess,
+                val_split=args.val_split,
+                batch_size=args.cbl_batch_size,
+                num_workers=args.num_workers,
+                confidence_threshold=args.cbl_confidence_threshold,
+                label_dir=args.annotation_dir,
+                use_allones=args.allones_concept,
+                seed=args.seed,
+            )
+            filtered_concept_set = set(filtered_concepts)
+            keep_idx = [idx for idx, concept in enumerate(raw_concepts) if concept in filtered_concept_set]
+            if not keep_idx:
+                raise RuntimeError("VLG-style SAVLG concept filtering removed all concepts.")
+        elif filter_mode == "spatial_threshold":
+            # The default behavior scans every annotation JSON to determine which
+            # concepts survive thresholding, then precomputes dense supervision
+            # tensors. For ImageNet this is extremely expensive.
+            #
+            # When streaming supervision, keep all provided concepts and let the
+            # per-sample dataset build targets on-demand.
+            keep_idx = None if not bool(getattr(args, "savlg_stream_supervision", False)) else list(range(len(raw_concepts)))
+        else:
+            raise ValueError(
+                f"Unsupported SAVLG concept filter mode: {filter_mode}. Expected one of ['spatial_threshold', 'vlg_global']."
+            )
 
-        train_supervision_ds = SpatialSupervisionDataset(
-            train_dataset,
-            train_global_concepts,
-            train_mask_entries,
-            args.mask_h,
-            args.mask_w,
-        )
-        val_supervision_ds = SpatialSupervisionDataset(
-            val_dataset,
-            val_global_concepts,
-            val_mask_entries,
-            args.mask_h,
-            args.mask_w,
-        )
-    if (not stream_supervision) and _savlg_feature_cache_enabled(args):
+        stream_supervision = bool(getattr(args, "savlg_stream_supervision", False))
+        if stream_supervision:
+            if keep_idx is None:
+                keep_idx = list(range(len(raw_concepts)))
+            concepts = [raw_concepts[i] for i in keep_idx]
+            # Stream per-image targets/masks from the annotation JSONs during training.
+            train_supervision_ds = OnTheFlySpatialSupervisionDataset(
+                train_raw.base_dataset,
+                train_raw.indices,
+                backbone.preprocess,
+                train_ann_dir,
+                concepts,
+                args,
+            )
+            val_supervision_ds = OnTheFlySpatialSupervisionDataset(
+                val_raw.base_dataset,
+                val_raw.indices,
+                backbone.preprocess,
+                val_ann_dir,
+                concepts,
+                args,
+            )
+            train_global_concepts = None
+            train_mask_entries = None
+            val_global_concepts = None
+            val_mask_entries = None
+        else:
+            train_global_concepts, train_mask_entries, keep_idx = load_spatial_supervision(
+                train_raw, train_ann_dir, raw_concepts, args, "train", keep_idx=keep_idx
+            )
+            concepts = [raw_concepts[i] for i in keep_idx]
+            val_global_concepts, val_mask_entries, _ = load_spatial_supervision(
+                val_raw, val_ann_dir, raw_concepts, args, "val", keep_idx=keep_idx
+            )
+
+            train_supervision_ds = SpatialSupervisionDataset(
+                train_dataset,
+                train_global_concepts,
+                train_mask_entries,
+                args.mask_h,
+                args.mask_w,
+            )
+            val_supervision_ds = SpatialSupervisionDataset(
+                val_dataset,
+                val_global_concepts,
+                val_mask_entries,
+                args.mask_h,
+                args.mask_w,
+            )
+    stream_supervision = bool(getattr(args, "savlg_stream_supervision", False))
+    use_feature_cache = (
+        not use_precomputed_target_store
+        and not use_precomputed_targets
+        and not stream_supervision
+        and _savlg_feature_cache_enabled(args)
+    )
+    if use_feature_cache:
         logger.info(
             "Using in-memory SAVLG backbone features for deterministic training because crop_to_concept_prob == 0."
         )
@@ -1643,7 +1892,7 @@ def train_savlg_cbm(args):
         torch.save(concept_layer.state_dict(), os.path.join(save_dir, "concept_layer.pt"))
         logger.info("cbl_only=True — saved concept_layer.pt, skipping sparse final layer")
     else:
-        if _savlg_feature_cache_enabled(args):
+        if use_feature_cache:
             cached_loader_kwargs = {
                 "batch_size": args.cbl_batch_size,
                 "shuffle": False,
@@ -1675,58 +1924,32 @@ def train_savlg_cbm(args):
         train_concepts = (train_concepts - train_mean) / train_std
         val_concepts = (val_concepts - train_mean) / train_std
 
-        train_final_loader = DataLoader(
-            IndexedTensorDataset(train_concepts, train_labels),
-            batch_size=args.saga_batch_size,
-            shuffle=True,
+        W_g, b_g = train_task_final_layer(
+            train_concepts,
+            train_labels,
+            val_concepts,
+            val_labels,
+            args,
+            task,
         )
-        val_final_loader = DataLoader(
-            TensorDataset(val_concepts, val_labels),
-            batch_size=args.saga_batch_size,
-            shuffle=False,
-        )
-        final_layer = nn.Linear(len(concepts), len(classes)).to(args.device)
-        final_layer.weight.data.zero_()
-        final_layer.bias.data.zero_()
-        if args.dense:
-            output_proj = train_dense_final(
-                final_layer,
-                train_final_loader,
-                val_final_loader,
-                args.saga_n_iters,
-                args.dense_lr,
-                device=args.device,
-            )
-        else:
-            output_proj = train_sparse_final(
-                final_layer,
-                train_final_loader,
-                val_final_loader,
-                args.saga_n_iters,
-                args.saga_lam,
-                step_size=args.saga_step_size,
-                device=args.device,
-            )
-
-        W_g = output_proj["path"][0]["weight"]
-        b_g = output_proj["path"][0]["bias"]
+        final_layer = nn.Linear(len(concepts), task.output_dim).to(args.device)
         final_layer.load_state_dict({"weight": W_g, "bias": b_g})
 
         if getattr(args, "skip_train_val_eval", False):
-            train_accuracy = None
-            val_accuracy = None
+            train_metrics = None
+            val_metrics = None
         else:
-            train_accuracy = evaluate_savlg_accuracy(
-                args, backbone, concept_layer, train_mean, train_std, final_layer, train_dataset
+            train_metrics = evaluate_savlg_split(
+                args, backbone, concept_layer, train_mean, train_std, final_layer, train_dataset, task
             )
-            val_accuracy = evaluate_savlg_accuracy(
-                args, backbone, concept_layer, train_mean, train_std, final_layer, val_dataset
+            val_metrics = evaluate_savlg_split(
+                args, backbone, concept_layer, train_mean, train_std, final_layer, val_dataset, task
             )
         if getattr(args, "skip_test_eval", False):
-            test_accuracy = None
+            test_metrics = None
         else:
-            test_accuracy = evaluate_savlg_accuracy(
-                args, backbone, concept_layer, train_mean, train_std, final_layer, test_dataset
+            test_metrics = evaluate_savlg_split(
+                args, backbone, concept_layer, train_mean, train_std, final_layer, test_dataset, task
             )
 
         with open(os.path.join(save_dir, "concepts.txt"), "w") as f:
@@ -1737,23 +1960,21 @@ def train_savlg_cbm(args):
         torch.save(train_mean, os.path.join(save_dir, "proj_mean.pt"))
         torch.save(train_std, os.path.join(save_dir, "proj_std.pt"))
 
-        test_metrics = {"accuracy": test_accuracy}
         metrics_to_write = [("test_metrics.json", test_metrics)]
-        if not getattr(args, "skip_train_val_eval", False):
+        if train_metrics is not None and val_metrics is not None:
             metrics_to_write = [
-                ("train_metrics.json", {"accuracy": train_accuracy}),
-                ("val_metrics.json", {"accuracy": val_accuracy}),
+                ("train_metrics.json", train_metrics),
+                ("val_metrics.json", val_metrics),
                 ("test_metrics.json", test_metrics),
             ]
         for filename, payload in metrics_to_write:
             with open(os.path.join(save_dir, filename), "w") as f:
                 json.dump(payload, f, indent=2)
 
-        path0 = output_proj["path"][0]
         metrics_payload = {
-            key: float(path0[key]) for key in ("lam", "lr", "alpha", "time")
+            "final_layer_type": "dense" if bool(getattr(args, "dense", False)) else "sparse",
+            "multilabel": bool(task.multilabel),
         }
-        metrics_payload["metrics"] = path0["metrics"]
         nnz = int((W_g.abs() > 1e-5).sum().item())
         total = int(W_g.numel())
         metrics_payload["sparsity"] = {
@@ -1854,21 +2075,13 @@ def train_savlg_cbm(args):
             "sparse_eval_style": "salf_compatible",
         },
     )
-    def _fmt_acc(value: Optional[float]) -> str:
-        if value is None:
-            return "skipped"
-        try:
-            return f"{float(value):.4f}"
-        except Exception:
-            return str(value)
-
-    if getattr(args, "skip_train_val_eval", False):
-        logger.info("SAVLG-CBM test accuracy={}", _fmt_acc(test_accuracy))
+    if locals().get("train_metrics") is None or locals().get("val_metrics") is None:
+        logger.info("SAVLG-CBM test metrics={}", locals().get("test_metrics"))
     else:
         logger.info(
-            "SAVLG-CBM train accuracy={} val accuracy={} test accuracy={}",
-            _fmt_acc(train_accuracy),
-            _fmt_acc(val_accuracy),
-            _fmt_acc(test_accuracy),
+            "SAVLG-CBM train metrics={} val metrics={} test metrics={}",
+            locals().get("train_metrics"),
+            locals().get("val_metrics"),
+            locals().get("test_metrics"),
         )
     return save_dir

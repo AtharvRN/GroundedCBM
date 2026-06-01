@@ -6,13 +6,33 @@ from typing import Dict, List, Optional
 import torch
 import torch.nn as nn
 import torch.utils
-from loguru import logger
+try:
+    from loguru import logger  # type: ignore
+except Exception:  # pragma: no cover
+    class _FallbackLogger:
+        def info(self, *args, **kwargs):
+            if args:
+                print(str(args[0]).format(*args[1:]))
+
+        def error(self, *args, **kwargs):
+            if args:
+                print(str(args[0]).format(*args[1:]))
+
+        def warning(self, *args, **kwargs):
+            if args:
+                print(str(args[0]).format(*args[1:]))
+
+    logger = _FallbackLogger()  # type: ignore
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import clip
+try:
+    import clip  # type: ignore
+except Exception:  # pragma: no cover
+    clip = None  # type: ignore
 from data import utils as data_utils
+from gcbm.backbone_utils import load_backbone_checkpoint
 from glm_saga.elasticnet import glm_saga
 
 
@@ -127,10 +147,19 @@ class Backbone(nn.Module):
     # store intermediate feature values from backbone
     feature_vals = {}
 
-    def __init__(self, backbone_name: str, feature_layer: str, device: str = "cuda"):
+    def __init__(
+        self,
+        backbone_name: str,
+        feature_layer: str,
+        device: str = "cuda",
+        checkpoint: str = "",
+    ):
         super().__init__()
         self.backbone_name = backbone_name
-        self.feature_layer = feature_layer
+        resolved_feature_layer = data_utils.resolve_backbone_feature_layer(
+            backbone_name, feature_layer
+        )
+        self.feature_layer = resolved_feature_layer
         target_model, target_preprocess = data_utils.get_target_model(
             backbone_name, device
         )
@@ -139,13 +168,17 @@ class Backbone(nn.Module):
         def hook(module, input, output):
             self.feature_vals[output.device] = output
 
-        command = "target_model.{}.register_forward_hook(hook)".format(feature_layer)
+        command = "target_model.{}.register_forward_hook(hook)".format(
+            resolved_feature_layer
+        )
         eval(command)
 
         # assign backbone and preprocess
         self.backbone = target_model
         self.preprocess = target_preprocess
         self.output_dim = data_utils.BACKBONE_ENCODING_DIMENSION[backbone_name]
+        if checkpoint:
+            load_backbone_checkpoint(self.backbone.features if backbone_name == "densenet121" else self.backbone, checkpoint, backbone_name=backbone_name)
 
     def forward(self, x):
         out = self.backbone(x)
@@ -167,7 +200,12 @@ class Backbone(nn.Module):
     def from_args(cls, load_dir: str, device: str = "cuda"):
         with open(os.path.join(load_dir, "args.txt"), "r") as f:
             args = json.load(f)
-        return cls(args["backbone"], args["feature_layer"], device)
+        return cls(
+            args["backbone"],
+            args["feature_layer"],
+            device,
+            checkpoint=args.get("backbone_ckpt", ""),
+        )
 
 
 class BackboneCLIP(nn.Module):
@@ -175,6 +213,8 @@ class BackboneCLIP(nn.Module):
         self, backbone_name: str, use_penultimate: bool = True, device: str = "cuda"
     ):
         super().__init__()
+        if clip is None:
+            raise ImportError("CLIP backbones require the local clip package dependencies, including ftfy.")
         target_model, target_preprocess = clip.load(backbone_name[5:], device=device)
         if use_penultimate:
             logger.info("Using penultimate layer of CLIP")

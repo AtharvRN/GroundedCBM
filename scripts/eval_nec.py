@@ -60,11 +60,53 @@ def load_cub_metrics(load_path: Path, nec_values: set[int] | None) -> list[dict[
     return rows
 
 
+def load_medical_metrics(path: Path, nec_values: set[int] | None) -> list[dict[str, Any]]:
+    sweep_path = path / "glm_nec_sweep_metrics.json"
+    if sweep_path.exists():
+        payload = json.loads(sweep_path.read_text(encoding="utf-8"))
+        rows = []
+        for row in payload.get("best_by_nec", []):
+            nec = int(row["NEC"])
+            if nec_values is not None and nec not in nec_values:
+                continue
+            metrics = row.get("metrics", {})
+            rows.append(
+                {
+                    "NEC": nec,
+                    "nnz": int(row.get("nnz", 0)),
+                    "mean_auroc": float(metrics.get("mean_auroc", float("nan"))),
+                    "mAP": float(metrics.get("mAP", float("nan"))),
+                    "lambda": float(row.get("lambda", float("nan"))),
+                    "path_index": int(row.get("path_index", -1)),
+                }
+            )
+        return rows
+
+    nec_path = path / "nec_metrics.json"
+    if not nec_path.exists():
+        raise FileNotFoundError(f"{path} has neither glm_nec_sweep_metrics.json nor nec_metrics.json")
+    payload = json.loads(nec_path.read_text(encoding="utf-8"))
+    rows = []
+    for row in payload.get("metrics", []):
+        nec = int(row["NEC"])
+        if nec_values is not None and nec not in nec_values:
+            continue
+        rows.append(
+            {
+                "NEC": nec,
+                "nnz": int(row.get("nnz", 0)),
+                "mean_auroc": float(row.get("mean_auroc", float("nan"))),
+                "mAP": float(row.get("mAP", float("nan"))),
+            }
+        )
+    return rows
+
+
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description="Evaluate CBM+sparse heads at requested NEC values."
     )
-    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet"])
+    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet", "chexpert", "mimic", "medical"])
     parser.add_argument("--load_path", default="", help="CUB run directory containing metrics.csv and W_g@NEC checkpoints.")
     parser.add_argument("--artifact_dir", default="", help="ImageNet run or sparse sweep artifact directory.")
     parser.add_argument("--nec_values", default="", help="Comma-separated NEC values to report.")
@@ -85,6 +127,19 @@ def main() -> None:
             argv.extend(["--output_json", args.output_json])
         sys.argv = [*argv, *remaining]
         runpy.run_path(str(ROOT / "gcbm" / "imagenet_nec.py"), run_name="__main__")
+        return
+
+    if args.dataset in {"chexpert", "mimic", "medical"}:
+        artifact_path = Path(args.artifact_dir or args.load_path)
+        if not str(artifact_path):
+            raise SystemExit(f"--load_path or --artifact_dir is required for --dataset {args.dataset}")
+        rows = load_medical_metrics(artifact_path, parse_nec_values(args.nec_values))
+        payload = {"dataset": args.dataset, "artifact_dir": str(artifact_path), "metrics": rows}
+        print(json.dumps(payload, indent=2))
+        if args.output_json:
+            out = Path(args.output_json)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return
 
     if not args.load_path:

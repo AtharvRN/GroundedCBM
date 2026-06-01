@@ -11,11 +11,29 @@ try:
 except Exception:  # pragma: no cover
     plt = None  # type: ignore
 import torch
-from pytorchcv.model_provider import get_model as ptcv_get_model
+try:
+    from pytorchcv.model_provider import get_model as ptcv_get_model  # type: ignore
+except Exception:  # pragma: no cover
+    ptcv_get_model = None  # type: ignore
 from torchvision import datasets, models, transforms
 from tqdm import tqdm
-from loguru import logger
-import clip
+try:
+    from loguru import logger  # type: ignore
+except Exception:  # pragma: no cover
+    class _FallbackLogger:
+        def info(self, *args, **kwargs):
+            if args:
+                print(str(args[0]).format(*args[1:]))
+
+        def warning(self, *args, **kwargs):
+            if args:
+                print(str(args[0]).format(*args[1:]))
+
+    logger = _FallbackLogger()  # type: ignore
+try:
+    import clip  # type: ignore
+except Exception:  # pragma: no cover
+    clip = None  # type: ignore
 from PIL import Image, ImageFile, UnidentifiedImageError
 
 # get from the environment variable
@@ -54,6 +72,7 @@ BACKBONE_ENCODING_DIMENSION = {
     "clip_RN50": 1024,
     "clip_RN50_penultimate": 2048,
     "resnet50": 2048,
+    "densenet121": 1024,
 }
 
 BACKBONE_VISUALIZATION_TARGET_LAYER = {
@@ -62,6 +81,24 @@ BACKBONE_VISUALIZATION_TARGET_LAYER = {
     "resnet50_cub_mm": "layer4.2.conv3",
     "resnet50": "layer4.2.conv3",
 }
+
+BACKBONE_DEFAULT_FEATURE_LAYER = {
+    "resnet18_cub": "layer4",
+    "resnet50_cub": "layer4",
+    "resnet50_cub_mm": "layer4",
+    "resnet50": "layer4",
+    "densenet121": "features",
+}
+
+
+def resolve_backbone_feature_layer(backbone_name: str, feature_layer: Optional[str]) -> str:
+    requested = (feature_layer or "").strip()
+    if requested:
+        default = BACKBONE_DEFAULT_FEATURE_LAYER.get(backbone_name)
+        if default == "features" and requested == "layer4":
+            return default
+        return requested
+    return BACKBONE_DEFAULT_FEATURE_LAYER.get(backbone_name, "layer4")
 
 # Conservative ImageNet annotation aliases for labels that otherwise stay
 # unmapped after the repo's standard concept normalization. Only add
@@ -190,6 +227,8 @@ def get_targets_only(dataset_name):
 def get_target_model(target_name, device):
     print(f"[get_target_model] request target_name={target_name}", flush=True)
     if target_name.startswith("clip_"):
+        if clip is None:
+            raise ImportError("CLIP backbones require the local clip package dependencies, including ftfy.")
         target_name = target_name[5:]
         model, preprocess = clip.load(target_name, device=device)
         target_model = lambda x: model.encode_image(x).float()
@@ -219,6 +258,12 @@ def get_target_model(target_name, device):
         target_model.eval()
         preprocess = weights.transforms()
 
+    elif target_name == "densenet121":
+        weights = models.DenseNet121_Weights.IMAGENET1K_V1
+        target_model = models.densenet121(weights=weights).to(device)
+        target_model.eval()
+        preprocess = weights.transforms()
+
     else:
         target_name_cap = target_name.replace("resnet", "ResNet")
         weights = eval("models.{}_Weights.IMAGENET1K_V1".format(target_name_cap))
@@ -231,6 +276,11 @@ def get_target_model(target_name, device):
 
 def _load_ptcv_cub_model_from_local_cache(target_name: str, device):
     print(f"[_load_ptcv_cub_model_from_local_cache] init target_name={target_name}", flush=True)
+    if ptcv_get_model is None:
+        raise ImportError(
+            "pytorchcv is required for resnet18_cub/resnet50_cub backbones. "
+            "Install pytorchcv or use resnet50_cub_mm/resnet50/densenet121."
+        )
     model = ptcv_get_model(target_name, pretrained=False).to(device)
     print(f"[_load_ptcv_cub_model_from_local_cache] instantiated target_name={target_name}", flush=True)
     cache_dir = os.path.expanduser("~/.torch/models")

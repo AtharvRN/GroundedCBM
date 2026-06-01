@@ -19,7 +19,15 @@ from torchvision.transforms import functional as TF
 
 import clip
 from data import utils as data_utils
-from glm_saga.elasticnet import IndexedTensorDataset
+from gcbm.backbone_utils import load_backbone_checkpoint
+from gcbm.clip_utils import load_lf_alignment_model
+from gcbm.task_utils import (
+    build_task_spec,
+    load_task_base_dataset,
+    summarize_task_metrics,
+    train_task_final_layer,
+    unpack_sample,
+)
 from methods.common import build_run_dir, save_args, write_artifacts
 
 # Try to import timm for ViT support
@@ -38,7 +46,6 @@ from methods.lf import (
     subset_targets,
     use_original_label_free_protocol,
 )
-from model.cbm import train_dense_final, train_sparse_final
 
 
 class RawSubset(Dataset):
@@ -51,13 +58,12 @@ class RawSubset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx: int):
-        image, target = self.base_dataset[self.indices[idx]]
-        return image, target
+        return unpack_sample(self.base_dataset[self.indices[idx]])
 
 
 def pil_collate(batch):
     images = [sample[0] for sample in batch]
-    labels = torch.tensor([sample[1] for sample in batch], dtype=torch.long)
+    labels = torch.stack([torch.as_tensor(sample[1]) for sample in batch], dim=0)
     return images, labels
 
 
@@ -295,6 +301,7 @@ class SpatialBackbone(nn.Module):
         backbone_name: str,
         device: str = "cuda",
         spatial_stage: str = "conv5",
+        checkpoint: str = "",
     ):
         super().__init__()
         self.device = device
@@ -345,17 +352,25 @@ class SpatialBackbone(nn.Module):
             return
 
         self.is_vit = False  # ResNet-style backbone
-        if backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50"}:
+        if backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50", "densenet121"}:
             print(
                 f"[SpatialBackbone] loading backbone={backbone_name} stage={spatial_stage}",
                 flush=True,
             )
             target_model, preprocess = data_utils.get_target_model(backbone_name, device)
+            if checkpoint:
+                load_backbone_checkpoint(
+                    target_model.features if backbone_name == "densenet121" else target_model,
+                    checkpoint,
+                    backbone_name=backbone_name,
+                )
             print(
                 f"[SpatialBackbone] target model ready for backbone={backbone_name}",
                 flush=True,
             )
-            if hasattr(target_model, "features"):
+            if backbone_name == "densenet121":
+                self.dense_features = target_model.features.to(device).float().eval()
+            elif hasattr(target_model, "features"):
                 feature_children = list(target_model.features.children())
                 self.res_init = feature_children[0].to(device).float().eval()
                 self.res_layer1 = feature_children[1].to(device).float().eval()
@@ -371,7 +386,9 @@ class SpatialBackbone(nn.Module):
                 self.res_layer2 = target_model.layer2.to(device).float().eval()
                 self.res_layer3 = target_model.layer3.to(device).float().eval()
                 self.res_layer4 = target_model.layer4.to(device).float().eval()
-            if backbone_name == "resnet18_cub":
+            if backbone_name == "densenet121":
+                self.stage_dims = {"conv5": 1024}
+            elif backbone_name == "resnet18_cub":
                 self.stage_dims = {
                     "conv3": 128,
                     "conv4": 256,
@@ -391,7 +408,7 @@ class SpatialBackbone(nn.Module):
             self.output_dim = self.stage_dims[spatial_stage]
             return
         raise NotImplementedError(
-            f"SALF first pass currently supports only clip_RN50, resnet18_cub, resnet50_cub, resnet50_cub_mm, and resnet50 as spatial backbones, got {backbone_name}."
+            f"SALF first pass currently supports only clip_RN50, resnet18_cub, resnet50_cub, resnet50_cub_mm, resnet50, and densenet121 as spatial backbones, got {backbone_name}."
         )
 
     def get_stage_dim(self, stage_name: str) -> int:
@@ -436,6 +453,20 @@ class SpatialBackbone(nn.Module):
             outputs["conv5"] = conv5
         return outputs
 
+    def _forward_densenet_stages(
+        self,
+        x: torch.Tensor,
+        stage_names: Iterable[str],
+    ) -> dict[str, torch.Tensor]:
+        requested = set(stage_names)
+        if requested != {"conv5"}:
+            raise ValueError(
+                f"Unsupported densenet121 stage request(s): {sorted(requested)}. Expected ['conv5']."
+            )
+        x = x.to(self.device)
+        conv5 = F.relu(self.dense_features(x), inplace=False).float()
+        return {"conv5": conv5}
+
     def forward_multistage(
         self,
         x: torch.Tensor,
@@ -449,6 +480,8 @@ class SpatialBackbone(nn.Module):
                 )
             conv5 = self.backbone(x.to(self.device)).float()
             return {"conv5": conv5}
+        if self.backbone_name == "densenet121":
+            return self._forward_densenet_stages(x, stage_names)
         if self.backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50"}:
             return self._forward_resnet_cub_stages(x, stage_names)
         raise NotImplementedError(
@@ -456,6 +489,8 @@ class SpatialBackbone(nn.Module):
         )
 
     def forward(self, x: torch.Tensor):
+        if self.backbone_name == "densenet121":
+            return self._forward_densenet_stages(x, [self.spatial_stage])[self.spatial_stage]
         if self.backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50"}:
             return self._forward_resnet_cub_stages(x, [self.spatial_stage])[self.spatial_stage]
 
@@ -670,15 +705,20 @@ def create_salf_splits(args):
         args.backbone,
         device=args.device,
         spatial_stage=getattr(args, "savlg_spatial_stage", "conv5"),
+        checkpoint=getattr(args, "backbone_ckpt", ""),
     )
 
-    clip_name = getattr(args, "lf_clip_name", None) or args.backbone
-    clip_model, clip_preprocess = clip.load(clip_name.replace("clip_", ""), device=args.device)
-    clip_model = clip_model.float().eval()
+    clip_bundle = load_lf_alignment_model(
+        getattr(args, "lf_clip_name", None),
+        dataset=getattr(args, "dataset", None),
+        device=args.device,
+    )
+    clip_model = clip_bundle.model
+    clip_preprocess = clip_bundle.preprocess
 
     if use_original_label_free_protocol(args):
-        base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
-        base_val_raw = data_utils.get_data(f"{args.dataset}_val", None)
+        base_train_raw = load_task_base_dataset(args, "train", transform=None, raw=True)
+        base_val_raw = load_task_base_dataset(args, "val", transform=None, raw=True)
         max_train = int(getattr(args, "max_train_images", 0) or 0)
         max_test = int(getattr(args, "max_test_images", 0) or 0)
         train_total = min(len(base_train_raw), max_train) if max_train > 0 else len(base_train_raw)
@@ -692,7 +732,7 @@ def create_salf_splits(args):
         test_dataset = val_dataset
         return train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone, clip_model, clip_preprocess
 
-    base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
+    base_train_raw = load_task_base_dataset(args, "train", transform=None, raw=True)
     max_train = int(getattr(args, "max_train_images", 0) or 0)
     total = min(len(base_train_raw), max_train) if max_train > 0 else len(base_train_raw)
     n_val = int(args.val_split * total)
@@ -709,7 +749,7 @@ def create_salf_splits(args):
     val_raw = RawSubset(base_train_raw, val_subset.indices)
     train_dataset = TransformedSubset(base_train_raw, train_subset.indices, backbone.preprocess)
     val_dataset = TransformedSubset(base_train_raw, val_subset.indices, backbone.preprocess)
-    base_test = data_utils.get_data(f"{args.dataset}_val", None)
+    base_test = load_task_base_dataset(args, "val", transform=None, raw=True)
     max_test = int(getattr(args, "max_test_images", 0) or 0)
     test_total = min(len(base_test), max_test) if max_test > 0 else len(base_test)
     test_dataset = TransformedSubset(base_test, list(range(test_total)), backbone.preprocess)
@@ -780,9 +820,8 @@ def compute_spatial_sims_prompt_grid(
         collate_fn=pil_collate,
         persistent_workers=spatial_num_workers > 0,
     )
-    tokens = clip.tokenize([str(concept) for concept in concepts]).to(args.device)
     with torch.no_grad():
-        text_emb = clip_model.encode_text(tokens).float()
+        text_emb = clip_model.encode_texts([str(concept) for concept in concepts]).float()
         text_emb = F.normalize(text_emb, dim=1)
 
     input_size = infer_clip_input_size(clip_preprocess)
@@ -812,7 +851,7 @@ def compute_spatial_sims_prompt_grid(
         for start in range(0, prompted_images.shape[0], prompt_batch_size):
             image_tensor = prompted_images[start : start + prompt_batch_size].to(args.device)
             with torch.no_grad():
-                img_emb = clip_model.encode_image(image_tensor).float()
+                img_emb = clip_model.encode_images(image_tensor).float()
                 img_emb = F.normalize(img_emb, dim=1)
                 sim = img_emb @ text_emb.T
             sims_chunks.append(sim.cpu())
@@ -960,7 +999,7 @@ def extract_global_concepts(
     return torch.cat(concept_features, dim=0), torch.cat(labels, dim=0)
 
 
-def evaluate_salf_accuracy(
+def evaluate_salf_split(
     args,
     backbone: SpatialBackbone,
     concept_layer: nn.Module,
@@ -968,15 +1007,16 @@ def evaluate_salf_accuracy(
     std: torch.Tensor,
     final_layer: nn.Module,
     dataset: Dataset,
-) -> float:
+    task,
+) -> dict:
     loader = DataLoader(
         dataset,
         batch_size=args.cbl_batch_size,
         shuffle=False,
         num_workers=args.num_workers,
     )
-    correct = 0
-    total = 0
+    logits_chunks = []
+    target_chunks = []
     with torch.no_grad():
         for images, target in tqdm(loader, desc="SALF eval", leave=False):
             images = images.to(args.device)
@@ -985,10 +1025,14 @@ def evaluate_salf_accuracy(
             maps = concept_layer(spatial_feats)
             pooled = F.adaptive_avg_pool2d(maps, 1).flatten(1)
             pooled = (pooled - mean.to(args.device)) / std.to(args.device)
-            pred = final_layer(pooled).argmax(dim=-1).cpu()
-            correct += int((pred == target).sum().item())
-            total += int(target.numel())
-    return correct / max(total, 1)
+            logits_chunks.append(final_layer(pooled).detach().cpu())
+            target_chunks.append(target.detach().cpu())
+    return summarize_task_metrics(
+        torch.cat(target_chunks, dim=0),
+        torch.cat(logits_chunks, dim=0),
+        task,
+        threshold=float(getattr(args, "threshold", 0.5)),
+    )
 
 
 @dataclass
@@ -1013,7 +1057,7 @@ def train_salf_cbm(args):
     logger.info("Saving SALF-CBM model to {}", save_dir)
     save_args(args, save_dir)
 
-    classes = data_utils.get_classes(args.dataset)
+    task = build_task_spec(args)
     raw_concepts = get_lf_concepts(args)
     (
         train_raw,
@@ -1080,55 +1124,29 @@ def train_salf_cbm(args):
     train_concepts = (train_concepts - train_mean) / train_std
     val_concepts = (val_concepts - train_mean) / train_std
 
-    train_final_loader = DataLoader(
-        IndexedTensorDataset(train_concepts, train_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=True,
+    W_g, b_g = train_task_final_layer(
+        train_concepts,
+        train_labels,
+        val_concepts,
+        val_labels,
+        args,
+        task,
     )
-    val_final_loader = DataLoader(
-        TensorDataset(val_concepts, val_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=False,
-    )
-    final_layer = nn.Linear(len(concepts), len(classes)).to(args.device)
-    final_layer.weight.data.zero_()
-    final_layer.bias.data.zero_()
-    if args.dense:
-        output_proj = train_dense_final(
-            final_layer,
-            train_final_loader,
-            val_final_loader,
-            args.saga_n_iters,
-            args.dense_lr,
-            device=args.device,
-        )
-    else:
-        output_proj = train_sparse_final(
-            final_layer,
-            train_final_loader,
-            val_final_loader,
-            args.saga_n_iters,
-            args.saga_lam,
-            step_size=args.saga_step_size,
-            device=args.device,
-        )
-
-    W_g = output_proj["path"][0]["weight"]
-    b_g = output_proj["path"][0]["bias"]
+    final_layer = nn.Linear(len(concepts), task.output_dim).to(args.device)
     final_layer.load_state_dict({"weight": W_g, "bias": b_g})
 
     if getattr(args, "skip_train_val_eval", False):
-        train_accuracy = None
-        val_accuracy = None
+        train_metrics = None
+        val_metrics = None
     else:
-        train_accuracy = evaluate_salf_accuracy(
-            args, backbone, concept_layer, train_mean, train_std, final_layer, train_dataset
+        train_metrics = evaluate_salf_split(
+            args, backbone, concept_layer, train_mean, train_std, final_layer, train_dataset, task
         )
-        val_accuracy = evaluate_salf_accuracy(
-            args, backbone, concept_layer, train_mean, train_std, final_layer, val_dataset
+        val_metrics = evaluate_salf_split(
+            args, backbone, concept_layer, train_mean, train_std, final_layer, val_dataset, task
         )
-    test_accuracy = evaluate_salf_accuracy(
-        args, backbone, concept_layer, train_mean, train_std, final_layer, test_dataset
+    test_metrics = evaluate_salf_split(
+        args, backbone, concept_layer, train_mean, train_std, final_layer, test_dataset, task
     )
 
     with open(os.path.join(save_dir, "concepts.txt"), "w") as f:
@@ -1139,22 +1157,21 @@ def train_salf_cbm(args):
     torch.save(train_mean, os.path.join(save_dir, "proj_mean.pt"))
     torch.save(train_std, os.path.join(save_dir, "proj_std.pt"))
 
-    train_metrics = {"accuracy": train_accuracy}
-    val_metrics = {"accuracy": val_accuracy}
-    test_metrics = {"accuracy": test_accuracy}
-    for filename, payload in (
-        ("train_metrics.json", train_metrics),
-        ("val_metrics.json", val_metrics),
-        ("test_metrics.json", test_metrics),
-    ):
+    metrics_to_write = [("test_metrics.json", test_metrics)]
+    if train_metrics is not None and val_metrics is not None:
+        metrics_to_write = [
+            ("train_metrics.json", train_metrics),
+            ("val_metrics.json", val_metrics),
+            ("test_metrics.json", test_metrics),
+        ]
+    for filename, payload in metrics_to_write:
         with open(os.path.join(save_dir, filename), "w") as f:
             json.dump(payload, f, indent=2)
 
-    path0 = output_proj["path"][0]
     metrics_payload = {
-        key: float(path0[key]) for key in ("lam", "lr", "alpha", "time")
+        "final_layer_type": "dense" if bool(getattr(args, "dense", False)) else "sparse",
+        "multilabel": bool(task.multilabel),
     }
-    metrics_payload["metrics"] = path0["metrics"]
     nnz = int((W_g.abs() > 1e-5).sum().item())
     total = int(W_g.numel())
     metrics_payload["sparsity"] = {
@@ -1211,13 +1228,13 @@ def train_salf_cbm(args):
             "sparse_eval_style": "not_yet_supported",
         },
     )
-    if train_accuracy is None or val_accuracy is None:
-        logger.info("SALF-CBM test accuracy={:.4f} (train/val eval skipped)", test_accuracy)
+    if train_metrics is None or val_metrics is None:
+        logger.info("SALF-CBM test metrics={} (train/val eval skipped)", test_metrics)
     else:
         logger.info(
-            "SALF-CBM train accuracy={:.4f} val accuracy={:.4f} test accuracy={:.4f}",
-            train_accuracy,
-            val_accuracy,
-            test_accuracy,
+            "SALF-CBM train metrics={} val metrics={} test metrics={}",
+            train_metrics,
+            val_metrics,
+            test_metrics,
         )
     return save_dir

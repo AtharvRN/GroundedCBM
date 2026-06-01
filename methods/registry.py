@@ -5,6 +5,10 @@ SUPPORTED_MODELS = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm")
 
 
 def get_train_handler(model_name: str) -> Callable:
+    if model_name == "vlg_cbm":
+        from methods.vlg import train_vlg_cbm
+
+        return train_vlg_cbm
     if model_name == "lf_cbm":
         from methods.lf import train_lf_cbm
 

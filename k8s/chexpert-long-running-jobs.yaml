@@ -1,0 +1,204 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-sgcbm-gpt225-full
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 259200
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-sgcbm-gpt225-full
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONUNBUFFERED=1
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/chexpert_sgcbm_gpt225_full_job_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] log_path=$LOG_PATH"
+          date -u
+          /opt/conda/envs/cbm/bin/python -u train_cbm.py \
+            --config configs/chexpert_sgcbm_gpt225_precomputed.yaml \
+            --save_dir /workspace/chexpert_full_runs/sgcbm_gpt225_precomputed_a100_memmap_job \
+            --num_workers 4 \
+            --device cuda
+        resources:
+          requests:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "100Gi"
+            nvidia.com/a100: "1"
+          limits:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "100Gi"
+            nvidia.com/a100: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: dev-shm
+          mountPath: /dev/shm
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti
+      - name: dev-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 50Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-salf-queries520-full
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 259200
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-salf-queries520-full
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-80GB
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONUNBUFFERED=1
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/chexpert_salf_queries520_full_job_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] log_path=$LOG_PATH"
+          date -u
+          /opt/conda/envs/cbm/bin/python -m pip install -q --upgrade "transformers==4.40.2" safetensors sentencepiece
+          /opt/conda/envs/cbm/bin/python -u train_cbm.py \
+            --config configs/chexpert_salf.yaml \
+            --concept_set concept_files/chexpert_queries_520.txt \
+            --concept_file concept_files/chexpert_queries_520.txt \
+            --lf_clip_name cxrclip_swint_mcc \
+            --save_dir /workspace/chexpert_full_runs/salf_queries520_cxrclip_a100_80gb_job \
+            --activation_dir /workspace/CHEX_CBM/saved_activations_salf_job \
+            --lf_batch_size 64 \
+            --spatial_batch_size 32 \
+            --prompt_batch_size 2048 \
+            --cbl_batch_size 128 \
+            --saga_batch_size 512 \
+            --num_workers 8 \
+            --spatial_num_workers 8 \
+            --device cuda
+        resources:
+          requests:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "200Gi"
+            nvidia.com/a100: "1"
+          limits:
+            cpu: "16"
+            memory: "32Gi"
+            ephemeral-storage: "200Gi"
+            nvidia.com/a100: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: dev-shm
+          mountPath: /dev/shm
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti
+      - name: dev-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 100Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chexpert-queries520-target-precompute
+  namespace: wenglab-interpretable-ai
+spec:
+  activeDeadlineSeconds: 259200
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: chexpert-queries520-target-precompute
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: ghcr.io/atharvrn/savlgcbm-cbm:pt222-cu121
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONUNBUFFERED=1
+          export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
+          cd /workspace/GroundedCBM-MedicalCBM-dev
+          LOG_DIR=/workspace/logs
+          mkdir -p "$LOG_DIR"
+          LOG_PATH="$LOG_DIR/precompute_chexpert_queries520_thr050_memmap_job_$(date -u +%Y%m%dT%H%M%SZ).log"
+          exec > >(tee -a "$LOG_PATH") 2>&1
+          echo "[job] log_path=$LOG_PATH"
+          date -u
+          /opt/conda/envs/cbm/bin/python -u scripts/precompute_medical_targets.py \
+            --dataset chexpert \
+            --data_dir /workspace/CHEXPERT_DATASET \
+            --img_root /workspace/CHEXPERT_DATASET \
+            --train_csv /workspace/CHEXPERT_DATASET/train.csv \
+            --val_csv /workspace/CHEXPERT_DATASET/valid.csv \
+            --concept_file concept_files/chexpert_queries_520.txt \
+            --train_annotation_dir /workspace/CHEX_CBM/annotations_queries520_train \
+            --val_annotation_dir /workspace/CHEX_CBM/annotations_queries520_valid \
+            --output_dir /workspace/CHEX_CBM/precomputed_targets/chexpert_queries520_thr050_softbox_mh14_mw14 \
+            --concept_threshold 0.50 \
+            --presence_mode binary \
+            --target_mode soft_box \
+            --mask_h 14 \
+            --mask_w 14 \
+            --store_format memmap \
+            --num_workers 8 \
+            --train_shard_size 10000 \
+            --frontal_only
+        resources:
+          requests:
+            cpu: "16"
+            memory: "64Gi"
+            ephemeral-storage: "100Gi"
+          limits:
+            cpu: "16"
+            memory: "64Gi"
+            ephemeral-storage: "100Gi"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: atharv-rwx-storage-1ti

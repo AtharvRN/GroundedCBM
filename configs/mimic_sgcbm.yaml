@@ -3,6 +3,7 @@ data_dir: /path/to/mimic-cxr-jpg-2.1.0
 concept_file: concept_files/chexpert_gpt225.txt
 train_annotation_dir: /path/to/mimic_train_annotations
 val_annotation_dir: /path/to/mimic_validate_annotations
+precomputed_target_dir: /path/to/mimic_precomputed_targets
 save_dir: artifacts/medical
 run_name: mimic_sgcbm
 label_subset: competition
@@ -11,8 +12,11 @@ img_size: 224
 mask_h: 14
 mask_w: 14
 target_mode: soft_box
-concept_threshold: 0.15
+concept_threshold: 0.70
 neg_threshold: 0.02
+presence_mode: binary
+min_concept_freq: 0.01
+max_concept_freq: 0.99
 loss_global_w: 1.0
 loss_mask_w: 1.0
 residual_alpha: 0.2

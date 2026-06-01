@@ -12,74 +12,35 @@ from loguru import logger
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from tqdm import tqdm
 
-import clip
 from data import utils as data_utils
+from gcbm.clip_utils import load_lf_alignment_model
+from gcbm.task_utils import (
+    DualTransformSubset,
+    TupleTransformSubset as TransformedSubset,
+    build_task_spec,
+    dataset_targets_view,
+    load_task_base_dataset,
+    subset_targets,
+    summarize_task_metrics,
+    train_task_final_layer,
+)
 from glm_saga.elasticnet import IndexedTensorDataset
 from methods.common import build_run_dir, save_args, write_artifacts
-from model.cbm import Backbone, BackboneCLIP, train_dense_final, train_sparse_final
-
-
-def _dataset_targets_view(base_dataset: Dataset):
-    targets = getattr(base_dataset, "targets", None)
-    if targets is None:
-        return None
-    if isinstance(targets, torch.Tensor):
-        return targets.detach().cpu()
-    return torch.as_tensor(list(targets), dtype=torch.long)
+from model.cbm import Backbone, BackboneCLIP
 
 
 def _fast_subset_targets(base_dataset: Dataset, indices: Iterable[int]) -> torch.Tensor:
     idx_list = list(indices)
-    targets = _dataset_targets_view(base_dataset)
+    targets = dataset_targets_view(base_dataset)
     if targets is not None:
-        return targets[idx_list].to(dtype=torch.long)
-    return torch.tensor([base_dataset[idx][1] for idx in idx_list], dtype=torch.long)
-
-
-class TransformedSubset(Dataset):
-    def __init__(self, base_dataset: Dataset, indices: Iterable[int], transform):
-        self.base_dataset = base_dataset
-        self.indices = list(indices)
-        self.transform = transform
-        self.targets = _fast_subset_targets(base_dataset, self.indices)
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, idx: int):
-        image, target = self.base_dataset[self.indices[idx]]
-        if self.transform is not None:
-            image = self.transform(image)
-        return image, target
+        return targets[idx_list]
+    return torch.stack([torch.as_tensor(base_dataset[idx][1]) for idx in idx_list], dim=0)
 
 
 def use_original_label_free_protocol(args) -> bool:
     return bool(getattr(args, "lf_original_protocol", False))
-
-
-def subset_targets(base_dataset: Dataset, indices: Iterable[int]) -> torch.Tensor:
-    return _fast_subset_targets(base_dataset, indices)
-
-
 def get_lf_concepts(args) -> list[str]:
     return data_utils.get_concepts(args.concept_set, getattr(args, "filter_set", None))
-
-
-class DualTransformSubset(Dataset):
-    def __init__(self, base_dataset: Dataset, indices: Iterable[int], transform_a, transform_b):
-        self.base_dataset = base_dataset
-        self.indices = list(indices)
-        self.transform_a = transform_a
-        self.transform_b = transform_b
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, idx: int):
-        image, target = self.base_dataset[self.indices[idx]]
-        image_a = self.transform_a(image) if self.transform_a is not None else image
-        image_b = self.transform_b(image) if self.transform_b is not None else image
-        return image_a, image_b, target
 
 
 class LFConceptLayer(nn.Module):
@@ -243,7 +204,7 @@ def train_projection_layer(
 
 
 def create_splits(args):
-    base_train = data_utils.get_data(f"{args.dataset}_train", None)
+    base_train = load_task_base_dataset(args, "train", transform=None, raw=True)
     max_train = int(getattr(args, "max_train_images", 0) or 0)
     total = min(len(base_train), max_train) if max_train > 0 else len(base_train)
     n_val = int(args.val_split * total)
@@ -264,13 +225,20 @@ def create_splits(args):
             device=args.device,
         )
     else:
-        backbone = Backbone(args.backbone, args.feature_layer, args.device)
+        backbone = Backbone(
+            args.backbone,
+            args.feature_layer,
+            args.device,
+            checkpoint=getattr(args, "backbone_ckpt", ""),
+        )
 
-    clip_model, clip_preprocess = clip.load(
-        (args.lf_clip_name or "clip_RN50").replace("clip_", ""),
+    clip_bundle = load_lf_alignment_model(
+        getattr(args, "lf_clip_name", None),
+        dataset=getattr(args, "dataset", None),
         device=args.device,
     )
-    clip_model = clip_model.float().eval()
+    clip_model = clip_bundle.model
+    clip_preprocess = clip_bundle.preprocess
 
     train_dataset = DualTransformSubset(
         base_train,
@@ -284,7 +252,7 @@ def create_splits(args):
         backbone.preprocess,
         clip_preprocess,
     )
-    base_test = data_utils.get_data(f"{args.dataset}_val", None)
+    base_test = load_task_base_dataset(args, "val", transform=None, raw=True)
     max_test = int(getattr(args, "max_test_images", 0) or 0)
     test_total = min(len(base_test), max_test) if max_test > 0 else len(base_test)
     test_dataset = TransformedSubset(
@@ -308,7 +276,7 @@ def compute_dual_features(args, dataset: Dataset, backbone, clip_model):
     with torch.no_grad():
         for backbone_images, clip_images, target in tqdm(loader, desc="LF features"):
             bb = backbone(backbone_images.to(args.device))
-            clip_img = clip_model.encode_image(clip_images.to(args.device)).float()
+            clip_img = clip_model.encode_images(clip_images)
             backbone_features.append(bb.detach().cpu())
             clip_features.append(clip_img.detach().cpu())
             labels.append(target)
@@ -333,25 +301,29 @@ def compute_concept_features(
     return torch.cat(chunks, dim=0)
 
 
-def evaluate_accuracy(backbone, proj_layer, mean, std, final_layer, dataset, args) -> float:
+def evaluate_task_split(backbone, proj_layer, mean, std, final_layer, dataset, args, task) -> dict:
     loader = DataLoader(
         dataset,
         batch_size=args.lf_batch_size,
         shuffle=False,
         num_workers=args.num_workers,
     )
-    correct = 0
-    total = 0
+    logits_chunks = []
+    target_chunks = []
     with torch.no_grad():
         for images, target in tqdm(loader, desc="LF eval", leave=False):
             features = backbone(images.to(args.device))
             concepts = proj_layer(features)
             concepts = (concepts - mean.to(args.device)) / std.to(args.device)
             logits = final_layer(concepts)
-            pred = logits.argmax(dim=-1).cpu()
-            correct += int((pred == target).sum().item())
-            total += int(target.numel())
-    return correct / max(total, 1)
+            logits_chunks.append(logits.detach().cpu())
+            target_chunks.append(target.detach().cpu())
+    return summarize_task_metrics(
+        torch.cat(target_chunks, dim=0),
+        torch.cat(logits_chunks, dim=0),
+        task,
+        threshold=float(getattr(args, "threshold", 0.5)),
+    )
 
 
 def train_lf_cbm(args):
@@ -364,13 +336,12 @@ def train_lf_cbm(args):
     logger.info(f"Saving LF-CBM model to {save_dir}")
     save_args(args, save_dir)
 
-    classes = data_utils.get_classes(args.dataset)
+    task = build_task_spec(args)
     raw_concepts = data_utils.get_concepts(args.concept_set, args.filter_set)
     train_dataset, val_dataset, test_dataset, backbone, clip_model = create_splits(args)
 
-    tokens = clip.tokenize([str(concept) for concept in raw_concepts]).to(args.device)
     with torch.no_grad():
-        clip_text_features = clip_model.encode_text(tokens).float().cpu()
+        clip_text_features = clip_model.encode_texts([str(concept) for concept in raw_concepts]).float().cpu()
 
     train_backbone, train_clip_img, train_labels = compute_dual_features(
         args, train_dataset, backbone, clip_model
@@ -434,60 +405,33 @@ def train_lf_cbm(args):
     train_concepts = (train_concepts - train_mean) / train_std
     val_concepts = (val_concepts - train_mean) / train_std
 
-    train_loader = DataLoader(
-        IndexedTensorDataset(train_concepts, train_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=True,
+    W_g, b_g = train_task_final_layer(
+        train_concepts,
+        train_labels,
+        val_concepts,
+        val_labels,
+        args,
+        task,
     )
-    val_loader = DataLoader(
-        TensorDataset(val_concepts, val_labels),
-        batch_size=args.saga_batch_size,
-        shuffle=False,
-    )
-
-    final_layer = nn.Linear(len(concepts), len(classes)).to(args.device)
-    final_layer.weight.data.zero_()
-    final_layer.bias.data.zero_()
-    if args.dense:
-        output_proj = train_dense_final(
-            final_layer,
-            train_loader,
-            val_loader,
-            args.saga_n_iters,
-            args.dense_lr,
-            device=args.device,
-        )
-    else:
-        output_proj = train_sparse_final(
-            final_layer,
-            train_loader,
-            val_loader,
-            args.saga_n_iters,
-            args.saga_lam,
-            step_size=args.saga_step_size,
-            device=args.device,
-        )
-
-    W_g = output_proj["path"][0]["weight"]
-    b_g = output_proj["path"][0]["bias"]
+    final_layer = nn.Linear(len(concepts), task.output_dim).to(args.device)
     final_layer.load_state_dict({"weight": W_g, "bias": b_g})
 
     train_eval_dataset = TransformedSubset(
-        data_utils.get_data(f"{args.dataset}_train", None),
+        load_task_base_dataset(args, "train", transform=None, raw=True),
         train_dataset.indices,
         backbone.preprocess,
     )
     val_eval_dataset = TransformedSubset(
-        data_utils.get_data(f"{args.dataset}_train", None),
+        load_task_base_dataset(args, "train", transform=None, raw=True),
         val_dataset.indices,
         backbone.preprocess,
     )
 
     if getattr(args, "skip_train_val_eval", False):
-        train_accuracy = None
-        val_accuracy = None
+        train_metrics = None
+        val_metrics = None
     else:
-        train_accuracy = evaluate_accuracy(
+        train_metrics = evaluate_task_split(
             backbone,
             proj_layer,
             train_mean,
@@ -495,8 +439,9 @@ def train_lf_cbm(args):
             final_layer,
             train_eval_dataset,
             args,
+            task,
         )
-        val_accuracy = evaluate_accuracy(
+        val_metrics = evaluate_task_split(
             backbone,
             proj_layer,
             train_mean,
@@ -504,8 +449,9 @@ def train_lf_cbm(args):
             final_layer,
             val_eval_dataset,
             args,
+            task,
         )
-    test_accuracy = evaluate_accuracy(
+    test_metrics = evaluate_task_split(
         backbone,
         proj_layer,
         train_mean,
@@ -513,6 +459,7 @@ def train_lf_cbm(args):
         final_layer,
         test_dataset,
         args,
+        task,
     )
 
     with open(os.path.join(save_dir, "concepts.txt"), "w") as f:
@@ -527,12 +474,9 @@ def train_lf_cbm(args):
     torch.save(train_mean, os.path.join(save_dir, "proj_mean.pt"))
     torch.save(train_std, os.path.join(save_dir, "proj_std.pt"))
 
-    test_metrics = {"accuracy": test_accuracy}
     with open(os.path.join(save_dir, "test_metrics.json"), "w") as f:
         json.dump(test_metrics, f, indent=2)
-    if not getattr(args, "skip_train_val_eval", False):
-        train_metrics = {"accuracy": train_accuracy}
-        val_metrics = {"accuracy": val_accuracy}
+    if train_metrics is not None and val_metrics is not None:
         with open(os.path.join(save_dir, "train_metrics.json"), "w") as f:
             json.dump(train_metrics, f, indent=2)
         with open(os.path.join(save_dir, "val_metrics.json"), "w") as f:
@@ -540,7 +484,7 @@ def train_lf_cbm(args):
 
     W_g_np = W_g.detach().cpu().numpy()
     interpretations = {}
-    for class_idx, class_name in enumerate(classes):
+    for class_idx, class_name in enumerate(task.label_names):
         weights = W_g_np[class_idx]
         top_pos_idx = np.argsort(weights)[-10:][::-1]
         top_neg_idx = np.argsort(weights)[:10]
@@ -590,10 +534,13 @@ def train_lf_cbm(args):
             "sparse_eval_style": "lf_linear_only" if artifacts.linear_weight is not None else "not_yet_supported",
         },
     )
-    if getattr(args, "skip_train_val_eval", False):
-        logger.info(f"LF-CBM test accuracy={test_accuracy:.4f}")
+    if train_metrics is None or val_metrics is None:
+        logger.info("LF-CBM test metrics={}", test_metrics)
     else:
         logger.info(
-            f"LF-CBM train accuracy={train_accuracy:.4f} val accuracy={val_accuracy:.4f} test accuracy={test_accuracy:.4f}"
+            "LF-CBM train metrics={} val metrics={} test metrics={}",
+            train_metrics,
+            val_metrics,
+            test_metrics,
         )
     return save_dir

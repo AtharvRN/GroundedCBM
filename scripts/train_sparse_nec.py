@@ -14,8 +14,8 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description="Train sparse GLM/NEC heads for a trained CBM checkpoint."
     )
-    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet"])
-    parser.add_argument("--load_path", default="", help="CUB CBM run directory.")
+    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet", "chexpert", "mimic", "medical"])
+    parser.add_argument("--load_path", default="", help="CUB or medical CBM run directory.")
     parser.add_argument("--artifact_dir", default="", help="ImageNet SG-CBM artifact directory with extracted features.")
     return parser.parse_known_args()
 
@@ -27,6 +27,13 @@ def main() -> None:
         if not args.load_path:
             raise SystemExit("--load_path is required for --dataset cub")
         run_cub_nec(args.load_path, remaining)
+        return
+
+    if args.dataset in {"chexpert", "mimic", "medical"}:
+        if not args.load_path:
+            raise SystemExit(f"--load_path is required for --dataset {args.dataset}")
+        sys.argv = ["medical_glm_nec.py", "--run_dir", args.load_path, *remaining]
+        runpy.run_path(str(ROOT / "gcbm" / "medical_glm_nec.py"), run_name="__main__")
         return
 
     if not args.artifact_dir:

@@ -40,12 +40,13 @@ from gcbm.imagenet_targets import build_gdino_targets, load_concepts  # noqa: E4
 from gcbm.runtime import configure_runtime  # noqa: E402
 from gcbm.training_utils import prepare_images  # noqa: E402
 from gcbm.imagenet_models import build_model  # noqa: E402
+from gcbm.spatial_targets import rasterize_box_target  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Evaluate SG-CBM native spatial maps against GDINO pseudo boxes on CUB or ImageNet."
     )
-    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet"])
+    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet", "chexpert"])
     parser.add_argument("--gcbm_path", required=True, help="Path to a trained SG-CBM run directory.")
     parser.add_argument("--annotation_dir", required=True, help="Directory containing GDINO annotation JSONs.")
     parser.add_argument("--output", required=True, help="Output JSON path.")
@@ -81,6 +82,15 @@ def parse_args() -> argparse.Namespace:
     imagenet.add_argument("--prefetch_factor", type=int, default=2)
     imagenet.add_argument("--persistent_workers", action="store_true")
     imagenet.add_argument("--pin_memory", action="store_true")
+
+    medical = parser.add_argument_group("Medical inputs")
+    medical.add_argument("--data_dir", default="", help="CheXpert root. Defaults to value saved in --gcbm_path/config.json.")
+    medical.add_argument("--csv_path", default="", help="CheXpert CSV to evaluate. Defaults to saved val_csv or data_dir/valid.csv.")
+    medical.add_argument("--img_root", default="", help="CheXpert image root. Defaults to saved img_root or data_dir.")
+    medical.add_argument("--frontal_only", action=argparse.BooleanOptionalAction, default=None, help="Filter CheXpert to frontal images.")
+    medical.add_argument("--uncertain_strategy", default="", choices=["", "ones", "zeros", "ignore"], help="CheXpert uncertain-label handling.")
+    medical.add_argument("--input_size", type=int, default=0, help="Medical model input size override.")
+    medical.add_argument("--resize_size", type=int, default=0, help="Medical resize-short-edge size override.")
     return parser.parse_args()
 
 
@@ -336,6 +346,19 @@ def normalize_cub_maps(
     return (maps - min_v) / (max_v - min_v).clamp_min(1e-6)
 
 
+def normalize_batched_spatial_maps(maps: torch.Tensor, mode: str) -> torch.Tensor:
+    maps = maps.float()
+    if mode == "sigmoid":
+        return torch.sigmoid(maps)
+    if mode in {"concept_zscore_minmax", "proj_zscore_minmax"}:
+        mean = maps.mean(dim=(2, 3), keepdim=True)
+        std = maps.std(dim=(2, 3), keepdim=True, unbiased=False).clamp_min(1e-6)
+        maps = (maps - mean) / std
+    min_v = maps.amin(dim=(2, 3), keepdim=True)
+    max_v = maps.amax(dim=(2, 3), keepdim=True)
+    return (maps - min_v) / (max_v - min_v).clamp_min(1e-6)
+
+
 class IndexedPreprocessDataset(Dataset):
     def __init__(self, base_dataset, preprocess) -> None:
         self.base_dataset = base_dataset
@@ -399,6 +422,44 @@ class CubAnnotationStore:
         return out
 
 
+class MedicalAnnotationStore:
+    def __init__(self, annotation_dir: str, valid_concepts: Sequence[str], threshold: float) -> None:
+        self.annotation_dir = Path(annotation_dir)
+        if not self.annotation_dir.is_dir():
+            raise FileNotFoundError(f"Medical annotation directory not found: {self.annotation_dir}")
+        self.valid_concepts = {self._key(concept): concept for concept in valid_concepts}
+        self.threshold = float(threshold)
+        self.cache: Dict[int, Dict[str, List[List[float]]]] = {}
+
+    @staticmethod
+    def _key(label: str) -> str:
+        return " ".join(str(label).lower().replace("_", " ").split())
+
+    def get(self, idx: int) -> Dict[str, List[List[float]]]:
+        cached = self.cache.get(int(idx))
+        if cached is not None:
+            return cached
+        path = self.annotation_dir / f"{int(idx)}.json"
+        out: Dict[str, List[List[float]]] = {}
+        if path.exists():
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rows = payload[1:] if isinstance(payload, list) else payload.get("concepts", [])
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                score = float(row.get("logit", row.get("score", 0.0)))
+                if score < self.threshold:
+                    continue
+                concept = self.valid_concepts.get(self._key(str(row.get("label", row.get("name", "")))))
+                if concept is None:
+                    continue
+                box = row.get("box")
+                if isinstance(box, list) and len(box) == 4:
+                    out.setdefault(concept, []).append([float(v) for v in box])
+        self.cache[int(idx)] = out
+        return out
+
+
 class ImageNetValDataset(Dataset):
     def __init__(
         self,
@@ -450,6 +511,59 @@ class ImageNetValDataset(Dataset):
 def imagenet_collate(batch):
     images, annotations, image_sizes, names = zip(*batch)
     return list(images), list(annotations), list(image_sizes), list(names)
+
+
+class MedicalIndexedDataset(Dataset):
+    def __init__(self, base_dataset) -> None:
+        self.base_dataset = base_dataset
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int):
+        item = self.base_dataset[idx]
+        if hasattr(self.base_dataset, "get_image_size"):
+            width, height = self.base_dataset.get_image_size(idx)
+        else:
+            image_path = item.get("image_path")
+            with Image.open(image_path) as image:
+                width, height = image.size
+        return item["image"], int(idx), int(width), int(height)
+
+
+def medical_collate_indexed(batch):
+    images = torch.stack([row[0] for row in batch], dim=0)
+    indices = torch.tensor([row[1] for row in batch], dtype=torch.long)
+    widths = torch.tensor([row[2] for row in batch], dtype=torch.long)
+    heights = torch.tensor([row[3] for row in batch], dtype=torch.long)
+    return images, indices, widths, heights
+
+
+def rasterize_transformed_box_union(
+    boxes: Sequence[Sequence[float]],
+    image_size: Tuple[int, int],
+    map_h: int,
+    map_w: int,
+    *,
+    input_size: int,
+    resize_size: int,
+    transform: str = "resize_center_crop",
+) -> np.ndarray:
+    mask = np.zeros((map_h, map_w), dtype=np.bool_)
+    for box in boxes:
+        box_mask = rasterize_box_target(
+            box,
+            image_size=image_size,
+            target_mode="soft_box",
+            mask_h=map_h,
+            mask_w=map_w,
+            transform=transform,
+            input_size=input_size,
+            resize_size=resize_size,
+        )
+        if box_mask is not None:
+            mask |= box_mask > 0
+    return mask
 
 
 def eval_cub(args: argparse.Namespace, thresholds: Sequence[float], keys: Sequence[str], box_iou_thresholds: Sequence[float]) -> Dict[str, Any]:
@@ -707,16 +821,148 @@ def eval_imagenet(args: argparse.Namespace, thresholds: Sequence[float], keys: S
     return finalize(state, keys, box_iou_thresholds)
 
 
+def eval_chexpert(args: argparse.Namespace, thresholds: Sequence[float], keys: Sequence[str], box_iou_thresholds: Sequence[float]) -> Dict[str, Any]:
+    from gcbm.medical_annotations import load_concepts as load_medical_concepts
+    from gcbm.medical_data import get_medical_transforms, load_chexpert_dataset, medical_labels
+    from gcbm.train_medical import MedicalBackbone, build_head, normalize_model_name
+
+    run_dir = Path(args.gcbm_path).resolve()
+    config_path = run_dir / "config.json"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Medical SG-CBM config not found: {config_path}")
+    cfg_payload = json.loads(config_path.read_text(encoding="utf-8"))
+    model_name = normalize_model_name(cfg_payload.get("model_name", "sgcbm"))
+    if model_name != "sgcbm":
+        raise SystemExit("CheXpert localization requires an SG-CBM run with spatial_maps.")
+    concept_path = run_dir / "concepts.txt"
+    concepts = load_medical_concepts(concept_path)
+    concept_to_idx = {concept: idx for idx, concept in enumerate(concepts)}
+
+    data_dir = Path(args.data_dir or cfg_payload.get("data_dir", "")).resolve()
+    if not data_dir.exists():
+        raise FileNotFoundError(f"CheXpert data_dir not found: {data_dir}")
+    csv_path = Path(args.csv_path or cfg_payload.get("val_csv") or data_dir / "valid.csv")
+    if not csv_path.is_absolute():
+        csv_path = (ROOT / csv_path).resolve()
+        if not csv_path.exists():
+            csv_path = Path(args.csv_path or cfg_payload.get("val_csv") or data_dir / "valid.csv").resolve()
+    img_root = Path(args.img_root or cfg_payload.get("img_root") or data_dir).resolve()
+    label_subset = str(cfg_payload.get("label_subset", "all"))
+    labels = medical_labels("chexpert", competition=label_subset == "competition", pathology=label_subset == "pathology")
+    input_size = int(args.input_size or cfg_payload.get("img_size", 224))
+    resize_size = int(args.resize_size or cfg_payload.get("resize_size", input_size + 32))
+    uncertain_strategy = args.uncertain_strategy or str(cfg_payload.get("uncertain_strategy", "ones"))
+    frontal_only = bool(cfg_payload.get("frontal_only", True)) if args.frontal_only is None else bool(args.frontal_only)
+    dataset = load_chexpert_dataset(
+        csv_path,
+        img_root=img_root,
+        labels=labels,
+        transform=get_medical_transforms(input_size, train=False),
+        uncertain_strategy=uncertain_strategy,
+        frontal_only=frontal_only,
+    )
+    loader = DataLoader(
+        MedicalIndexedDataset(dataset),
+        batch_size=int(args.batch_size),
+        shuffle=False,
+        num_workers=int(args.num_workers),
+        pin_memory=bool(args.pin_memory),
+        collate_fn=medical_collate_indexed,
+        **(
+            {"prefetch_factor": int(args.prefetch_factor), "persistent_workers": bool(args.persistent_workers)}
+            if int(args.num_workers) > 0
+            else {}
+        ),
+    )
+
+    model_args = argparse.Namespace(**cfg_payload)
+    model_args.device = args.device
+    backbone = MedicalBackbone(
+        str(cfg_payload.get("backbone", "densenet121")),
+        pretrained=bool(cfg_payload.get("pretrained", True)) and not cfg_payload.get("backbone_ckpt", ""),
+        checkpoint=str(cfg_payload.get("backbone_ckpt", "")),
+    ).to(args.device)
+    head = build_head(backbone, len(concepts), model_args).to(args.device)
+    state_path = run_dir / "concept_head_best.pt"
+    if not state_path.exists():
+        state_path = run_dir / "concept_head_final.pt"
+    head.load_state_dict(torch.load(state_path, map_location=args.device))
+    backbone.eval()
+    head.eval()
+
+    annotation_store = MedicalAnnotationStore(args.annotation_dir, concepts, float(args.annotation_threshold))
+    state = init_state(keys, box_iou_thresholds)
+    start = time.perf_counter()
+    next_log = max(int(args.log_every), 1)
+    with torch.no_grad():
+        for images, indices, widths, heights in loader:
+            if int(args.max_images) > 0 and state["images_seen"] >= int(args.max_images):
+                break
+            if int(args.max_images) > 0 and state["images_seen"] + images.shape[0] > int(args.max_images):
+                keep = int(args.max_images) - state["images_seen"]
+                images, indices, widths, heights = images[:keep], indices[:keep], widths[:keep], heights[:keep]
+            outputs = head(backbone(images.to(args.device, non_blocking=True)))
+            if "spatial_maps" not in outputs:
+                raise RuntimeError("Medical localization requires SG-CBM outputs with spatial_maps.")
+            raw_maps_full = outputs["spatial_maps"].float()
+            score_maps_full = normalize_batched_spatial_maps(raw_maps_full, args.map_normalization).cpu()
+            raw_maps_full_cpu = raw_maps_full.detach().cpu()
+            map_h, map_w = int(score_maps_full.shape[-2]), int(score_maps_full.shape[-1])
+            for batch_idx, image_idx in enumerate(indices.tolist()):
+                gt_boxes = annotation_store.get(int(image_idx))
+                concept_indices: List[int] = []
+                gt_masks: List[np.ndarray] = []
+                image_size = (int(widths[batch_idx].item()), int(heights[batch_idx].item()))
+                for concept, boxes in gt_boxes.items():
+                    concept_idx = concept_to_idx.get(concept)
+                    if concept_idx is None:
+                        continue
+                    mask = rasterize_transformed_box_union(
+                        boxes,
+                        image_size=image_size,
+                        map_h=map_h,
+                        map_w=map_w,
+                        input_size=input_size,
+                        resize_size=resize_size,
+                    )
+                    if mask.any():
+                        concept_indices.append(int(concept_idx))
+                        gt_masks.append(mask)
+                if concept_indices:
+                    state["images_with_targets"] += 1
+                    idx_t = torch.as_tensor(concept_indices, dtype=torch.long)
+                    update_metrics(
+                        state,
+                        score_maps_full[batch_idx].index_select(0, idx_t).numpy(),
+                        raw_maps_full_cpu[batch_idx].index_select(0, idx_t).numpy(),
+                        np.stack(gt_masks, axis=0),
+                        thresholds,
+                        keys,
+                        "mean" if args.threshold_mode == "mean" else args.threshold_mode,
+                        box_iou_thresholds,
+                    )
+            state["images_seen"] += int(images.shape[0])
+            if args.log_every > 0 and state["images_seen"] >= next_log:
+                elapsed = time.perf_counter() - start
+                print(f"[gdino-loc:chexpert] n={state['images_seen']} ips={state['images_seen']/max(elapsed,1e-6):.2f}", flush=True)
+                while next_log <= state["images_seen"]:
+                    next_log += max(int(args.log_every), 1)
+    return finalize(state, keys, box_iou_thresholds)
+
+
 def main() -> None:
     args = parse_args()
     thresholds = [0.0] if args.threshold_mode == "mean" or str(args.activation_thresholds).strip().lower() in {"mean", "meanthr"} else parse_float_list(args.activation_thresholds)
     box_iou_thresholds = parse_float_list(args.box_iou_thresholds)
     keys = threshold_keys(args, thresholds)
-    metrics = (
-        eval_cub(args, thresholds, keys, box_iou_thresholds)
-        if args.dataset == "cub"
-        else eval_imagenet(args, thresholds, keys, box_iou_thresholds)
-    )
+    if args.dataset == "cub":
+        metrics = eval_cub(args, thresholds, keys, box_iou_thresholds)
+    elif args.dataset == "imagenet":
+        metrics = eval_imagenet(args, thresholds, keys, box_iou_thresholds)
+    elif args.dataset == "chexpert":
+        metrics = eval_chexpert(args, thresholds, keys, box_iou_thresholds)
+    else:
+        raise SystemExit(f"Unsupported dataset: {args.dataset}")
     payload = {
         "dataset": args.dataset,
         "gcbm_path": str(Path(args.gcbm_path).resolve()),
