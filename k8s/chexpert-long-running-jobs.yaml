@@ -87,6 +87,7 @@ spec:
         - |
           set -euo pipefail
           export PYTHONUNBUFFERED=1
+          export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
           export PYTHONPATH=/workspace/GroundedCBM-MedicalCBM-dev:${PYTHONPATH:-}
           cd /workspace/GroundedCBM-MedicalCBM-dev
           LOG_DIR=/workspace/logs
