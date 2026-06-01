@@ -39,12 +39,12 @@ spec:
             --concept_set concept_files/chexpert_queries_520.txt \
             --concept_file concept_files/chexpert_queries_520.txt \
             --lf_clip_name cxrclip_swint_mcc \
-            --save_dir /workspace/chexpert_full_runs/lf_queries520_cxrclip_a100_job \
+            --save_dir /workspace/chexpert_full_runs/lf_queries520_cxrclip_a100_workers0_job \
             --lf_batch_size 64 \
             --proj_batch_size 512 \
             --proj_steps 20000 \
             --saga_batch_size 512 \
-            --num_workers 8 \
+            --num_workers 0 \
             --device cuda
         resources:
           requests:
