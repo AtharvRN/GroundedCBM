@@ -23,7 +23,7 @@ clip_cutoff: 0.25
 spatial_source: prompt_grid
 grid_h: 7
 grid_w: 7
-prompt_radius: 3
+prompt_radius: 6
 spatial_batch_size: 8
 prompt_batch_size: 256
 cbl_type: mlp

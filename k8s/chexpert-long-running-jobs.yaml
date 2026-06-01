@@ -107,6 +107,7 @@ spec:
             --lf_batch_size 64 \
             --spatial_batch_size 32 \
             --prompt_batch_size 512 \
+            --prompt_radius 6 \
             --cbl_batch_size 128 \
             --saga_batch_size 512 \
             --num_workers 8 \
