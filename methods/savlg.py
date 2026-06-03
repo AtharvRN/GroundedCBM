@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
 from tqdm import tqdm
 
 from data import utils as data_utils
@@ -615,6 +615,30 @@ class TargetStoreSpatialSupervisionDataset(Dataset):
             item["mask_targets"],
             target,
         )
+
+
+class BlockShuffleSampler(Sampler[int]):
+    """Shuffle dataset blocks while preserving mostly sequential reads inside each block."""
+
+    def __init__(self, data_source: Dataset, block_size: int, seed: int = 0):
+        self.data_source = data_source
+        self.block_size = max(1, int(block_size))
+        self.seed = int(seed)
+        self.epoch = 0
+
+    def __len__(self) -> int:
+        return len(self.data_source)
+
+    def __iter__(self):
+        n_items = len(self.data_source)
+        blocks = list(range(0, n_items, self.block_size))
+        generator = torch.Generator().manual_seed(self.seed + self.epoch)
+        order = torch.randperm(len(blocks), generator=generator).tolist()
+        self.epoch += 1
+        for block_idx in order:
+            start = blocks[block_idx]
+            stop = min(start + self.block_size, n_items)
+            yield from range(start, stop)
 
 
 class OnTheFlySpatialSupervisionDataset(Dataset):
@@ -1865,9 +1889,28 @@ def train_savlg_cbm(args):
     }
     if int(args.num_workers) > 0:
         supervision_loader_kwargs["persistent_workers"] = True
+        supervision_loader_kwargs["prefetch_factor"] = max(
+            1,
+            int(getattr(args, "dataloader_prefetch_factor", 2) or 2),
+        )
+    block_shuffle_size = int(getattr(args, "savlg_block_shuffle_size", 0) or 0)
+    train_sampler = None
+    train_shuffle = True
+    if use_precomputed_target_store and block_shuffle_size > 0:
+        train_sampler = BlockShuffleSampler(
+            train_supervision_ds,
+            block_size=block_shuffle_size,
+            seed=int(getattr(args, "seed", 0)),
+        )
+        train_shuffle = False
+        logger.info(
+            "Using block-shuffle sampler for streamed SG-CBM target store: block_size={}",
+            block_shuffle_size,
+        )
     train_supervision_loader = DataLoader(
         train_supervision_ds,
-        shuffle=True,
+        shuffle=train_shuffle,
+        sampler=train_sampler,
         **supervision_loader_kwargs,
     )
     val_supervision_loader = DataLoader(

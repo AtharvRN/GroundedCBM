@@ -1,6 +1,6 @@
 # CheXpert Results Tracker
 
-Last updated: 2026-05-31.
+Last updated: 2026-06-03.
 
 This file tracks CheXpert integration, annotation/cache status, completed quantitative results, and in-progress runs. Metrics are multilabel unless otherwise noted: mean AUROC and mAP/mean AP are the primary metrics.
 
@@ -13,43 +13,54 @@ This section is the first place to update when a new concept set or NEC sweep fi
 | Concept set | Method / source | Train split | Concept threshold | Final layer / sweep | Best reported point | Mean AUROC | mAP | Status |
 | --- | --- | --- | ---: | --- | --- | ---: | ---: | --- |
 | queries520 | Integrated VLG-CBM | Full CheXpert | 0.50 | Natural GLM-SAGA lambda path | NEC@50 | 0.7964 | 0.5572 | Complete |
+| queries520 | Integrated LF-CBM, CXR-CLIP cut0 | Full CheXpert | N/A | Natural GLM-SAGA lambda path | NEC@50 | 0.8099 | 0.5004 | Complete |
 | queries520 | Integrated VLG-CBM | Full CheXpert | 0.50 | One GLM-SAGA solution, post-hoc NEC truncation | NEC@30 | 0.7731 | 0.5582 | Complete |
 | queries520 | Integrated VLG-CBM | Full CheXpert | 0.70 | One GLM-SAGA solution, post-hoc NEC truncation | NEC@30 | 0.7673 | 0.5134 | Complete |
 | queries520 | Old Medical_CBM LF-CBM | Full CheXpert | 0.25 cutoff in old LF setup | Upstream sparse/NEC | NEC@30 | 0.7930 | 0.5393 | Reference only |
 | queries520 | Old Medical_CBM LF-CBM | 25k CheXpert | 0.25 cutoff in old LF setup | Upstream sparse/NEC | NEC@30 | 0.8087 | 0.5056 | Reference only |
+| gpt225 | Integrated VLG-CBM | Full CheXpert | 0.70 | Natural GLM-SAGA lambda path | NEC@10 | 0.8371 | 0.5496 | Complete |
 | gpt225 | Integrated VLG-CBM | Full CheXpert | 0.70 | One GLM-SAGA solution, post-hoc NEC truncation | Dense/SAGA final | 0.8167 | 0.5430 | Complete |
+| gpt225 | Integrated LF-CBM, CXR-CLIP cut0 | Full CheXpert | N/A | Natural GLM-SAGA lambda path | NEC@50 | 0.8097 | 0.4995 | Complete |
 
 ### AUROC By NEC
 
 | Concept set / run | NEC@5 | NEC@10 | NEC@15 | NEC@20 | NEC@25 | NEC@30 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | queries520, integrated VLG, thr0.50 | 0.7947 | 0.7961 | 0.7952 | 0.7943 | 0.7951 | 0.7962 | Natural GLM-SAGA lambda path |
+| queries520, integrated LF-CBM, CXR-CLIP cut0 | 0.6963 | 0.7451 | 0.7796 | 0.7933 | 0.7989 | 0.8025 | Natural GLM-SAGA lambda path from LF concept cache |
 | queries520, integrated VLG, thr0.50 | 0.6190 | 0.6248 | 0.6295 | 0.6975 | 0.7504 | 0.7731 | One SAGA solution, post-hoc truncation |
 | queries520, integrated VLG, thr0.70 | 0.6067 | 0.6610 | 0.6372 | 0.6697 | 0.7253 | 0.7673 | One SAGA solution, post-hoc truncation |
 | queries520, old Medical_CBM LF full | TBD | TBD | TBD | TBD | TBD | 0.7930 | Only NEC@30 currently recorded |
 | queries520, old Medical_CBM LF 25k | TBD | TBD | TBD | TBD | TBD | 0.8087 | Only NEC@30 currently recorded |
+| gpt225, integrated VLG, thr0.70 | 0.7922 | 0.8371 | 0.8350 | 0.8305 | 0.8274 | 0.8228 | Natural GLM-SAGA lambda path |
 | gpt225, integrated VLG, thr0.70 | 0.5972 | 0.6696 | 0.7368 | 0.7115 | 0.7466 | 0.7819 | One SAGA solution, post-hoc truncation |
+| gpt225, integrated LF-CBM, CXR-CLIP cut0 | 0.6927 | 0.7414 | 0.7750 | 0.7882 | 0.7961 | 0.8016 | Natural GLM-SAGA lambda path from LF concept cache |
 
 ### mAP By NEC
 
 | Concept set / run | NEC@5 | NEC@10 | NEC@15 | NEC@20 | NEC@25 | NEC@30 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | queries520, integrated VLG, thr0.50 | 0.5364 | 0.5519 | 0.5508 | 0.5511 | 0.5557 | 0.5603 | Natural GLM-SAGA lambda path |
+| queries520, integrated LF-CBM, CXR-CLIP cut0 | 0.3870 | 0.4304 | 0.4571 | 0.4753 | 0.4838 | 0.4891 | Natural GLM-SAGA lambda path from LF concept cache |
 | queries520, integrated VLG, thr0.50 | 0.3788 | 0.4475 | 0.4505 | 0.4902 | 0.5414 | 0.5582 | One SAGA solution, post-hoc truncation |
 | queries520, integrated VLG, thr0.70 | 0.3535 | 0.4157 | 0.4118 | 0.4387 | 0.4651 | 0.5134 | One SAGA solution, post-hoc truncation |
 | queries520, old Medical_CBM LF full | TBD | TBD | TBD | TBD | TBD | 0.5393 | Only NEC@30 currently recorded |
 | queries520, old Medical_CBM LF 25k | TBD | TBD | TBD | TBD | TBD | 0.5056 | Only NEC@30 currently recorded |
+| gpt225, integrated VLG, thr0.70 | 0.5409 | 0.5496 | 0.5470 | 0.5465 | 0.5467 | 0.5479 | Natural GLM-SAGA lambda path |
 | gpt225, integrated VLG, thr0.70 | 0.3320 | 0.3934 | 0.4499 | 0.4490 | 0.4714 | 0.5116 | One SAGA solution, post-hoc truncation |
+| gpt225, integrated LF-CBM, CXR-CLIP cut0 | 0.3795 | 0.4288 | 0.4550 | 0.4702 | 0.4796 | 0.4874 | Natural GLM-SAGA lambda path from LF concept cache |
 
 ### Dense / Untruncated Final-Layer Comparison
 
 | Concept set | Method / source | Train split | Concept threshold | Mean AUROC | mAP | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | queries520 | Integrated VLG-CBM | Full CheXpert | 0.50 | 0.7388 | 0.4810 | Sparse/SAGA final layer before NEC truncation; `5358/7280` nnz |
+| queries520 | Integrated LF-CBM, CXR-CLIP cut0 | Full CheXpert | N/A | 0.7688 | 0.4507 | Dense/saved LF final-layer validation metric before separate GLM/NEC sweep |
 | queries520 | Integrated VLG-CBM | Full CheXpert | 0.70 | 0.7339 | 0.4922 | Sparse/SAGA final layer |
 | queries520 | Old Medical_CBM LF-CBM | Full CheXpert | 0.25 cutoff in old LF setup | 0.7471 | 0.4965 | Reference only |
 | queries520 | Old Medical_CBM LF-CBM | 25k CheXpert | 0.25 cutoff in old LF setup | 0.8176 | 0.5301 | Reference only, not directly comparable to full-data runs |
 | gpt225 | Integrated VLG-CBM | Full CheXpert | 0.70 | 0.8167 | 0.5430 | Sparse/SAGA final layer before NEC truncation; filtered `225 -> 223` |
+| gpt225 | Integrated LF-CBM, CXR-CLIP cut0 | Full CheXpert | N/A | 0.7851 | 0.4730 | Dense/saved LF final-layer validation metric before separate GLM/NEC sweep |
 
 Notes:
 - `TBD` means we do not yet have an artifact/log for that exact NEC value.
@@ -166,6 +177,93 @@ NEC metrics:
 
 Note: for `--use_saga`, `val_metrics.json` is the sparse/SAGA final-layer metric, not dense final-layer accuracy.
 
+### Natural GLM/NEC Lambda Sweep, gpt225, threshold 0.70
+
+| Field | Value |
+| --- | --- |
+| Source run | `chexpert_vlg_gpt225_thr070_full_simplegpu_20260531T032423Z` |
+| Output dir | `/workspace/chexpert_full_runs/chexpert_vlg_gpt225_thr070_full_simplegpu_20260531T032423Z/medical_glm_nec_natural_lamauto_eps0005_k50_it80_20260603T023008Z` |
+| Log | `/workspace/logs/medical_glm_nec_vlg_gpt225_natural_lamauto_eps0005_k50_it80_20260603T023008Z.log` |
+| Selection | Natural GLM-SAGA sparse path first; truncation only as fallback |
+| Runtime | `508.4` seconds |
+
+Preferred NEC metrics from naturally sparse GLM path:
+
+| NEC | nnz | Mean AUROC | mAP |
+| ---: | ---: | ---: | ---: |
+| 5 | 72 | 0.7922 | 0.5409 |
+| 10 | 138 | 0.8371 | 0.5496 |
+| 15 | 217 | 0.8350 | 0.5470 |
+| 20 | 290 | 0.8305 | 0.5465 |
+| 25 | 355 | 0.8274 | 0.5467 |
+| 30 | 411 | 0.8228 | 0.5479 |
+| 40 | 538 | 0.8156 | 0.5442 |
+| 50 | 620 | 0.8144 | 0.5426 |
+
+### Integrated GroundedCBM LF-CBM, queries520, CXR-CLIP cut0
+
+| Field | Value |
+| --- | --- |
+| Run dir | `/workspace/chexpert_full_runs/lf_queries520_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_50_00` |
+| Training log | `/workspace/logs/chexpert_lf_queries520_cut000_workers8_20260601T184941Z.log` |
+| Concept set | queries520 |
+| Alignment model | CXR-CLIP, `cxrclip_swint_mcc` |
+| Clip cutoff | `0.0` |
+| Backbone | CheXpert-pretrained DenseNet121 |
+| Val mean AUROC | `0.7688` |
+| Val mAP | `0.4507` |
+| Test mean AUROC | `0.7666` |
+| Test mAP | `0.4928` |
+| Concept cache train | `/workspace/chexpert_full_runs/lf_queries520_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_50_00/concept_cache_train.pt` |
+| Concept cache valid | `/workspace/chexpert_full_runs/lf_queries520_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_50_00/concept_cache_valid.pt` |
+| GLM/NEC output | `/workspace/chexpert_full_runs/lf_queries520_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_50_00/medical_glm_nec_lf_lamauto_eps0005_k50_it80` |
+| GLM runtime | `263.5` seconds |
+
+Preferred NEC metrics from naturally sparse GLM path:
+
+| NEC | nnz | Mean AUROC | mAP |
+| ---: | ---: | ---: | ---: |
+| 5 | 69 | 0.6963 | 0.3870 |
+| 10 | 135 | 0.7451 | 0.4304 |
+| 15 | 211 | 0.7796 | 0.4571 |
+| 20 | 285 | 0.7933 | 0.4753 |
+| 25 | 351 | 0.7989 | 0.4838 |
+| 30 | 434 | 0.8025 | 0.4891 |
+| 40 | 558 | 0.8077 | 0.4968 |
+| 50 | 636 | 0.8099 | 0.5004 |
+
+### Integrated GroundedCBM LF-CBM, gpt225, CXR-CLIP cut0
+
+| Field | Value |
+| --- | --- |
+| Run dir | `/workspace/chexpert_full_runs/lf_gpt225_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_49_59` |
+| Training log | `/workspace/logs/chexpert_lf_gpt225_cut000_workers8_20260601T184940Z.log` |
+| Concept set | gpt225 |
+| Alignment model | CXR-CLIP, `cxrclip_swint_mcc` |
+| Clip cutoff | `0.0` |
+| Backbone | CheXpert-pretrained DenseNet121 |
+| Val mean AUROC | `0.7851` |
+| Val mAP | `0.4730` |
+| Test mean AUROC | `0.7871` |
+| Test mAP | `0.5200` |
+| Concept cache train | `/workspace/chexpert_full_runs/lf_gpt225_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_49_59/concept_cache_train.pt` |
+| Concept cache valid | `/workspace/chexpert_full_runs/lf_gpt225_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_49_59/concept_cache_valid.pt` |
+| GLM/NEC output | `/workspace/chexpert_full_runs/lf_gpt225_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_49_59/medical_glm_nec_lf_lamauto_eps0005_k50_it80` |
+| GLM runtime | `293.9` seconds |
+
+Preferred NEC metrics from naturally sparse GLM path:
+
+| NEC | nnz | Mean AUROC | mAP |
+| ---: | ---: | ---: | ---: |
+| 5 | 70 | 0.6927 | 0.3795 |
+| 10 | 134 | 0.7414 | 0.4288 |
+| 15 | 215 | 0.7750 | 0.4550 |
+| 20 | 276 | 0.7882 | 0.4702 |
+| 25 | 348 | 0.7961 | 0.4796 |
+| 30 | 408 | 0.8016 | 0.4874 |
+| 40 | 566 | 0.8097 | 0.4995 |
+| 50 | 566 | 0.8097 | 0.4995 |
+
 ## Reference Medical_CBM Results
 
 These are old-reference Medical_CBM LF-CBM results, useful as baselines but not produced by the current unified GroundedCBM entrypoint.
@@ -212,88 +310,53 @@ Validation run dirs observed earlier:
 - `/workspace/validation_runs/lf_cbm_chexpert_2026_05_29_03_07_31`
 - `/workspace/validation_runs/salf_cbm_chexpert_2026_05_29_03_09_12`
 
-## In Progress
+## Current Status And Pending Runs
 
-### VLG-CBM gpt225 Full CheXpert Training
+Snapshot time: 2026-06-03.
 
-| Field | Value |
-| --- | --- |
-| Pod | `simple-gpu-test` |
-| PID | `1515` |
-| GPU | `1` |
-| Run | `chexpert_vlg_gpt225_thr070_full_simplegpu_20260531T032423Z` |
-| Log | `/workspace/logs/chexpert_vlg_gpt225_thr070_full_simplegpu_20260531T032423Z.log` |
-| Status at last check | Complete; early stopped at epoch `8` |
-| Val mean AUROC | `0.8167` |
-| Val mAP | `0.5430` |
+### Running / Queued
 
-NEC metrics from post-hoc truncation of the learned final layer:
+| Job / pod | Status | Purpose | Notes |
+| --- | --- | --- | --- |
+| `chexpert-salf-queries520-cut000-from-cache-r4` | Running | SALF-CBM queries520 cut0 | CBL/SAGA completed; final evaluation was running at last check |
+| `chexpert-salf-gpt225-cut000-ulimit-r2` | Running | SALF-CBM gpt225 cut0 | Prompt-grid cache generation was about 75% complete at last check |
+| `simple-gpu-test` | Running | Interactive A10 pod | Used to complete VLG-CBM gpt225 natural GLM/NEC sweep |
 
-| NEC | nnz | Mean AUROC | mAP |
-| ---: | ---: | ---: | ---: |
-| 5 | 70 | 0.5972 | 0.3320 |
-| 10 | 140 | 0.6696 | 0.3934 |
-| 15 | 210 | 0.7368 | 0.4499 |
-| 20 | 280 | 0.7115 | 0.4490 |
-| 25 | 350 | 0.7466 | 0.4714 |
-| 30 | 420 | 0.7819 | 0.5116 |
+### Completed
 
-### SGCBM queries520 Full CheXpert Training
+| Run | Status | Result artifact |
+| --- | --- | --- |
+| VLG-CBM queries520 threshold 0.50 | Complete | `/workspace/chexpert_full_runs/chexpert_vlg_queries520_thr050_freq001_095_simplegpu_20260530T020815Z` |
+| VLG-CBM queries520 threshold 0.50 natural GLM/NEC | Complete | `/workspace/chexpert_full_runs/chexpert_vlg_queries520_thr050_freq001_095_simplegpu_20260530T020815Z/medical_glm_nec_natural_lamauto_eps0005_k50_it80_20260531T033124Z` |
+| VLG-CBM queries520 threshold 0.70 | Complete | `/workspace/sgcbm_medical_runs/chexpert_vlg_queries520_nec_from_cbl_cached_a100_resume_20260528T072102Z` |
+| VLG-CBM gpt225 threshold 0.70 | Complete | `/workspace/logs/chexpert_vlg_gpt225_thr070_full_simplegpu_20260531T032423Z.log` |
+| VLG-CBM gpt225 threshold 0.70 natural GLM/NEC | Complete | `/workspace/chexpert_full_runs/chexpert_vlg_gpt225_thr070_full_simplegpu_20260531T032423Z/medical_glm_nec_natural_lamauto_eps0005_k50_it80_20260603T023008Z/glm_nec_sweep_metrics.json` |
+| LF-CBM queries520 CXR-CLIP cut0 | Complete | `/workspace/chexpert_full_runs/lf_queries520_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_50_00` |
+| LF-CBM queries520 CXR-CLIP cut0 GLM/NEC | Complete | `/workspace/chexpert_full_runs/lf_queries520_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_50_00/medical_glm_nec_lf_lamauto_eps0005_k50_it80/glm_nec_sweep_metrics.json` |
+| LF-CBM gpt225 CXR-CLIP cut0 | Complete | `/workspace/chexpert_full_runs/lf_gpt225_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_49_59` |
+| LF-CBM gpt225 CXR-CLIP cut0 GLM/NEC | Complete | `/workspace/chexpert_full_runs/lf_gpt225_cxrclip_cut000_workers8_job/lf_cbm_chexpert_2026_06_01_18_49_59/medical_glm_nec_lf_lamauto_eps0005_k50_it80/glm_nec_sweep_metrics.json` |
+| SGCBM queries520 threshold 0.50 train + GLM/NEC | Complete | `/workspace/chexpert_full_runs/sgcbm_queries520_conv45_thr050_a100_memmap_r5_tuned_job/savlg_cbm_chexpert_2026_06_02_02_38_32/medical_glm_nec_sg_lamauto_eps002_k24_it60_a100/glm_nec_sweep_metrics.json` |
+| SGCBM gpt225 threshold 0.70 train + GLM/NEC | Complete | `/workspace/chexpert_full_runs/sgcbm_gpt225_thr070_a100_memmap_r2_tuned_job/savlg_cbm_chexpert_2026_06_02_08_03_59/medical_glm_nec_sg_lamauto_eps002_k24_it60_a100/glm_nec_sweep_metrics.json` |
+| queries520 SG target precompute | Complete | `/workspace/CHEX_CBM/precomputed_targets/chexpert_queries520_thr050_softbox_mh14_mw14` |
+| gpt225 annotations and threshold 0.70 presence caches | Complete | `/workspace/CHEX_CBM/annotations_gpt225_train_full`, `/workspace/CHEX_CBM/annotations_gpt225_valid_full` |
 
-| Field | Value |
-| --- | --- |
-| Pod | `a100-gpu-test-v2` |
-| PID | `1306` |
-| GPU | `0` |
-| Run dir | `/workspace/chexpert_full_runs/savlg_cbm_chexpert_2026_05_31_03_41_13` |
-| Log | `/workspace/logs/chexpert_sgcbm_queries520_thr050_stream_a100v2_20260531T034054Z.log` |
-| Status at last check | CBL epoch 1, `1401 / 1493` batches, about `94%`; no metrics yet |
-| Runtime note | Uses on-the-fly spatial supervision; current bottleneck is dataloader JSON/PIL throughput |
+### Failed / Superseded
 
-### SALF-CBM queries520 Full CheXpert Training
+| Job | Status | Action |
+| --- | --- | --- |
+| `chexpert-salf-queries520-cut000-from-cache` | Failed with `Too many open files` during concept extraction | Superseded by `chexpert-salf-queries520-cut000-ulimit-r2` |
+| `chexpert-salf-queries520-cut025-from-cache` | Failed | Superseded; cutoff 0.0 is the current SALF setting |
+| `chexpert-salf-queries520-train-from-shards` | Failed | Superseded by from-cache relaunch |
+| `chexpert-sgcbm-gpt225-glm-nec-sweep` | OOMKilled during cache extraction | Needs relaunch as high-memory job or reuse compatible cache if produced later |
+| `chexpert-sgcbm-queries520-conv45-full` / `r2` | Failed | Superseded by `r3` |
+| `chexpert-lf-queries520-full` / `chexpert-lf-gpt225-full` | Failed older LF attempts | Superseded by completed `cut000-workers8` jobs |
+| `chexpert-gpt225-annotations-train-full` | Failed old monolithic annotation job | Superseded by completed sharded annotation jobs |
 
-| Field | Value |
-| --- | --- |
-| Pod | `simple-gpu-test` |
-| PID | `2701` |
-| GPU | `0` |
-| Run dir | `/workspace/chexpert_full_runs/salf_cbm_chexpert_2026_05_31_03_56_13` |
-| Log | `/workspace/logs/chexpert_salf_queries520_cxrclip_recompute_full_simplegpu_20260531T035608Z.log` |
-| Alignment model | CXR-CLIP, `cxrclip_swint_mcc` |
-| Status at last check | Computing SALF prompt-grid similarities for train, `2301 / 23879` batches, about `10%`; no metrics yet |
-| Runtime note | Relaunched with `recompute_spatial_sims: true` because a stale smoke-test cache had length `9` instead of full train length `191027` |
+### Needs To Run
 
-### LF-CBM gpt225 Full CheXpert Training
-
-| Field | Value |
-| --- | --- |
-| Pod | `atharv-gpu` |
-| PID | `1333` |
-| GPU | `0` |
-| Run dir | `/workspace/chexpert_full_runs/lf_cbm_chexpert_2026_05_31_04_01_53` |
-| Log | `/workspace/logs/chexpert_lf_gpt225_cxrclip_full_atharvgpu_20260531T040144Z.log` |
-| Concept set | gpt225 |
-| Alignment model | CXR-CLIP, `cxrclip_swint_mcc` |
-| Status at last check | Failed at `937 / 10746` LF feature batches with PyTorch `Too many open files`; no metrics |
-
-### SGCBM gpt225 Full CheXpert Training
-
-| Field | Value |
-| --- | --- |
-| Pod | `atharv-gpu` |
-| PID | `1334` |
-| GPU | `1` |
-| Run dir | `/workspace/chexpert_full_runs/savlg_cbm_chexpert_2026_05_31_04_01_54` |
-| Log | `/workspace/logs/chexpert_sgcbm_gpt225_thr070_stream_atharvgpu_20260531T040144Z.log` |
-| Concept set | gpt225 |
-| Concept threshold | `0.70` |
-| Status at last check | CBL epoch 6, `615 / 2985` batches, about `21%` of epoch 6; no metrics yet |
-| Runtime note | Uses streamed spatial supervision from `/workspace/CHEX_CBM/gpt225_root` to avoid materializing a full mask cache |
-
-## Next Results To Add
-
-- Completed GLM/NEC lambda-sweep table for queries520 threshold-0.50.
-- First full gpt225 VLG-CBM run using:
-  - `/workspace/CHEX_CBM/annotations_gpt225_train_full/presence_cache_191027_225_thr070.pt`
-  - `/workspace/CHEX_CBM/annotations_gpt225_valid_full/presence_cache_202_225_thr070.pt`
-- Full-scale LF-CBM, SALF-CBM, and SGCBM CheXpert results from the unified entrypoint.
+| Priority | Run | Why |
+| ---: | --- | --- |
+| 1 | SALF-CBM queries520 cut0 evaluation completion | Training reached final eval; wait for final metrics and then run GLM/NEC sweep |
+| 2 | SALF-CBM gpt225 cut0 full run | Prompt-grid cache generation is still running; needed for both concept-set comparison |
+| 3 | GLM/NEC sweeps for completed SALF runs | Run after SALF model metrics complete |
+| 4 | Results cleanup | Delete or archive stale failed jobs once artifacts are no longer needed |

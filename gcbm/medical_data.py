@@ -187,7 +187,8 @@ class MedicalCsvDataset(Dataset):
 
     def __getitem__(self, index: int) -> Dict[str, object]:
         path = self.image_path(index)
-        image = Image.open(path).convert("RGB")
+        with Image.open(path) as raw_image:
+            image = raw_image.convert("RGB")
         image_tensor = self.transform(image) if self.transform is not None else image
         return {
             "image": image_tensor,

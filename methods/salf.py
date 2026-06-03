@@ -370,6 +370,18 @@ class SpatialBackbone(nn.Module):
             )
             if backbone_name == "densenet121":
                 self.dense_features = target_model.features.to(device).float().eval()
+                self.dense_conv0 = self.dense_features.conv0
+                self.dense_norm0 = self.dense_features.norm0
+                self.dense_relu0 = self.dense_features.relu0
+                self.dense_pool0 = self.dense_features.pool0
+                self.dense_block1 = self.dense_features.denseblock1
+                self.dense_transition1 = self.dense_features.transition1
+                self.dense_block2 = self.dense_features.denseblock2
+                self.dense_transition2 = self.dense_features.transition2
+                self.dense_block3 = self.dense_features.denseblock3
+                self.dense_transition3 = self.dense_features.transition3
+                self.dense_block4 = self.dense_features.denseblock4
+                self.dense_norm5 = self.dense_features.norm5
             elif hasattr(target_model, "features"):
                 feature_children = list(target_model.features.children())
                 self.res_init = feature_children[0].to(device).float().eval()
@@ -387,7 +399,10 @@ class SpatialBackbone(nn.Module):
                 self.res_layer3 = target_model.layer3.to(device).float().eval()
                 self.res_layer4 = target_model.layer4.to(device).float().eval()
             if backbone_name == "densenet121":
-                self.stage_dims = {"conv5": 1024}
+                self.stage_dims = {
+                    "conv4": 1024,
+                    "conv5": 1024,
+                }
             elif backbone_name == "resnet18_cub":
                 self.stage_dims = {
                     "conv3": 128,
@@ -459,13 +474,31 @@ class SpatialBackbone(nn.Module):
         stage_names: Iterable[str],
     ) -> dict[str, torch.Tensor]:
         requested = set(stage_names)
-        if requested != {"conv5"}:
+        missing = requested.difference(self.stage_dims)
+        if missing:
             raise ValueError(
-                f"Unsupported densenet121 stage request(s): {sorted(requested)}. Expected ['conv5']."
+                f"Unsupported densenet121 stage request(s): {sorted(missing)}. Expected subset of {sorted(self.stage_dims)}."
             )
         x = x.to(self.device)
-        conv5 = F.relu(self.dense_features(x), inplace=False).float()
-        return {"conv5": conv5}
+        x = self.dense_conv0(x)
+        x = self.dense_norm0(x)
+        x = self.dense_relu0(x)
+        x = self.dense_pool0(x)
+        x = self.dense_block1(x)
+        x = self.dense_transition1(x)
+        x = self.dense_block2(x)
+        x = self.dense_transition2(x)
+        conv4 = self.dense_block3(x)
+
+        outputs: dict[str, torch.Tensor] = {}
+        if "conv4" in requested:
+            outputs["conv4"] = F.relu(conv4, inplace=False).float()
+        if "conv5" in requested:
+            x = self.dense_transition3(conv4)
+            x = self.dense_block4(x)
+            conv5 = F.relu(self.dense_norm5(x), inplace=False).float()
+            outputs["conv5"] = conv5
+        return outputs
 
     def forward_multistage(
         self,
@@ -999,6 +1032,20 @@ def extract_global_concepts(
     return torch.cat(concept_features, dim=0), torch.cat(labels, dim=0)
 
 
+def _salf_post_cbl_loader(args, dataset: Dataset, *, desc: str) -> DataLoader:
+    num_workers = int(getattr(args, "salf_extract_num_workers", 0) or 0)
+    if num_workers > 0:
+        logger.info("{} using {} dataloader workers", desc, num_workers)
+    else:
+        logger.info("{} using single-process dataloader", desc)
+    return DataLoader(
+        dataset,
+        batch_size=args.cbl_batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
+
+
 def evaluate_salf_split(
     args,
     backbone: SpatialBackbone,
@@ -1009,12 +1056,7 @@ def evaluate_salf_split(
     dataset: Dataset,
     task,
 ) -> dict:
-    loader = DataLoader(
-        dataset,
-        batch_size=args.cbl_batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-    )
+    loader = _salf_post_cbl_loader(args, dataset, desc="SALF eval")
     logits_chunks = []
     target_chunks = []
     with torch.no_grad():
@@ -1116,8 +1158,14 @@ def train_salf_cbm(args):
         args, backbone, concept_layer, train_loader, P_train, val_loader, P_val
     )
 
-    train_concepts, train_labels = extract_global_concepts(args, backbone, concept_layer, train_loader)
-    val_concepts, val_labels = extract_global_concepts(args, backbone, concept_layer, val_loader)
+    train_extract_loader = _salf_post_cbl_loader(args, train_dataset, desc="SALF train concept extraction")
+    val_extract_loader = _salf_post_cbl_loader(args, val_dataset, desc="SALF val concept extraction")
+    train_concepts, train_labels = extract_global_concepts(
+        args, backbone, concept_layer, train_extract_loader
+    )
+    val_concepts, val_labels = extract_global_concepts(
+        args, backbone, concept_layer, val_extract_loader
+    )
 
     train_mean = train_concepts.mean(dim=0, keepdim=True)
     train_std = torch.clamp(train_concepts.std(dim=0, keepdim=True), min=1e-6)

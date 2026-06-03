@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import random
+import resource
 import sys
 
 from gcbm.config import (
@@ -18,6 +19,30 @@ IMAGENET_MODEL_ALIASES = {"sgcbm", "sg-cbm", "gcbm", "g-cbm", "savlg", "savlg-cb
 IMAGENET_VLG_ALIASES = {"vlg", "vlg-cbm", "vlg_cbm"}
 MEDICAL_DATASETS = {"chexpert", "mimic"}
 MODEL_CHOICES = ("vlg_cbm", "lf_cbm", "salf_cbm", "savlg_cbm", "sgcbm", "sg_cbm")
+
+
+def _configure_torch_multiprocessing(logger=None) -> None:
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        target = min(max(soft, 65535), hard)
+        if target > soft:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            if logger is not None:
+                logger.info(f"Raised open-file descriptor limit from {soft} to {target}")
+    except Exception as exc:
+        if logger is not None:
+            logger.warning(f"Could not raise open-file descriptor limit: {exc}")
+
+    try:
+        import torch.multiprocessing as mp
+
+        if mp.get_sharing_strategy() != "file_system":
+            mp.set_sharing_strategy("file_system")
+            if logger is not None:
+                logger.info("Set torch multiprocessing sharing strategy to file_system")
+    except Exception as exc:
+        if logger is not None:
+            logger.warning(f"Could not set torch multiprocessing sharing strategy: {exc}")
 
 
 def _run_imagenet_training(argv: list[str], config=None) -> None:
@@ -474,6 +499,7 @@ def main():
     parser.add_argument("--load_dir", type=str, default=None, help="Optional existing CBL checkpoint directory.")
     parser.add_argument("--device", type=str, default="cuda", help="Torch device.")
     parser.add_argument("--num_workers", type=int, default=8, help="DataLoader worker count.")
+    parser.add_argument("--dataloader_prefetch_factor", type=int, default=2, help="DataLoader prefetch factor when num_workers > 0.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--max_train_images", type=int, default=0, help="If >0, limit training images for quick checks.")
     parser.add_argument("--max_val_images", type=int, default=0, help="If >0, limit validation images for medical VLG quick checks.")
@@ -496,6 +522,7 @@ def main():
     parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True, help="Use torchvision pretrained weights if no checkpoint is supplied.")
     parser.add_argument("--threshold", type=float, default=0.5, help="Probability threshold for multilabel metrics.")
     parser.add_argument("--val_split", type=float, default=0.1, help="Train/val split ratio for generic methods.")
+    parser.add_argument("--lf_original_protocol", action="store_true", help="Use full train split plus official validation split for LF-style medical runs.")
     parser.add_argument("--img_size", type=int, default=224, help="Medical image crop size.")
     parser.add_argument("--resize_size", type=int, default=256, help="Medical resize size before crop.")
     parser.add_argument("--cbl_batch_size", type=int, default=32, help="Concept-layer batch size.")
@@ -539,6 +566,7 @@ def main():
     parser.add_argument("--savlg_target_mode", type=str, default="soft_box", choices=["hard_iou", "soft_box"], help="SG-CBM spatial target rasterization.")
     parser.add_argument("--savlg_concept_filter_mode", type=str, default="spatial_threshold", choices=["spatial_threshold", "vlg_global"], help="SAVLG concept filtering mode.")
     parser.add_argument("--savlg_stream_supervision", action="store_true", help="Stream SAVLG supervision from annotation JSONs.")
+    parser.add_argument("--savlg_block_shuffle_size", type=int, default=0, help="For streamed SG-CBM target stores, shuffle contiguous sample blocks instead of fully random samples. Use values like 2048-8192 to reduce network-memmap seeks.")
     parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
     parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
     parser.add_argument("--dense_lr", type=float, default=1e-3, help="Dense final-layer learning rate.")
@@ -558,6 +586,7 @@ def main():
     parser.add_argument("--prompt_radius", type=int, default=3, help="SALF prompt-grid radius.")
     parser.add_argument("--spatial_batch_size", type=int, default=128, help="SALF spatial similarity batch size.")
     parser.add_argument("--spatial_num_workers", type=int, default=8, help="SALF spatial similarity worker count.")
+    parser.add_argument("--salf_extract_num_workers", type=int, default=0, help="SALF post-CBL concept extraction/eval worker count. Default 0 avoids PyTorch worker file descriptor exhaustion on large medical runs.")
     parser.add_argument("--spatial_source", type=str, default="prompt_grid", help="Spatial supervision source for SALF.")
     parser.add_argument("--activation_dir", type=str, default="saved_activations", help="Directory for cached activations and spatial supervision.")
     parser.add_argument("--savlg_branch_arch", type=str, default="dual", help="SGCBM branch architecture.")
@@ -632,6 +661,7 @@ def main():
         savlg_pooling="avg",
         savlg_residual_spatial_pooling="lse",
         savlg_stream_supervision=False,
+        savlg_block_shuffle_size=0,
         savlg_target_transform="original",
         savlg_topk_fraction=0.2,
         skip_concept_filter=False,
@@ -670,6 +700,8 @@ def main():
     from gcbm.clip_utils import resolve_lf_clip_name
     from gcbm.task_utils import is_medical_dataset
     from methods.registry import get_train_handler
+
+    _configure_torch_multiprocessing(logger)
 
     args.model_name = _normalize_model_name(args.model_name)
     if getattr(args, "concept_file", "") and (
