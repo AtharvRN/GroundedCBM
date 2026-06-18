@@ -531,6 +531,93 @@ class ConceptCorrRefinerCBL(nn.Module):
         return model
 
 
+class CombinedRefinerCBL(nn.Module):
+    """Linear CBL with both a feature-space residual and a concept-space correction.
+
+    Main path: standard linear projection (identical to linear baseline).
+    Feature-space branch: x → ReLU(feat_down) → feat_up → gated correction.
+      Captures non-linear feature combinations the linear layer misses.
+    Concept-space branch: z → ReLU(corr_down) → corr_up → gated correction.
+      Captures concept co-occurrence; boosts under-activated correlated concepts.
+    Both gates are per-concept scalars biased to -4 (≈ 0.018) at init.
+
+    At init: both corrections = 0, output = linear(x).
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        hidden_dim: int = 64,
+        corr_rank: int = 16,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.out_features = out_features
+        self.hidden_dim = hidden_dim
+        self.corr_rank = corr_rank
+
+        self.linear = nn.Linear(in_features, out_features, bias=True)
+
+        # feature-space residual branch
+        self.feat_down = nn.Linear(in_features, hidden_dim, bias=True)
+        self.feat_up = nn.Linear(hidden_dim, out_features, bias=False)
+        self.gate_feat = nn.Parameter(torch.full((out_features,), -4.0))
+
+        # concept-space correction branch
+        self.corr_down = nn.Linear(out_features, corr_rank, bias=True)
+        self.corr_up = nn.Linear(corr_rank, out_features, bias=False)
+        self.gate_conc = nn.Parameter(torch.full((out_features,), -4.0))
+
+        nn.init.normal_(self.feat_down.weight, std=0.01)
+        nn.init.zeros_(self.feat_down.bias)
+        nn.init.zeros_(self.feat_up.weight)
+        nn.init.normal_(self.corr_down.weight, std=0.01)
+        nn.init.zeros_(self.corr_down.bias)
+        nn.init.zeros_(self.corr_up.weight)
+
+        self.to(device)
+        logger.info(
+            "CombinedRefinerCBL: in={} concepts={} hidden_dim={} corr_rank={}",
+            in_features,
+            out_features,
+            hidden_dim,
+            corr_rank,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.linear(x)
+        h_feat = torch.relu(self.feat_down(x))
+        feat_corr = self.feat_up(h_feat)
+        h_conc = torch.relu(self.corr_down(z))
+        conc_corr = self.corr_up(h_conc)
+        gate_feat = torch.sigmoid(self.gate_feat)
+        gate_conc = torch.sigmoid(self.gate_conc)
+        return z + gate_feat * feat_corr + gate_conc * conc_corr
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt")) as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        hidden_dim = int(args.get("cbl_residual_hidden_dim", 64))
+        corr_rank = int(args.get("cbl_corr_rank", 16))
+        model = cls(encoder_dim, num_concepts, hidden_dim=hidden_dim, corr_rank=corr_rank, device=device)
+        model.load_state_dict(
+            torch.load(os.path.join(load_path, "cbl.pt"), map_location=device)
+        )
+        return model
+
+
 class NormalizationLayer(nn.Module):
     def __init__(self, mean: torch.Tensor, std: torch.Tensor, device: str = "cuda"):
         super().__init__()

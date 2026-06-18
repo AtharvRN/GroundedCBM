@@ -26,6 +26,7 @@ from methods.savlg import (
 from model.cbm import (
     Backbone,
     BackboneCLIP,
+    CombinedRefinerCBL,
     ConceptCorrRefinerCBL,
     ConceptLayer,
     CosineSimilarityConceptLayer,
@@ -434,6 +435,8 @@ def extract_vlg_nec_features(
         cbl = InputGatedRefinerCBL.from_pretrained(load_dir, args.device)
     elif getattr(args, "cbl_type", "linear") == "concept_corr_refiner":
         cbl = ConceptCorrRefinerCBL.from_pretrained(load_dir, args.device)
+    elif getattr(args, "cbl_type", "linear") == "combined_refiner":
+        cbl = CombinedRefinerCBL.from_pretrained(load_dir, args.device)
     else:
         cbl = ConceptLayer.from_pretrained(load_dir, args.device)
     train_cbl_loader = get_concept_dataloader(
