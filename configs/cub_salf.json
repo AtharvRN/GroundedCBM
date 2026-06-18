@@ -1,0 +1,19 @@
+{
+  "model_name": "salf_cbm",
+  "dataset": "cub",
+  "concept_set": "concept_files/cub_filtered.txt",
+  "backbone": "resnet18_cub",
+  "feature_layer": "features.final_pool",
+  "lf_clip_name": "clip_RN50",
+  "save_dir": "artifacts/cub",
+  "device": "cuda",
+  "num_workers": 10,
+  "grid_h": 7,
+  "grid_w": 7,
+  "spatial_source": "prompt_grid",
+  "cbl_epochs": 10,
+  "cbl_batch_size": 32,
+  "saga_lam": 0.0002,
+  "saga_n_iters": 4000,
+  "seed": 6885
+}

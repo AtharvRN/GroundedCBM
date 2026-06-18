@@ -1,0 +1,17 @@
+torch
+torchvision
+matplotlib
+tqdm
+pandas==2.3.3
+numpy==1.26.4
+mmengine==0.10.7
+mmcv-lite==2.2.0
+mmpretrain==1.2.0
+tensorboard
+loguru
+pytorchcv
+opencv-python==4.11.0.86
+scikit-learn
+torcheval
+ftfy
+regex
