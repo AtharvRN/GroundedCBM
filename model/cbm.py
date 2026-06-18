@@ -324,6 +324,74 @@ class CosineSimilarityConceptLayer(nn.Module):
         return model
 
 
+class LinearResidualRefinerCBL(nn.Module):
+    """Linear CBL with a small gated residual refinement branch.
+
+    Main path: standard linear projection (identical to linear baseline).
+    Residual branch: in → ReLU(hidden) → out, initialized at zero.
+    Gate: learned per-concept scalar sigmoid, biased toward closed (-4 → ≈ 0.018).
+
+    At init: output ≈ linear(x) so the baseline is fully preserved.
+    Training: gate and residual may open to correct hard concepts.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        hidden_dim: int = 64,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.out_features = out_features
+        self.hidden_dim = hidden_dim
+
+        self.linear = nn.Linear(in_features, out_features, bias=True)
+        self.res_down = nn.Linear(in_features, hidden_dim, bias=True)
+        self.res_up = nn.Linear(hidden_dim, out_features, bias=False)
+        self.gate_bias = nn.Parameter(torch.full((out_features,), -4.0))
+
+        nn.init.normal_(self.res_down.weight, std=0.01)
+        nn.init.zeros_(self.res_down.bias)
+        nn.init.zeros_(self.res_up.weight)
+
+        self.to(device)
+        logger.info(
+            "LinearResidualRefinerCBL: in={} out={} hidden_dim={}",
+            in_features,
+            out_features,
+            hidden_dim,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        linear_out = self.linear(x)
+        h = torch.relu(self.res_down(x))
+        correction = self.res_up(h)
+        gate = torch.sigmoid(self.gate_bias)
+        return linear_out + gate * correction
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt")) as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        hidden_dim = int(args.get("cbl_residual_hidden_dim", 64))
+        model = cls(encoder_dim, num_concepts, hidden_dim=hidden_dim, device=device)
+        model.load_state_dict(
+            torch.load(os.path.join(load_path, "cbl.pt"), map_location=device)
+        )
+        return model
+
+
 class NormalizationLayer(nn.Module):
     def __init__(self, mean: torch.Tensor, std: torch.Tensor, device: str = "cuda"):
         super().__init__()

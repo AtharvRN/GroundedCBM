@@ -28,6 +28,7 @@ from model.cbm import (
     BackboneCLIP,
     ConceptLayer,
     CosineSimilarityConceptLayer,
+    LinearResidualRefinerCBL,
     NormalizationLayer,
     load_cbm,
 )
@@ -425,6 +426,8 @@ def extract_vlg_nec_features(
         backbone.backbone.load_state_dict(ckpt)
     if getattr(args, "cbl_type", "linear") == "cosine_sim":
         cbl = CosineSimilarityConceptLayer.from_pretrained(load_dir, args.device)
+    elif getattr(args, "cbl_type", "linear") == "linear_residual_refiner":
+        cbl = LinearResidualRefinerCBL.from_pretrained(load_dir, args.device)
     else:
         cbl = ConceptLayer.from_pretrained(load_dir, args.device)
     train_cbl_loader = get_concept_dataloader(
