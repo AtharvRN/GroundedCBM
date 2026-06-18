@@ -462,6 +462,75 @@ class InputGatedRefinerCBL(nn.Module):
         return model
 
 
+class ConceptCorrRefinerCBL(nn.Module):
+    """Linear CBL with a low-rank concept-space correction.
+
+    Main path: standard linear projection (identical to linear baseline).
+    Concept correlation path: z → ReLU(rank-dim) → correction in concept space.
+    Captures attribute co-occurrence: if linear misses one correlated concept,
+    the correction learns to boost it from co-activated sibling concepts.
+    Gate: learned per-concept scalar sigmoid, biased toward closed (-4 → ≈ 0.018).
+
+    At init: corr_up.weight = 0 → correction = 0 → output = linear(x).
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        corr_rank: int = 16,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.out_features = out_features
+        self.corr_rank = corr_rank
+
+        self.linear = nn.Linear(in_features, out_features, bias=True)
+        self.corr_down = nn.Linear(out_features, corr_rank, bias=True)
+        self.corr_up = nn.Linear(corr_rank, out_features, bias=False)
+        self.gate_bias = nn.Parameter(torch.full((out_features,), -4.0))
+
+        nn.init.normal_(self.corr_down.weight, std=0.01)
+        nn.init.zeros_(self.corr_down.bias)
+        nn.init.zeros_(self.corr_up.weight)
+
+        self.to(device)
+        logger.info(
+            "ConceptCorrRefinerCBL: in={} concepts={} rank={}",
+            in_features,
+            out_features,
+            corr_rank,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.linear(x)
+        h = torch.relu(self.corr_down(z))
+        correction = self.corr_up(h)
+        gate = torch.sigmoid(self.gate_bias)
+        return z + gate * correction
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt")) as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        corr_rank = int(args.get("cbl_corr_rank", 16))
+        model = cls(encoder_dim, num_concepts, corr_rank=corr_rank, device=device)
+        model.load_state_dict(
+            torch.load(os.path.join(load_path, "cbl.pt"), map_location=device)
+        )
+        return model
+
+
 class NormalizationLayer(nn.Module):
     def __init__(self, mean: torch.Tensor, std: torch.Tensor, device: str = "cuda"):
         super().__init__()
