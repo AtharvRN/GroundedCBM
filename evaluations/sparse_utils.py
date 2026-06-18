@@ -28,6 +28,7 @@ from model.cbm import (
     BackboneCLIP,
     ConceptLayer,
     CosineSimilarityConceptLayer,
+    InputGatedRefinerCBL,
     LinearResidualRefinerCBL,
     NormalizationLayer,
     load_cbm,
@@ -428,6 +429,8 @@ def extract_vlg_nec_features(
         cbl = CosineSimilarityConceptLayer.from_pretrained(load_dir, args.device)
     elif getattr(args, "cbl_type", "linear") == "linear_residual_refiner":
         cbl = LinearResidualRefinerCBL.from_pretrained(load_dir, args.device)
+    elif getattr(args, "cbl_type", "linear") == "input_gated_refiner":
+        cbl = InputGatedRefinerCBL.from_pretrained(load_dir, args.device)
     else:
         cbl = ConceptLayer.from_pretrained(load_dir, args.device)
     train_cbl_loader = get_concept_dataloader(

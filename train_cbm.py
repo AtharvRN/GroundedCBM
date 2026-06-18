@@ -71,6 +71,7 @@ def train_cbm_and_save(args):
         BackboneCLIP,
         ConceptLayer,
         CosineSimilarityConceptLayer,
+        InputGatedRefinerCBL,
         LinearResidualRefinerCBL,
         FinalLayer,
         per_class_accuracy,
@@ -273,6 +274,13 @@ def train_cbm_and_save(args):
                 hidden_dim=int(getattr(args, "cbl_residual_hidden_dim", 64)),
                 device=args.device,
             )
+        elif _cbl_type == "input_gated_refiner":
+            cbl = InputGatedRefinerCBL(
+                backbone.output_dim,
+                len(concepts),
+                hidden_dim=int(getattr(args, "cbl_residual_hidden_dim", 64)),
+                device=args.device,
+            )
         else:
             cbl = ConceptLayer(
                 backbone.output_dim,
@@ -324,6 +332,8 @@ def train_cbm_and_save(args):
             cbl = CosineSimilarityConceptLayer.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "linear_residual_refiner":
             cbl = LinearResidualRefinerCBL.from_pretrained(args.load_dir, args.device)
+        elif _saved_args.get("cbl_type") == "input_gated_refiner":
+            cbl = InputGatedRefinerCBL.from_pretrained(args.load_dir, args.device)
         else:
             cbl = ConceptLayer.from_pretrained(args.load_dir, args.device)
         if args.backbone.startswith("clip_"):
