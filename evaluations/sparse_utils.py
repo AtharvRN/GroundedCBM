@@ -27,6 +27,7 @@ from model.cbm import (
     Backbone,
     BackboneCLIP,
     ConceptLayer,
+    CosineSimilarityConceptLayer,
     NormalizationLayer,
     load_cbm,
 )
@@ -422,7 +423,10 @@ def extract_vlg_nec_features(
     if os.path.exists(os.path.join(load_dir, "backbone.pt")):
         ckpt = torch.load(os.path.join(load_dir, "backbone.pt"))
         backbone.backbone.load_state_dict(ckpt)
-    cbl = ConceptLayer.from_pretrained(load_dir, args.device)
+    if getattr(args, "cbl_type", "linear") == "cosine_sim":
+        cbl = CosineSimilarityConceptLayer.from_pretrained(load_dir, args.device)
+    else:
+        cbl = ConceptLayer.from_pretrained(load_dir, args.device)
     train_cbl_loader = get_concept_dataloader(
         args.dataset,
         "train",

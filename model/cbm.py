@@ -1,10 +1,12 @@
 import json
+import math
 import os
 import sys
 from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.utils
 from loguru import logger
 from torch.optim.lr_scheduler import ExponentialLR
@@ -263,6 +265,61 @@ class ConceptLayer(nn.Module):
 
         # create model
         model = cls(encoder_dim, num_concepts, num_hidden=num_hidden, device=device)
+        model.load_state_dict(torch.load(os.path.join(load_path, "cbl.pt")))
+        return model
+
+
+class CosineSimilarityConceptLayer(nn.Module):
+    """Concept bottleneck via cosine similarity between L2-normalized features and prototypes.
+
+    Each concept c has a prototype p_c. The logit is:
+        logit_c = exp(log_tau) * cos(x, p_c)
+    where both x and p_c are L2-normalized before the dot product. A learned
+    log-temperature is initialized to log(tau) so the logit scale is similar to
+    the linear baseline.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        tau: float = 20.0,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.prototypes = nn.Parameter(torch.empty(out_features, in_features))
+        nn.init.xavier_uniform_(self.prototypes)
+        self.log_tau = nn.Parameter(torch.tensor(math.log(float(tau))))
+        self.out_features = out_features
+        self.to(device)
+        logger.info(
+            "CosineSimilarityConceptLayer: in={} out={} tau_init={:.2f}",
+            in_features,
+            out_features,
+            tau,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_n = F.normalize(x.float(), dim=-1)
+        p_n = F.normalize(self.prototypes.float(), dim=-1)
+        return self.log_tau.exp() * F.linear(x_n, p_n)
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt"), "r") as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        tau = float(args.get("cbl_tau", 20.0))
+        model = cls(encoder_dim, num_concepts, tau=tau, device=device)
         model.load_state_dict(torch.load(os.path.join(load_path, "cbl.pt")))
         return model
 

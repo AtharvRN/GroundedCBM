@@ -70,6 +70,7 @@ def train_cbm_and_save(args):
         Backbone,
         BackboneCLIP,
         ConceptLayer,
+        CosineSimilarityConceptLayer,
         FinalLayer,
         per_class_accuracy,
         test_model,
@@ -256,12 +257,21 @@ def train_cbm_and_save(args):
 
     if args.load_dir is None:
         logger.info("Training CBL")
-        cbl = ConceptLayer(
-            backbone.output_dim,
-            len(concepts),
-            num_hidden=args.cbl_hidden_layers,
-            device=args.device,
-        )
+        _cbl_type = getattr(args, "cbl_type", "linear")
+        if _cbl_type == "cosine_sim":
+            cbl = CosineSimilarityConceptLayer(
+                backbone.output_dim,
+                len(concepts),
+                tau=float(getattr(args, "cbl_tau", 20.0)),
+                device=args.device,
+            )
+        else:
+            cbl = ConceptLayer(
+                backbone.output_dim,
+                len(concepts),
+                num_hidden=args.cbl_hidden_layers,
+                device=args.device,
+            )
         cached_val_embeddings = None
         cached_val_concepts = None
         use_activation_cache = args.use_activation_cache and not args.cbl_finetune
@@ -300,7 +310,12 @@ def train_cbm_and_save(args):
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
-        cbl = ConceptLayer.from_pretrained(args.load_dir, args.device)
+        with open(os.path.join(args.load_dir, "args.txt")) as _f:
+            _saved_args = json.load(_f)
+        if _saved_args.get("cbl_type") == "cosine_sim":
+            cbl = CosineSimilarityConceptLayer.from_pretrained(args.load_dir, args.device)
+        else:
+            cbl = ConceptLayer.from_pretrained(args.load_dir, args.device)
         if args.backbone.startswith("clip_"):
             raise NotImplementedError(
                 "Loading backbone from pretrained model is not supported yet"
@@ -487,6 +502,7 @@ def main():
         cbl_finetune=False,
         cbl_hidden_dim=0,
         cbl_loss_type="bce",
+        cbl_tau=20.0,
         cbl_min_delta=1e-3,
         cbl_min_epochs=15,
         cbl_hidden_layers=1,
