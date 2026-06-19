@@ -71,6 +71,7 @@ def train_cbm_and_save(args):
         BackboneCLIP,
         CombinedRefinerCBL,
         ConceptCorrRefinerCBL,
+        ConceptCorrLinearRefinerCBL,
         ConceptCorrGatedRefinerCBL,
         ConceptCorrCenteredRefinerCBL,
         ConceptLayer,
@@ -292,6 +293,13 @@ def train_cbm_and_save(args):
                 corr_rank=int(getattr(args, "cbl_corr_rank", 16)),
                 device=args.device,
             )
+        elif _cbl_type == "concept_corr_linear_refiner":
+            cbl = ConceptCorrLinearRefinerCBL(
+                backbone.output_dim,
+                len(concepts),
+                corr_rank=int(getattr(args, "cbl_corr_rank", 16)),
+                device=args.device,
+            )
         elif _cbl_type == "concept_corr_gated_refiner":
             cbl = ConceptCorrGatedRefinerCBL(
                 backbone.output_dim,
@@ -357,6 +365,8 @@ def train_cbm_and_save(args):
             min_delta=args.cbl_min_delta,
             min_epochs=args.cbl_min_epochs,
             corr_up_ortho_coef=getattr(args, "cbl_corr_ortho_coef", 0.0),
+            aux_class_coef=getattr(args, "cbl_aux_class_coef", 0.0),
+            n_classes=len(classes),
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
@@ -370,6 +380,8 @@ def train_cbm_and_save(args):
             cbl = InputGatedRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_corr_refiner":
             cbl = ConceptCorrRefinerCBL.from_pretrained(args.load_dir, args.device)
+        elif _saved_args.get("cbl_type") == "concept_corr_linear_refiner":
+            cbl = ConceptCorrLinearRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_corr_gated_refiner":
             cbl = ConceptCorrGatedRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_corr_centered_refiner":
@@ -560,6 +572,7 @@ def main():
         cbl_auto_weight=False,
         cbl_bb_lr_rate=1.0,
         cbl_corr_ortho_coef=0.0,
+        cbl_aux_class_coef=0.0,
         cbl_confidence_threshold=0.15,
         cbl_early_stop_patience=8,
         cbl_finetune=False,

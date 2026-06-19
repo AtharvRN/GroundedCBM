@@ -239,6 +239,7 @@ class ConceptLayer(nn.Module):
 
         self.model = nn.Sequential(*model).to(device)
         self.out_features = out_features
+        self.n_concepts = out_features
         logger.info(self.model)
 
     def forward(self, x):
@@ -483,6 +484,7 @@ class ConceptCorrRefinerCBL(nn.Module):
     ):
         super().__init__()
         self.out_features = out_features
+        self.n_concepts = out_features
         self.corr_rank = corr_rank
 
         self.linear = nn.Linear(in_features, out_features, bias=True)
@@ -1047,6 +1049,8 @@ def train_cbl(
     min_delta: float = 0.0,
     min_epochs: int = 0,
     corr_up_ortho_coef: float = 0.0,
+    aux_class_coef: float = 0.0,
+    n_classes: int = 0,
 ):
     # setup optimizer
     base_optimizer_cls = None
@@ -1061,6 +1065,24 @@ def train_cbl(
     optimizer = base_optimizer_cls(cbl.parameters(), **optimizer_kwargs)
     if finetune:
         optimizer.add_param_group({"params": backbone.parameters(), "lr": backbone_lr})
+
+    # optional training-only auxiliary class head for class-conditional supervision
+    aux_head = None
+    aux_ce = None
+    if aux_class_coef > 0.0 and n_classes > 0:
+        n_concepts_for_aux = getattr(cbl, "n_concepts", getattr(cbl, "out_features", None))
+        if n_concepts_for_aux is None:
+            logger.warning("aux_class_coef>0 but cbl has no n_concepts/out_features attr; skipping aux head")
+        else:
+            aux_head = nn.Linear(n_concepts_for_aux, n_classes).to(device)
+            nn.init.xavier_uniform_(aux_head.weight)
+            nn.init.zeros_(aux_head.bias)
+            optimizer.add_param_group({"params": aux_head.parameters(), "lr": lr})
+            aux_ce = nn.CrossEntropyLoss()
+            logger.info(
+                "AuxClassHead: training-only class head {} -> {} (coef={})",
+                n_concepts_for_aux, n_classes, aux_class_coef,
+            )
 
     # setup schedular
     if scheduler == "cosine":
@@ -1079,9 +1101,10 @@ def train_cbl(
 
         logger.info(f"Running CBL training for Epoch: {epoch}")
         its = tqdm(total=len(train_loader), position=0, leave=True)
-        for batch_idx, (features, concept_one_hot, _) in enumerate(train_loader):
+        for batch_idx, (features, concept_one_hot, class_labels) in enumerate(train_loader):
             features = features.to(device)  # (batch_size, feature_dim)
             concept_one_hot = concept_one_hot.to(device)  # (batch_size, n_concepts)
+            class_labels = class_labels.to(device)  # (batch_size,) class indices
 
             def compute_batch_loss():
                 if finetune:
@@ -1091,7 +1114,11 @@ def train_cbl(
                     with torch.no_grad():
                         embeddings = backbone(features)
                 concept_logits = cbl(embeddings)
-                return loss_fn(concept_logits, concept_one_hot)
+                bce_loss = loss_fn(concept_logits, concept_one_hot)
+                if aux_head is not None:
+                    aux_loss = aux_ce(aux_head(concept_logits), class_labels)
+                    return bce_loss + aux_class_coef * aux_loss
+                return bce_loss
 
             batch_loss = compute_batch_loss()
             if corr_up_ortho_coef > 0 and hasattr(cbl, "corr_up"):
