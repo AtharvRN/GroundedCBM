@@ -85,10 +85,13 @@ def train_cbm_and_save(args):
         train_dense_final,
         train_sparse_final,
         apply_and_save_pca_whitening,
+        apply_and_save_fisher_scaling,
         load_pca_whitening,
         apply_pca_whitening,
+        FisherScalingLayer,
         WhiteningLayer,
         test_model_whitened,
+        test_model_fisher_scaled,
     )
 
     # Setup log directory and logger
@@ -440,6 +443,18 @@ def train_cbm_and_save(args):
         saga_n_concepts = whitening_K
         logger.info(f"PCA whitening applied: {len(concepts)} → {whitening_K} components")
 
+    # Optionally apply Fisher feature scaling before SAGA
+    if getattr(args, "cbl_fisher_scale", False):
+        fisher_alpha = float(getattr(args, "cbl_fisher_alpha", 0.5))
+        train_concept_loader, val_concept_loader = apply_and_save_fisher_scaling(
+            train_concept_loader,
+            val_concept_loader,
+            alpha=fisher_alpha,
+            save_dir=save_dir,
+            device=args.device,
+        )
+        logger.info(f"Fisher feature scaling applied: alpha={fisher_alpha}")
+
     # Make linear model
     final_layer = FinalLayer(saga_n_concepts, len(classes), device=args.device)
 
@@ -475,6 +490,7 @@ def train_cbm_and_save(args):
     ##############################################
     # Build whitening layer for test eval if whitening was applied
     whitening_layer = WhiteningLayer.from_pretrained(save_dir, device=args.device) if getattr(args, "cbl_feature_whitening", False) else None
+    fisher_layer = FisherScalingLayer.from_pretrained(save_dir, device=args.device) if getattr(args, "cbl_fisher_scale", False) else None
 
     if getattr(args, "skip_test_eval", False):
         test_accuracy = None
@@ -483,6 +499,10 @@ def train_cbm_and_save(args):
         if whitening_layer is not None:
             test_accuracy = test_model_whitened(
                 test_cbl_loader, backbone, cbl, normalization_layer, whitening_layer, final_layer, args.device
+            )
+        elif fisher_layer is not None:
+            test_accuracy = test_model_fisher_scaled(
+                test_cbl_loader, backbone, cbl, normalization_layer, fisher_layer, final_layer, args.device
             )
         else:
             test_accuracy = test_model(
@@ -497,6 +517,8 @@ def train_cbm_and_save(args):
         out_dict = {}
         if whitening_layer is not None:
             eval_pipeline = nn.Sequential(backbone, cbl, normalization_layer, whitening_layer, final_layer).to(args.device)
+        elif fisher_layer is not None:
+            eval_pipeline = nn.Sequential(backbone, cbl, normalization_layer, fisher_layer, final_layer).to(args.device)
         else:
             eval_pipeline = nn.Sequential(backbone, cbl, normalization_layer, final_layer).to(args.device)
         out_dict["per_class_accuracies"] = per_class_accuracy(
@@ -597,12 +619,16 @@ def main():
     parser.add_argument("--cbl_label_smoothing", type=float, default=0.0, help="Label smoothing epsilon for CBL BCE loss (0=off, 0.1=typical).")
     parser.add_argument("--cbl_feature_whitening", action="store_true", help="Apply PCA whitening to concept features before SAGA (decorrelates concepts).")
     parser.add_argument("--cbl_whitening_components", type=int, default=203, help="Number of PCA components to keep for whitening (default: 203, ~top-S>1.0 components).")
+    parser.add_argument("--cbl_fisher_scale", action="store_true", help="Apply Fisher feature scaling before SAGA: multiply concept c by sqrt(1+alpha*Fisher_c).")
+    parser.add_argument("--cbl_fisher_alpha", type=float, default=0.5, help="Fisher scaling strength alpha (default: 0.5).")
     parser.set_defaults(
         activation_dir="saved_activations",
         activation_cache_dir=None,
         allones_concept=False,
         cbl_auto_weight=False,
         cbl_bb_lr_rate=1.0,
+        cbl_fisher_scale=False,
+        cbl_fisher_alpha=0.5,
         cbl_corr_ortho_coef=0.0,
         cbl_aux_class_coef=0.0,
         cbl_confidence_threshold=0.15,

@@ -35,6 +35,7 @@ from model.cbm import (
     CosineSimilarityConceptLayer,
     InputGatedRefinerCBL,
     LinearResidualRefinerCBL,
+    FisherScalingLayer,
     NormalizationLayer,
     WhiteningLayer,
     load_cbm,
@@ -503,12 +504,15 @@ def extract_vlg_nec_features(
     )
     normalization = NormalizationLayer.from_pretrained(load_dir, args.device)
     whitening = WhiteningLayer.from_pretrained(load_dir, args.device)
+    fisher_scaling = FisherScalingLayer.from_pretrained(load_dir, args.device)
 
     def forward_vlg_concepts(images):
         images = images.to(args.device)
         feats = normalization(cbl(backbone(images)))
         if whitening is not None:
             feats = whitening(feats)
+        if fisher_scaling is not None:
+            feats = fisher_scaling(feats)
         return feats
 
     test_concept_features, concept_labels, _ = extract_labeled_feature_tensors(
@@ -521,6 +525,10 @@ def extract_vlg_nec_features(
     if whitening is not None:
         train_features = whitening(train_features.to(args.device)).cpu()
         val_features = whitening(val_features.to(args.device)).cpu()
+    # Apply Fisher scaling to loaded train/val features if scaling artifacts are present
+    if fisher_scaling is not None:
+        train_features = fisher_scaling(train_features.to(args.device)).cpu()
+        val_features = fisher_scaling(val_features.to(args.device)).cpu()
     feature_set = _make_nec_feature_set(
         concepts=concepts,
         classes=classes,

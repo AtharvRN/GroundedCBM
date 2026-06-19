@@ -994,6 +994,79 @@ def apply_pca_whitening(x, mu, V_K, scale_K):
     return ((x - mu.unsqueeze(0)) @ V_K) * scale_K.unsqueeze(0)
 
 
+class FisherScalingLayer(nn.Module):
+    """Multiply concept features by sqrt(1 + alpha * Fisher_c) per concept.
+
+    Boosts high-discriminativity concepts before SAGA without changing dimensionality.
+    Fisher_c = between_class_variance_c / within_class_variance_c computed from train.
+    Preserves all concept identities (no projection); scale[c] in [1, max_scale].
+    """
+    def __init__(self, scale: torch.Tensor, device: str = "cuda"):
+        super().__init__()
+        self.register_buffer("scale", scale.to(device))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.scale.unsqueeze(0)
+
+    @classmethod
+    def from_pretrained(cls, load_dir: str, device: str = "cuda"):
+        path = os.path.join(load_dir, "fisher_scale.pt")
+        if not os.path.exists(path):
+            return None
+        scale = torch.load(path, map_location=device)
+        return cls(scale, device)
+
+
+def apply_and_save_fisher_scaling(train_loader, val_loader, alpha, save_dir, device="cuda"):
+    """Compute Fisher per-concept scale from training features; apply to train/val loaders.
+
+    Returns new loaders with scaled features (same dimensionality as input).
+    scale[c] = sqrt(1 + alpha * fisher_c), fisher_c = between/within variance.
+    Saves fisher_scale.pt for test-time reuse.
+    """
+    from torch.utils.data import DataLoader, TensorDataset
+    from glm_saga.elasticnet import IndexedTensorDataset
+
+    train_features, train_labels = _indexed_dataset_tensors(train_loader.dataset)
+    val_features, val_labels = _tensor_dataset_tensors(val_loader.dataset)
+    train_features = train_features.float()
+    val_features = val_features.float()
+
+    N, C = train_features.shape
+    num_classes = int(train_labels.max().item()) + 1
+    overall_mean = train_features.mean(0)
+    between_var = torch.zeros(C)
+    within_var = torch.zeros(C)
+    for c in range(num_classes):
+        mask = train_labels == c
+        n_c = int(mask.sum().item())
+        if n_c == 0:
+            continue
+        feat_c = train_features[mask]
+        class_mean = feat_c.mean(0)
+        between_var += n_c * (class_mean - overall_mean) ** 2
+        within_var += ((feat_c - class_mean) ** 2).sum(0)
+    between_var /= N
+    within_var /= N
+    fisher = between_var / within_var.clamp(min=1e-8)
+    scale = (1.0 + alpha * fisher).clamp(min=1.0).sqrt()
+
+    torch.save(scale.cpu(), os.path.join(save_dir, "fisher_scale.pt"))
+
+    X_train_sc = train_features * scale.unsqueeze(0)
+    X_val_sc = val_features * scale.unsqueeze(0)
+    batch_size = train_loader.batch_size
+    new_train_loader = DataLoader(
+        IndexedTensorDataset(X_train_sc, train_labels),
+        batch_size=batch_size, shuffle=True,
+    )
+    new_val_loader = DataLoader(
+        TensorDataset(X_val_sc, val_labels),
+        batch_size=batch_size, shuffle=False,
+    )
+    return new_train_loader, new_val_loader
+
+
 def load_cbm(load_dir, device):
     with open(os.path.join(load_dir, "args.txt"), "r") as f:
         args = json.load(f)
@@ -1359,6 +1432,31 @@ def test_model_whitened(
             concept_probs = normalization(concept_logits)
             whitened = whitening_layer(concept_probs)
             logits = final_layer(whitened)
+        preds = logits.argmax(dim=1)
+        acc_mean += (preds == targets).sum().item()
+    return acc_mean / len(loader.dataset)
+
+
+def test_model_fisher_scaled(
+    loader: DataLoader,
+    backbone,
+    cbl,
+    normalization,
+    fisher_scaling_layer,
+    final_layer,
+    device: str = "cuda",
+):
+    """test_model variant that inserts Fisher scaling after normalization."""
+    acc_mean = 0.0
+    for features, concept_one_hot, targets in tqdm(loader):
+        features = features.to(device)
+        targets = targets.to(device)
+        with torch.no_grad():
+            embeddings = backbone(features)
+            concept_logits = cbl(embeddings)
+            concept_probs = normalization(concept_logits)
+            scaled = fisher_scaling_layer(concept_probs)
+            logits = final_layer(scaled)
         preds = logits.argmax(dim=1)
         acc_mean += (preds == targets).sum().item()
     return acc_mean / len(loader.dataset)
