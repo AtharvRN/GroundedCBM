@@ -376,6 +376,7 @@ def train_cbm_and_save(args):
             aux_class_coef=getattr(args, "cbl_aux_class_coef", 0.0),
             n_classes=len(classes),
             label_smoothing=getattr(args, "cbl_label_smoothing", 0.0),
+            corr_up_wd=getattr(args, "cbl_corr_up_wd", 0.0),
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
@@ -621,6 +622,7 @@ def main():
     parser.add_argument("--cbl_whitening_components", type=int, default=203, help="Number of PCA components to keep for whitening (default: 203, ~top-S>1.0 components).")
     parser.add_argument("--cbl_fisher_scale", action="store_true", help="Apply Fisher feature scaling before SAGA: multiply concept c by sqrt(1+alpha*Fisher_c).")
     parser.add_argument("--cbl_fisher_alpha", type=float, default=0.5, help="Fisher scaling strength alpha (default: 0.5).")
+    parser.add_argument("--cbl_corr_up_wd", type=float, default=0.0, help="Per-param-group weight decay for corr_up.weight only (default: 0.0 = use cbl_weight_decay for all params).")
     parser.set_defaults(
         activation_dir="saved_activations",
         activation_cache_dir=None,
@@ -631,6 +633,7 @@ def main():
         cbl_fisher_alpha=0.5,
         cbl_corr_ortho_coef=0.0,
         cbl_aux_class_coef=0.0,
+        cbl_corr_up_wd=0.0,
         cbl_confidence_threshold=0.15,
         cbl_early_stop_patience=8,
         cbl_finetune=False,

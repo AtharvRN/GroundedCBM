@@ -1218,6 +1218,7 @@ def train_cbl(
     aux_class_coef: float = 0.0,
     n_classes: int = 0,
     label_smoothing: float = 0.0,
+    corr_up_wd: float = 0.0,
 ):
     # setup optimizer
     base_optimizer_cls = None
@@ -1229,7 +1230,26 @@ def train_cbl(
         optimizer_kwargs = dict(lr=lr, weight_decay=weight_decay)
     else:
         raise ValueError
-    optimizer = base_optimizer_cls(cbl.parameters(), **optimizer_kwargs)
+    # Per-param-group weight decay: apply higher wd to corr_up.weight only.
+    # All other params (linear skip path, corr_down, gate_bias) keep the default wd.
+    # Only active when corr_up_wd > 0 and the CBL has a corr_up submodule.
+    if corr_up_wd > 0.0 and hasattr(cbl, "corr_up"):
+        corr_up_params = list(cbl.corr_up.parameters())
+        corr_up_ids = {id(p) for p in corr_up_params}
+        other_params = [p for p in cbl.parameters() if id(p) not in corr_up_ids]
+        optimizer = base_optimizer_cls(
+            [
+                {"params": other_params, "weight_decay": weight_decay},
+                {"params": corr_up_params, "weight_decay": corr_up_wd},
+            ],
+            lr=lr,
+        )
+        logger.info(
+            "train_cbl: per-param-group wd — base_wd={} corr_up_wd={} (corr_up has {} params)",
+            weight_decay, corr_up_wd, sum(p.numel() for p in corr_up_params),
+        )
+    else:
+        optimizer = base_optimizer_cls(cbl.parameters(), **optimizer_kwargs)
     if finetune:
         optimizer.add_param_group({"params": backbone.parameters(), "lr": backbone_lr})
 
