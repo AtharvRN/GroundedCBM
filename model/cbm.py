@@ -901,6 +901,99 @@ class FinalLayer(nn.Linear):
         return model
 
 
+class WhiteningLayer(nn.Module):
+    """Applies a saved PCA whitening transform: x → (x - mu) @ V_K * scale_K."""
+    def __init__(self, mu, V_K, scale_K, device="cuda"):
+        super().__init__()
+        self.register_buffer("mu", mu.to(device))
+        self.register_buffer("V_K", V_K.to(device))
+        self.register_buffer("scale_K", scale_K.to(device))
+
+    def forward(self, x):
+        return ((x - self.mu) @ self.V_K) * self.scale_K
+
+    @classmethod
+    def from_pretrained(cls, load_dir, device="cuda"):
+        mu_path = os.path.join(load_dir, "whitening_mu.pt")
+        if not os.path.exists(mu_path):
+            return None
+        mu = torch.load(mu_path, map_location=device)
+        V_K = torch.load(os.path.join(load_dir, "whitening_V.pt"), map_location=device)
+        scale_K = torch.load(os.path.join(load_dir, "whitening_scale.pt"), map_location=device)
+        return cls(mu, V_K, scale_K, device=device)
+
+
+def apply_and_save_pca_whitening(train_loader, val_loader, n_components, save_dir, device="cuda"):
+    """PCA-whiten concept features before SAGA. Returns new loaders with whitened features.
+
+    Computes PCA from training features, applies it to train/val, saves V/scale/mu to
+    save_dir for use at test time and NEC eval. Concept dimensions reduce from 670 to
+    n_components orthogonal, unit-variance directions.
+    """
+    from torch.utils.data import DataLoader, TensorDataset
+    from glm_saga.elasticnet import IndexedTensorDataset
+
+    # Extract tensors from existing loaders
+    train_features, train_labels = _indexed_dataset_tensors(train_loader.dataset)
+    val_features, val_labels = _tensor_dataset_tensors(val_loader.dataset)
+    train_features = train_features.float()
+    val_features = val_features.float()
+
+    # PCA: center, SVD, keep top-K components
+    mu = train_features.mean(0)
+    X = train_features - mu.unsqueeze(0)
+
+    U, S, Vh = torch.linalg.svd(X, full_matrices=False)
+    K = min(n_components, (S > 1.0).sum().item())
+    K = max(K, 1)
+
+    V_K = Vh[:K].T.contiguous()          # (n_concepts, K)
+    scale_K = (X.shape[0] - 1) ** 0.5 / (S[:K] + 1e-8)   # unit-variance scaling
+
+    X_train_white = (X @ V_K) * scale_K.unsqueeze(0)          # (N_train, K)
+    X_val_white = ((val_features - mu.unsqueeze(0)) @ V_K) * scale_K.unsqueeze(0)
+
+    # Save for test-time and NEC eval
+    torch.save(mu.cpu(), os.path.join(save_dir, "whitening_mu.pt"))
+    torch.save(V_K.cpu(), os.path.join(save_dir, "whitening_V.pt"))
+    torch.save(scale_K.cpu(), os.path.join(save_dir, "whitening_scale.pt"))
+    with open(os.path.join(save_dir, "whitening_K.txt"), "w") as f:
+        f.write(str(K))
+
+    train_dataset = IndexedTensorDataset(X_train_white, train_labels)
+    val_dataset = TensorDataset(X_val_white, val_labels)
+    batch_size = train_loader.batch_size
+    new_train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    new_val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    return new_train_loader, new_val_loader, K
+
+
+def _indexed_dataset_tensors(dataset):
+    """Extract (features, labels) from an IndexedTensorDataset (has .tensors like TensorDataset)."""
+    return dataset.tensors[0], dataset.tensors[1]
+
+
+def _tensor_dataset_tensors(dataset):
+    """Extract (features, labels) from a TensorDataset."""
+    return dataset.tensors[0], dataset.tensors[1]
+
+
+def load_pca_whitening(load_dir, device="cuda"):
+    """Load saved PCA whitening parameters from a run dir. Returns (mu, V_K, scale_K) or None."""
+    mu_path = os.path.join(load_dir, "whitening_mu.pt")
+    if not os.path.exists(mu_path):
+        return None
+    mu = torch.load(mu_path, map_location=device)
+    V_K = torch.load(os.path.join(load_dir, "whitening_V.pt"), map_location=device)
+    scale_K = torch.load(os.path.join(load_dir, "whitening_scale.pt"), map_location=device)
+    return mu, V_K, scale_K
+
+
+def apply_pca_whitening(x, mu, V_K, scale_K):
+    """Apply saved PCA whitening to a feature tensor x (batch, n_concepts) → (batch, K)."""
+    return ((x - mu.unsqueeze(0)) @ V_K) * scale_K.unsqueeze(0)
+
+
 def load_cbm(load_dir, device):
     with open(os.path.join(load_dir, "args.txt"), "r") as f:
         args = json.load(f)
@@ -1243,6 +1336,31 @@ def test_model(
         accuracy = (preds == targets).sum().item()
         acc_mean += accuracy
 
+    return acc_mean / len(loader.dataset)
+
+
+def test_model_whitened(
+    loader: DataLoader,
+    backbone,
+    cbl,
+    normalization,
+    whitening_layer,
+    final_layer,
+    device: str = "cuda",
+):
+    """test_model variant that inserts a whitening step after normalization."""
+    acc_mean = 0.0
+    for features, concept_one_hot, targets in tqdm(loader):
+        features = features.to(device)
+        targets = targets.to(device)
+        with torch.no_grad():
+            embeddings = backbone(features)
+            concept_logits = cbl(embeddings)
+            concept_probs = normalization(concept_logits)
+            whitened = whitening_layer(concept_probs)
+            logits = final_layer(whitened)
+        preds = logits.argmax(dim=1)
+        acc_mean += (preds == targets).sum().item()
     return acc_mean / len(loader.dataset)
 
 

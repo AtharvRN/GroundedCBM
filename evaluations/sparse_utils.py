@@ -36,6 +36,7 @@ from model.cbm import (
     InputGatedRefinerCBL,
     LinearResidualRefinerCBL,
     NormalizationLayer,
+    WhiteningLayer,
     load_cbm,
 )
 
@@ -290,7 +291,7 @@ def run_nec_sweep_from_features(
         shuffle=False,
     )
     path, truncated_weights, accs = measure_acc(
-        len(features.concepts),
+        features.train_features.shape[1],  # use actual dim (may differ from len(concepts) after whitening)
         len(features.classes),
         len(train_loader.dataset),
         train_loader,
@@ -341,7 +342,7 @@ def run_fixed_lam_from_features(
         shuffle=False,
     )
 
-    num_concepts = len(features.concepts)
+    num_concepts = features.train_features.shape[1]  # use actual dim (may differ from len(concepts) after whitening)
     num_classes = len(features.classes)
     linear = torch.nn.Linear(num_concepts, num_classes).to(device)
     linear.weight.data.zero_()
@@ -501,9 +502,14 @@ def extract_vlg_nec_features(
         filter=filtered_idx,
     )
     normalization = NormalizationLayer.from_pretrained(load_dir, args.device)
+    whitening = WhiteningLayer.from_pretrained(load_dir, args.device)
+
     def forward_vlg_concepts(images):
         images = images.to(args.device)
-        return normalization(cbl(backbone(images)))
+        feats = normalization(cbl(backbone(images)))
+        if whitening is not None:
+            feats = whitening(feats)
+        return feats
 
     test_concept_features, concept_labels, _ = extract_labeled_feature_tensors(
         test_cbl_loader,
@@ -511,6 +517,10 @@ def extract_vlg_nec_features(
     )
     train_features, train_labels = _indexed_dataset_tensors(train_concept_loader.dataset)
     val_features, val_labels = _tensor_dataset_tensors(val_concept_loader.dataset)
+    # Apply whitening to loaded train/val features if whitening artifacts are present
+    if whitening is not None:
+        train_features = whitening(train_features.to(args.device)).cpu()
+        val_features = whitening(val_features.to(args.device)).cpu()
     feature_set = _make_nec_feature_set(
         concepts=concepts,
         classes=classes,

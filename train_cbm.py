@@ -84,6 +84,11 @@ def train_cbm_and_save(args):
         train_cbl,
         train_dense_final,
         train_sparse_final,
+        apply_and_save_pca_whitening,
+        load_pca_whitening,
+        apply_pca_whitening,
+        WhiteningLayer,
+        test_model_whitened,
     )
 
     # Setup log directory and logger
@@ -422,8 +427,21 @@ def train_cbm_and_save(args):
         activation_cache_dir=activation_cache_dir,
     )
 
+    # Optionally apply PCA whitening to concept features before SAGA
+    saga_n_concepts = len(concepts)
+    if getattr(args, "cbl_feature_whitening", False):
+        train_concept_loader, val_concept_loader, whitening_K = apply_and_save_pca_whitening(
+            train_concept_loader,
+            val_concept_loader,
+            n_components=getattr(args, "cbl_whitening_components", 203),
+            save_dir=save_dir,
+            device=args.device,
+        )
+        saga_n_concepts = whitening_K
+        logger.info(f"PCA whitening applied: {len(concepts)} → {whitening_K} components")
+
     # Make linear model
-    final_layer = FinalLayer(len(concepts), len(classes), device=args.device)
+    final_layer = FinalLayer(saga_n_concepts, len(classes), device=args.device)
 
     if args.dense:
         logger.info(f"Training dense final layer with lr: {args.dense_lr} ...")
@@ -455,13 +473,21 @@ def train_cbm_and_save(args):
     ##############################################
     #### Test the model on test set ####
     ##############################################
+    # Build whitening layer for test eval if whitening was applied
+    whitening_layer = WhiteningLayer.from_pretrained(save_dir, device=args.device) if getattr(args, "cbl_feature_whitening", False) else None
+
     if getattr(args, "skip_test_eval", False):
         test_accuracy = None
         logger.info("Skipping test evaluation (--skip_test_eval)")
     else:
-        test_accuracy = test_model(
-            test_cbl_loader, backbone, cbl, normalization_layer, final_layer, args.device
-        )
+        if whitening_layer is not None:
+            test_accuracy = test_model_whitened(
+                test_cbl_loader, backbone, cbl, normalization_layer, whitening_layer, final_layer, args.device
+            )
+        else:
+            test_accuracy = test_model(
+                test_cbl_loader, backbone, cbl, normalization_layer, final_layer, args.device
+            )
         logger.info(f"Test accuracy: {test_accuracy}")
 
     ##############################################
@@ -469,10 +495,12 @@ def train_cbm_and_save(args):
     ##############################################
     with open(os.path.join(save_dir, "metrics.txt"), "w") as f:
         out_dict = {}
+        if whitening_layer is not None:
+            eval_pipeline = nn.Sequential(backbone, cbl, normalization_layer, whitening_layer, final_layer).to(args.device)
+        else:
+            eval_pipeline = nn.Sequential(backbone, cbl, normalization_layer, final_layer).to(args.device)
         out_dict["per_class_accuracies"] = per_class_accuracy(
-            nn.Sequential(backbone, cbl, normalization_layer, final_layer).to(
-                args.device
-            ),
+            eval_pipeline,
             test_cbl_loader,
             classes,
             device=args.device,
@@ -567,6 +595,8 @@ def main():
     parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
     parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
     parser.add_argument("--cbl_label_smoothing", type=float, default=0.0, help="Label smoothing epsilon for CBL BCE loss (0=off, 0.1=typical).")
+    parser.add_argument("--cbl_feature_whitening", action="store_true", help="Apply PCA whitening to concept features before SAGA (decorrelates concepts).")
+    parser.add_argument("--cbl_whitening_components", type=int, default=203, help="Number of PCA components to keep for whitening (default: 203, ~top-S>1.0 components).")
     parser.set_defaults(
         activation_dir="saved_activations",
         activation_cache_dir=None,
