@@ -531,6 +531,161 @@ class ConceptCorrRefinerCBL(nn.Module):
         return model
 
 
+class ConceptCorrGatedRefinerCBL(nn.Module):
+    """Linear CBL with low-rank concept-space correction and bottleneck-adaptive gating.
+
+    Extends ConceptCorrRefinerCBL: the per-concept gate is conditioned on the bottleneck
+    h = ReLU(corr_down(z)) rather than being fixed per-concept. This allows the gate to
+    open wider when concept co-occurrence evidence is strong (large h values) and fall
+    back to the baseline gate when evidence is weak (h ≈ 0 via ReLU).
+
+    Architecture:
+        z = linear(x)                            # 512 → concepts (baseline path)
+        h = ReLU(corr_down(z))                   # concepts → rank (bottleneck)
+        correction = corr_up(h)                  # rank → concepts (zero-init)
+        gate_input = gate_from_h(h)              # rank → concepts (zero-init)
+        gate = sigmoid(gate_bias + gate_input)   # per-concept, adaptive
+        output = z + gate * correction
+
+    At init: corr_up.weight = 0, gate_from_h.weight = 0 → output = z (pure linear).
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        corr_rank: int = 16,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.out_features = out_features
+        self.corr_rank = corr_rank
+
+        self.linear = nn.Linear(in_features, out_features, bias=True)
+        self.corr_down = nn.Linear(out_features, corr_rank, bias=True)
+        self.corr_up = nn.Linear(corr_rank, out_features, bias=False)
+        self.gate_bias = nn.Parameter(torch.full((out_features,), -4.0))
+        self.gate_from_h = nn.Linear(corr_rank, out_features, bias=False)
+
+        nn.init.normal_(self.corr_down.weight, std=0.01)
+        nn.init.zeros_(self.corr_down.bias)
+        nn.init.zeros_(self.corr_up.weight)
+        nn.init.zeros_(self.gate_from_h.weight)
+
+        self.to(device)
+        logger.info(
+            "ConceptCorrGatedRefinerCBL: in={} concepts={} rank={}",
+            in_features,
+            out_features,
+            corr_rank,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.linear(x)
+        h = torch.relu(self.corr_down(z))
+        correction = self.corr_up(h)
+        gate = torch.sigmoid(self.gate_bias + self.gate_from_h(h))
+        return z + gate * correction
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt")) as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        corr_rank = int(args.get("cbl_corr_rank", 16))
+        model = cls(encoder_dim, num_concepts, corr_rank=corr_rank, device=device)
+        model.load_state_dict(
+            torch.load(os.path.join(load_path, "cbl.pt"), map_location=device)
+        )
+        return model
+
+
+class ConceptCorrCenteredRefinerCBL(nn.Module):
+    """Linear CBL with a low-rank concept-space correction on centered concept logits.
+
+    Identical to ConceptCorrRefinerCBL except that the concept logits are mean-centered
+    before feeding into the low-rank bottleneck:
+        z_c = z - z.mean(dim=-1, keepdim=True)
+        h = ReLU(corr_down(z_c))
+        correction = corr_up(h)
+        output = z + gate * correction
+
+    Motivation: ConceptCorrRefinerCBL collapses to a rank-1 correction where the
+    right singular vector of corr_up is nearly uniform (std=0.002, range/mean=0.06).
+    This means the learned correction is a global offset (mean concept activity), not
+    a concept co-occurrence correction. Centering z removes the trivially learnable
+    global-mean direction, forcing the bottleneck to find genuine concept covariance.
+
+    At init: corr_up.weight = 0 → correction = 0 → output = z. Identical to baseline.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        corr_rank: int = 16,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.out_features = out_features
+        self.corr_rank = corr_rank
+
+        self.linear = nn.Linear(in_features, out_features, bias=True)
+        self.corr_down = nn.Linear(out_features, corr_rank, bias=True)
+        self.corr_up = nn.Linear(corr_rank, out_features, bias=False)
+        self.gate_bias = nn.Parameter(torch.full((out_features,), -4.0))
+
+        nn.init.normal_(self.corr_down.weight, std=0.01)
+        nn.init.zeros_(self.corr_down.bias)
+        nn.init.zeros_(self.corr_up.weight)
+
+        self.to(device)
+        logger.info(
+            "ConceptCorrCenteredRefinerCBL: in={} concepts={} rank={}",
+            in_features,
+            out_features,
+            corr_rank,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.linear(x)
+        z_c = z - z.mean(dim=-1, keepdim=True)
+        h = torch.relu(self.corr_down(z_c))
+        correction = self.corr_up(h)
+        gate = torch.sigmoid(self.gate_bias)
+        return z + gate * correction
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt")) as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        corr_rank = int(args.get("cbl_corr_rank", 16))
+        model = cls(encoder_dim, num_concepts, corr_rank=corr_rank, device=device)
+        model.load_state_dict(
+            torch.load(os.path.join(load_path, "cbl.pt"), map_location=device)
+        )
+        return model
+
+
 class CombinedRefinerCBL(nn.Module):
     """Linear CBL with both a feature-space residual and a concept-space correction.
 

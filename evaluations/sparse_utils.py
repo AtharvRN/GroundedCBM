@@ -28,6 +28,8 @@ from model.cbm import (
     BackboneCLIP,
     CombinedRefinerCBL,
     ConceptCorrRefinerCBL,
+    ConceptCorrGatedRefinerCBL,
+    ConceptCorrCenteredRefinerCBL,
     ConceptLayer,
     CosineSimilarityConceptLayer,
     InputGatedRefinerCBL,
@@ -435,6 +437,10 @@ def extract_vlg_nec_features(
         cbl = InputGatedRefinerCBL.from_pretrained(load_dir, args.device)
     elif getattr(args, "cbl_type", "linear") == "concept_corr_refiner":
         cbl = ConceptCorrRefinerCBL.from_pretrained(load_dir, args.device)
+    elif getattr(args, "cbl_type", "linear") == "concept_corr_gated_refiner":
+        cbl = ConceptCorrGatedRefinerCBL.from_pretrained(load_dir, args.device)
+    elif getattr(args, "cbl_type", "linear") == "concept_corr_centered_refiner":
+        cbl = ConceptCorrCenteredRefinerCBL.from_pretrained(load_dir, args.device)
     elif getattr(args, "cbl_type", "linear") == "combined_refiner":
         cbl = CombinedRefinerCBL.from_pretrained(load_dir, args.device)
     else:

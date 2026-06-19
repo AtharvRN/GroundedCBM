@@ -71,6 +71,8 @@ def train_cbm_and_save(args):
         BackboneCLIP,
         CombinedRefinerCBL,
         ConceptCorrRefinerCBL,
+        ConceptCorrGatedRefinerCBL,
+        ConceptCorrCenteredRefinerCBL,
         ConceptLayer,
         CosineSimilarityConceptLayer,
         InputGatedRefinerCBL,
@@ -290,6 +292,20 @@ def train_cbm_and_save(args):
                 corr_rank=int(getattr(args, "cbl_corr_rank", 16)),
                 device=args.device,
             )
+        elif _cbl_type == "concept_corr_gated_refiner":
+            cbl = ConceptCorrGatedRefinerCBL(
+                backbone.output_dim,
+                len(concepts),
+                corr_rank=int(getattr(args, "cbl_corr_rank", 16)),
+                device=args.device,
+            )
+        elif _cbl_type == "concept_corr_centered_refiner":
+            cbl = ConceptCorrCenteredRefinerCBL(
+                backbone.output_dim,
+                len(concepts),
+                corr_rank=int(getattr(args, "cbl_corr_rank", 16)),
+                device=args.device,
+            )
         elif _cbl_type == "combined_refiner":
             cbl = CombinedRefinerCBL(
                 backbone.output_dim,
@@ -353,6 +369,10 @@ def train_cbm_and_save(args):
             cbl = InputGatedRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_corr_refiner":
             cbl = ConceptCorrRefinerCBL.from_pretrained(args.load_dir, args.device)
+        elif _saved_args.get("cbl_type") == "concept_corr_gated_refiner":
+            cbl = ConceptCorrGatedRefinerCBL.from_pretrained(args.load_dir, args.device)
+        elif _saved_args.get("cbl_type") == "concept_corr_centered_refiner":
+            cbl = ConceptCorrCenteredRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "combined_refiner":
             cbl = CombinedRefinerCBL.from_pretrained(args.load_dir, args.device)
         else:
