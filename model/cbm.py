@@ -979,6 +979,7 @@ def train_cbl(
     early_stop_patience: int = 0,
     min_delta: float = 0.0,
     min_epochs: int = 0,
+    corr_up_ortho_coef: float = 0.0,
 ):
     # setup optimizer
     base_optimizer_cls = None
@@ -1026,6 +1027,11 @@ def train_cbl(
                 return loss_fn(concept_logits, concept_one_hot)
 
             batch_loss = compute_batch_loss()
+            if corr_up_ortho_coef > 0 and hasattr(cbl, "corr_up"):
+                W = cbl.corr_up.weight  # (out_features, rank)
+                G = W.T @ W             # (rank, rank) Gram matrix
+                off = G - torch.diag(torch.diag(G))
+                batch_loss = batch_loss + corr_up_ortho_coef * off.pow(2).sum()
             train_loss += batch_loss.item()
 
             # backprop

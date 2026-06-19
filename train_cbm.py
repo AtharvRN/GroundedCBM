@@ -356,6 +356,7 @@ def train_cbm_and_save(args):
             early_stop_patience=args.cbl_early_stop_patience,
             min_delta=args.cbl_min_delta,
             min_epochs=args.cbl_min_epochs,
+            corr_up_ortho_coef=getattr(args, "cbl_corr_ortho_coef", 0.0),
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
@@ -558,6 +559,7 @@ def main():
         allones_concept=False,
         cbl_auto_weight=False,
         cbl_bb_lr_rate=1.0,
+        cbl_corr_ortho_coef=0.0,
         cbl_confidence_threshold=0.15,
         cbl_early_stop_patience=8,
         cbl_finetune=False,
