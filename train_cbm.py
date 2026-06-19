@@ -367,6 +367,7 @@ def train_cbm_and_save(args):
             corr_up_ortho_coef=getattr(args, "cbl_corr_ortho_coef", 0.0),
             aux_class_coef=getattr(args, "cbl_aux_class_coef", 0.0),
             n_classes=len(classes),
+            label_smoothing=getattr(args, "cbl_label_smoothing", 0.0),
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
@@ -565,6 +566,7 @@ def main():
     parser.add_argument("--savlg_target_mode", type=str, default="soft_box", choices=["hard_iou", "soft_box"], help="SG-CBM spatial target rasterization.")
     parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
     parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
+    parser.add_argument("--cbl_label_smoothing", type=float, default=0.0, help="Label smoothing epsilon for CBL BCE loss (0=off, 0.1=typical).")
     parser.set_defaults(
         activation_dir="saved_activations",
         activation_cache_dir=None,

@@ -1051,6 +1051,7 @@ def train_cbl(
     corr_up_ortho_coef: float = 0.0,
     aux_class_coef: float = 0.0,
     n_classes: int = 0,
+    label_smoothing: float = 0.0,
 ):
     # setup optimizer
     base_optimizer_cls = None
@@ -1114,7 +1115,10 @@ def train_cbl(
                     with torch.no_grad():
                         embeddings = backbone(features)
                 concept_logits = cbl(embeddings)
-                bce_loss = loss_fn(concept_logits, concept_one_hot)
+                targets = concept_one_hot
+                if label_smoothing > 0.0:
+                    targets = concept_one_hot * (1.0 - label_smoothing) + (1.0 - concept_one_hot) * label_smoothing
+                bce_loss = loss_fn(concept_logits, targets)
                 if aux_head is not None:
                     aux_loss = aux_ce(aux_head(concept_logits), class_labels)
                     return bce_loss + aux_class_coef * aux_loss
