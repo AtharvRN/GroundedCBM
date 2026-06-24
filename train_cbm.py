@@ -72,6 +72,7 @@ def train_cbm_and_save(args):
         CombinedRefinerCBL,
         ConceptCorrRefinerCBL,
         ConceptFullRankMLPRefinerCBL,
+        ConceptFullRankMLPGatelessRefinerCBL,
         ConceptCorrLinearRefinerCBL,
         ConceptCorrGatedRefinerCBL,
         ConceptCorrCenteredRefinerCBL,
@@ -310,6 +311,14 @@ def train_cbm_and_save(args):
                 dropout=float(getattr(args, "cbl_mlp_dropout", 0.0)),
                 device=args.device,
             )
+        elif _cbl_type == "concept_fullrank_mlp_gateless_refiner":
+            cbl = ConceptFullRankMLPGatelessRefinerCBL(
+                backbone.output_dim,
+                len(concepts),
+                hidden_dim=int(getattr(args, "cbl_mlp_hidden_dim", 512)),
+                dropout=float(getattr(args, "cbl_mlp_dropout", 0.0)),
+                device=args.device,
+            )
         elif _cbl_type == "concept_corr_linear_refiner":
             cbl = ConceptCorrLinearRefinerCBL(
                 backbone.output_dim,
@@ -401,6 +410,8 @@ def train_cbm_and_save(args):
             cbl = ConceptCorrRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_fullrank_mlp_refiner":
             cbl = ConceptFullRankMLPRefinerCBL.from_pretrained(args.load_dir, args.device)
+        elif _saved_args.get("cbl_type") == "concept_fullrank_mlp_gateless_refiner":
+            cbl = ConceptFullRankMLPGatelessRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_corr_linear_refiner":
             cbl = ConceptCorrLinearRefinerCBL.from_pretrained(args.load_dir, args.device)
         elif _saved_args.get("cbl_type") == "concept_corr_gated_refiner":
