@@ -533,6 +533,81 @@ class ConceptCorrRefinerCBL(nn.Module):
         return model
 
 
+class ConceptFullRankMLPRefinerCBL(nn.Module):
+    """Linear CBL with a full-rank 2-layer MLP concept-space correction.
+
+    Eliminates the rank bottleneck of ConceptCorrRefinerCBL by using two full-rank
+    linear layers instead of the bottleneck structure (corr_down @ corr_up).
+
+    Main path: standard linear projection (identical to linear baseline).
+    MLP correction path: z → ReLU(hidden_dim) → correction in concept space.
+    Gate: learned per-concept scalar sigmoid, biased toward closed (-4 → ≈ 0.018).
+
+    At init: mlp2.weight = 0 → correction = 0 → output = linear(x).
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        hidden_dim: int = 512,
+        dropout: float = 0.0,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.out_features = out_features
+        self.n_concepts = out_features
+        self.hidden_dim = hidden_dim
+
+        self.linear = nn.Linear(in_features, out_features, bias=True)
+        self.mlp1 = nn.Linear(out_features, hidden_dim, bias=True)
+        self.mlp2 = nn.Linear(hidden_dim, out_features, bias=False)
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.gate_bias = nn.Parameter(torch.full((out_features,), -4.0))
+
+        nn.init.normal_(self.mlp1.weight, std=0.01)
+        nn.init.zeros_(self.mlp1.bias)
+        nn.init.zeros_(self.mlp2.weight)
+
+        self.to(device)
+        logger.info(
+            "ConceptFullRankMLPRefinerCBL: in={} concepts={} hidden={}",
+            in_features,
+            out_features,
+            hidden_dim,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.linear(x)
+        h = torch.relu(self.mlp1(z))
+        h = self.dropout(h)
+        correction = self.mlp2(h)
+        gate = torch.sigmoid(self.gate_bias)
+        return z + gate * correction
+
+    def save_model(self, save_dir: str) -> None:
+        torch.save(self.state_dict(), os.path.join(save_dir, "cbl.pt"))
+
+    @classmethod
+    def from_pretrained(cls, load_path: str, device: str = "cuda"):
+        with open(os.path.join(load_path, "args.txt")) as f:
+            args = json.load(f)
+        if args.get("use_clip_penultimate") and args.get("backbone", "").startswith("clip"):
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[
+                f"{args['backbone']}_penultimate"
+            ]
+        else:
+            encoder_dim = data_utils.BACKBONE_ENCODING_DIMENSION[args["backbone"]]
+        num_concepts = len(data_utils.get_concepts(f"{load_path}/concepts.txt"))
+        hidden_dim = int(args.get("cbl_mlp_hidden_dim", 512))
+        dropout = float(args.get("cbl_mlp_dropout", 0.0))
+        model = cls(encoder_dim, num_concepts, hidden_dim=hidden_dim, dropout=dropout, device=device)
+        model.load_state_dict(
+            torch.load(os.path.join(load_path, "cbl.pt"), map_location=device)
+        )
+        return model
+
+
 class ConceptCorrLinearRefinerCBL(nn.Module):
     """Linear CBL with a low-rank concept-space correction using a linear (no-ReLU) bottleneck.
 
