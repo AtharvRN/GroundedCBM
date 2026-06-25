@@ -642,11 +642,11 @@ class ConceptFullRankMLPGatelessRefinerCBL(nn.Module):
 
         nn.init.normal_(self.mlp1.weight, std=0.01)
         nn.init.zeros_(self.mlp1.bias)
-        nn.init.zeros_(self.mlp2.weight)
+        nn.init.normal_(self.mlp2.weight, mean=0.0, std=0.01)
 
         self.to(device)
         logger.info(
-            "ConceptFullRankMLPGatelessRefinerCBL: in={} concepts={} hidden={}",
+            "ConceptFullRankMLPGatelessRefinerCBL: in={} concepts={} hidden={} mlp2_init=nonzero",
             in_features,
             out_features,
             hidden_dim,
