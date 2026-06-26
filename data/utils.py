@@ -11,12 +11,28 @@ try:
 except Exception:  # pragma: no cover
     plt = None  # type: ignore
 import torch
-from pytorchcv.model_provider import get_model as ptcv_get_model
-from torchvision import datasets, models, transforms
+
+if os.environ.get("CBM_STUB_TORCHVISION_NMS", "0") == "1":
+    try:
+        _tv_lib = torch.library.Library("torchvision", "DEF")
+        _tv_lib.define("nms(Tensor dets, Tensor scores, float iou_threshold) -> Tensor")
+    except Exception:
+        _tv_lib = None
+else:
+    _tv_lib = None
+
 from tqdm import tqdm
 from loguru import logger
-import clip
 from PIL import Image, ImageFile, UnidentifiedImageError
+
+
+def _import_torchvision_modules():
+    from torchvision import datasets as tv_datasets, models as tv_models, transforms as tv_transforms
+    return tv_datasets, tv_models, tv_transforms
+
+
+datasets, models, transforms = _import_torchvision_modules()
+from pytorchcv.model_provider import get_model as ptcv_get_model
 
 # get from the environment variable
 DATASET_FOLDER = os.environ.get("DATASET_FOLDER", "datasets")
@@ -190,6 +206,8 @@ def get_targets_only(dataset_name):
 def get_target_model(target_name, device):
     print(f"[get_target_model] request target_name={target_name}", flush=True)
     if target_name.startswith("clip_"):
+        import clip
+
         target_name = target_name[5:]
         model, preprocess = clip.load(target_name, device=device)
         target_model = lambda x: model.encode_image(x).float()

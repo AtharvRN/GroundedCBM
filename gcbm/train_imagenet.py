@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from gcbm.losses import sgcbm_concept_losses, weighted_concept_bce  # noqa: E402
+from gcbm.losses import probability_alignment_loss, sgcbm_concept_losses, weighted_concept_bce  # noqa: E402
 from gcbm.imagenet_final_layers import (  # noqa: E402
     compute_feature_stats_memmap,
     extract_concept_features_to_memmap,
@@ -131,6 +131,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--global_pos_weight", type=float, default=100.0)
     parser.add_argument("--loss_global_w", type=float, default=1.0)
     parser.add_argument("--loss_mask_w", type=float, default=1.0)
+    parser.add_argument("--loss_spatial_presence_w", type=float, default=0.0)
+    parser.add_argument("--loss_global_spatial_align_w", type=float, default=0.0)
 
     parser.add_argument(
         "--branch_arch",
@@ -248,6 +250,8 @@ def build_config(args: argparse.Namespace) -> Config:
         patch_pos_weight=1.0,
         loss_global_w=args.loss_global_w,
         loss_mask_w=0.0 if global_only else args.loss_mask_w,
+        loss_spatial_presence_w=0.0 if global_only else float(args.loss_spatial_presence_w),
+        loss_global_spatial_align_w=0.0 if global_only else float(args.loss_global_spatial_align_w),
         branch_arch=str(args.branch_arch),
         spatial_branch_mode=args.spatial_branch_mode,
         spatial_stage=args.spatial_stage,
@@ -339,11 +343,29 @@ def compute_cbl_losses(
         mask_valid,
         global_pos_weight=float(cfg.global_pos_weight),
     )
-    total = cfg.loss_global_w * loss_global + cfg.loss_mask_w * loss_mask
+    loss_spatial_presence = weighted_concept_bce(
+        outputs["spatial_logits"],
+        global_targets,
+        pos_weight=float(cfg.global_pos_weight),
+    )
+    loss_align = probability_alignment_loss(
+        outputs["global_logits"],
+        outputs["spatial_logits"],
+        targets=global_targets,
+        pos_weight=float(cfg.global_pos_weight),
+    )
+    total = (
+        cfg.loss_global_w * loss_global
+        + cfg.loss_mask_w * loss_mask
+        + cfg.loss_spatial_presence_w * loss_spatial_presence
+        + cfg.loss_global_spatial_align_w * loss_align
+    )
     return {
         "total": total,
         "global": loss_global.detach(),
         "mask": loss_mask.detach(),
+        "spatial_presence": loss_spatial_presence.detach(),
+        "global_spatial_align": loss_align.detach(),
     }
 
 
@@ -391,7 +413,9 @@ def train_one_epoch(
     epoch: int,
 ) -> Dict[str, float]:
     head.train()
-    totals = {"total": 0.0, "global": 0.0, "mask": 0.0, "count": 0}
+    loss_keys = ("global", "mask", "spatial_presence", "global_spatial_align")
+    totals = {"total": 0.0, "count": 0}
+    totals.update({key: 0.0 for key in loss_keys})
     start_time = time.perf_counter()
     reset_cuda_peak_stats_if_needed(cfg)
 
@@ -417,18 +441,24 @@ def train_one_epoch(
 
         batch_size = int(images.shape[0])
         totals["total"] += float(loss.detach().item()) * batch_size
-        totals["global"] += float(losses["global"].item()) * batch_size
-        totals["mask"] += float(losses["mask"].item()) * batch_size
+        for key in loss_keys:
+            if key in losses:
+                totals[key] += float(losses[key].item()) * batch_size
         totals["count"] += batch_size
 
         if step % cfg.log_every == 0:
             elapsed = time.perf_counter() - start_time
             ips = totals["count"] / max(elapsed, 1e-6)
+            extra = ""
+            if cfg.loss_spatial_presence_w:
+                extra += f" spatial_presence={totals['spatial_presence']/totals['count']:.4f}"
+            if cfg.loss_global_spatial_align_w:
+                extra += f" align={totals['global_spatial_align']/totals['count']:.4f}"
             print(
                 f"[train] epoch={epoch} step={step}/{len(loader)} "
                 f"loss={totals['total']/totals['count']:.4f} "
                 f"global={totals['global']/totals['count']:.4f} "
-                f"mask={totals['mask']/totals['count']:.4f} ips={ips:.2f}",
+                f"mask={totals['mask']/totals['count']:.4f}{extra} ips={ips:.2f}",
                 flush=True,
             )
 
@@ -438,6 +468,8 @@ def train_one_epoch(
         "loss": totals["total"] / count,
         "loss_global": totals["global"] / count,
         "loss_mask": totals["mask"] / count,
+        "loss_spatial_presence": totals["spatial_presence"] / count,
+        "loss_global_spatial_align": totals["global_spatial_align"] / count,
         "images_per_second": totals["count"] / max(elapsed, 1e-6),
         "elapsed_sec": elapsed,
     }
@@ -455,7 +487,9 @@ def evaluate_one_epoch(
     split_name: str,
 ) -> Dict[str, float]:
     head.eval()
-    totals = {"total": 0.0, "global": 0.0, "mask": 0.0, "count": 0}
+    loss_keys = ("global", "mask", "spatial_presence", "global_spatial_align")
+    totals = {"total": 0.0, "count": 0}
+    totals.update({key: 0.0 for key in loss_keys})
     start_time = time.perf_counter()
     reset_cuda_peak_stats_if_needed(cfg)
 
@@ -470,8 +504,9 @@ def evaluate_one_epoch(
 
         batch_size = int(images.shape[0])
         totals["total"] += float(losses["total"].item()) * batch_size
-        totals["global"] += float(losses["global"].item()) * batch_size
-        totals["mask"] += float(losses["mask"].item()) * batch_size
+        for key in loss_keys:
+            if key in losses:
+                totals[key] += float(losses[key].item()) * batch_size
         totals["count"] += batch_size
 
     count = max(totals["count"], 1)
@@ -480,6 +515,8 @@ def evaluate_one_epoch(
         "loss": totals["total"] / count,
         "loss_global": totals["global"] / count,
         "loss_mask": totals["mask"] / count,
+        "loss_spatial_presence": totals["spatial_presence"] / count,
+        "loss_global_spatial_align": totals["global_spatial_align"] / count,
         "images_per_second": totals["count"] / max(elapsed, 1e-6),
         "elapsed_sec": elapsed,
     }

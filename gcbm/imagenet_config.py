@@ -83,9 +83,9 @@ class Config:
     # Old ImageNet checkpoints did not store this field and used avg pooling.
     residual_spatial_pooling: str = "avg"
     learn_spatial_residual_scale: bool = False
+    loss_spatial_presence_w: float = 0.0
+    loss_global_spatial_align_w: float = 0.0
     eval_every: int = 1
     feature_batch_size: int = 256
     feature_workers: int = 4
     feature_prefetch_factor: int = 2
-
-

@@ -21,6 +21,7 @@ scripts/eval_nec.py                  Evaluate classification accuracy at NEC lev
 scripts/eval_concept_accuracy.py     Evaluate concept prediction against GDINO/CUB labels.
 scripts/eval_gdino_localization.py   Evaluate GDINO-box localization for CUB/ImageNet.
 evaluations/cub_part_localization.py Evaluate CUB part-point localization.
+scripts/autoresearch.py              Propose, record, and rank ACC-NEC research trials.
 ```
 
 ## Data
@@ -153,3 +154,16 @@ selects the best concept per metric.
 - Some internal names still use `savlg` or `gcbm` for checkpoint compatibility.
 - SG-CBM training/localization uses GDINO annotations.
 - NEC and classification evaluation use sparse GLM heads; localization does not.
+
+## AutoResearch
+
+The lightweight ACC-NEC research loop lives in `autoresearch/`.
+
+```bash
+python scripts/autoresearch.py scoreboard --memory autoresearch/memory/cub_sgcbm_trials.jsonl
+python scripts/autoresearch.py propose --space autoresearch/search_spaces/cub_sgcbm_acc_nec.json --memory autoresearch/memory/cub_sgcbm_trials.jsonl
+bash autoresearch/trials/cub_sgcbm_acc_nec_000001/commands.sh
+```
+
+The memory file is seeded with the CUB spatial-alignment experiments, where
+`loss_global_spatial_align_w=0.1` is the current best setting.

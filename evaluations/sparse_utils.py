@@ -298,6 +298,97 @@ def run_nec_sweep_from_features(
     return accs
 
 
+def run_fixed_lam_from_features(
+    load_dir: str,
+    features: NECFeatureSet,
+    *,
+    saga_batch_size: int,
+    saga_step_size: float,
+    saga_n_iters: int,
+    device: str,
+    lam: float,
+) -> float:
+    """Train one sparse final layer at a fixed lambda and evaluate test accuracy."""
+    train_loader = _feature_loader(
+        features.train_features,
+        features.train_labels,
+        saga_batch_size,
+        indexed=True,
+        shuffle=True,
+    )
+    val_loader = None
+    if features.val_features is not None and features.val_labels is not None:
+        val_loader = _feature_loader(
+            features.val_features,
+            features.val_labels,
+            saga_batch_size,
+            indexed=False,
+            shuffle=False,
+        )
+    test_loader = _feature_loader(
+        features.test_features,
+        features.test_labels,
+        saga_batch_size,
+        indexed=False,
+        shuffle=False,
+    )
+
+    num_concepts = len(features.concepts)
+    num_classes = len(features.classes)
+    linear = torch.nn.Linear(num_concepts, num_classes).to(device)
+    linear.weight.data.zero_()
+    linear.bias.data.zero_()
+
+    alpha = 0.99
+    metadata = {"max_reg": {"nongrouped": lam * alpha}}
+    output_proj = glm_saga(
+        linear,
+        train_loader,
+        saga_step_size,
+        saga_n_iters,
+        alpha,
+        k=1,
+        epsilon=1.0,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        do_zero=False,
+        metadata=metadata,
+        n_ex=len(train_loader.dataset),
+        n_classes=num_classes,
+        eval_train=False,
+        eval_val=val_loader is not None,
+        eval_test=True,
+    )
+    params = output_proj["path"][-1]
+    weight = params["weight"]
+    bias = params["bias"]
+    acc = float(params["metrics"].get("acc_test", float("nan")))
+    nnz = int((weight.abs() > 1e-5).sum().item())
+    total = int(weight.numel())
+    sparsity = nnz / max(1, total)
+
+    torch.save(weight, os.path.join(load_dir, "W_g@fixed_lam.pt"))
+    torch.save(bias, os.path.join(load_dir, "b_g@fixed_lam.pt"))
+    with open(os.path.join(load_dir, "fixed_lam_metrics.json"), "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "mode": "fixed_lam",
+                "lambda": float(lam),
+                "accuracy": acc,
+                "sparsity": sparsity,
+                "nnz": nnz,
+                "total": total,
+            },
+            handle,
+            indent=2,
+        )
+    print(
+        f"Fixed lambda {lam:.6f}: Test Acc {acc:.4f}, "
+        f"sparsity {sparsity:.4f} [{nnz}/{total}]"
+    )
+    return acc
+
+
 def extract_vlg_nec_features(
     load_dir,
     bot_filter=0,
@@ -1065,3 +1156,45 @@ def train_sparse_nec_from_checkpoint(
         max_glm_steps=max_glm_steps,
     )
     return accs, feature_set, args
+
+
+def train_fixed_lam_from_checkpoint(
+    load_dir: str,
+    model_name: str,
+    *,
+    lam=0.001,
+    bot_filter=0,
+    annotation_dir=None,
+    n_iters=None,
+    cbl_batch_size=None,
+    saga_batch_size=None,
+    num_workers=None,
+    savlg_alpha_override=None,
+    disable_activation_cache=False,
+    max_images=None,
+    savlg_branch_norm_mode="none",
+) -> tuple[float, NECFeatureSet, argparse.Namespace]:
+    """Extract concept features once, then train/evaluate one fixed-lambda sparse head."""
+    feature_set, args = build_nec_feature_set(
+        load_dir,
+        model_name,
+        annotation_dir=annotation_dir,
+        bot_filter=bot_filter,
+        cbl_batch_size=cbl_batch_size,
+        saga_batch_size=saga_batch_size,
+        num_workers=num_workers,
+        savlg_alpha_override=savlg_alpha_override,
+        disable_activation_cache=disable_activation_cache,
+        max_images=max_images,
+        savlg_branch_norm_mode=savlg_branch_norm_mode,
+    )
+    acc = run_fixed_lam_from_features(
+        load_dir,
+        feature_set,
+        saga_batch_size=args.saga_batch_size,
+        saga_step_size=getattr(args, "saga_step_size", 0.1),
+        saga_n_iters=n_iters if n_iters is not None else getattr(args, "saga_n_iters", 500),
+        device=args.device,
+        lam=lam,
+    )
+    return acc, feature_set, args

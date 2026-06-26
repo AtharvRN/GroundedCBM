@@ -95,6 +95,8 @@ def build_config(args: argparse.Namespace) -> Config:
         patch_pos_weight=1.0,
         loss_global_w=1.0,
         loss_mask_w=1.0,
+        loss_spatial_presence_w=0.0,
+        loss_global_spatial_align_w=0.0,
         branch_arch="dual",
         spatial_branch_mode="multiscale_conv45",
         spatial_stage="conv5",

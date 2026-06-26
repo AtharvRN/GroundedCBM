@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from data import utils as data_utils
 from data.concept_dataset import get_filtered_concepts_and_counts
-from gcbm.losses import sgcbm_concept_losses
+from gcbm.losses import probability_alignment_loss, sgcbm_concept_losses
 from gcbm.sg_model import (
     DualBranchConceptLayer as SharedDualBranchConceptLayer,
     MultiScaleConceptLayer,
@@ -231,6 +231,35 @@ def _subset_image_paths(raw_dataset: Dataset) -> Optional[List[str]]:
     return [str(samples[idx][0]) for idx in indices]
 
 
+def _dataset_sample_ids(raw_dataset: Dataset) -> Optional[List[str]]:
+    image_paths = _subset_image_paths(raw_dataset)
+    if image_paths is None:
+        return None
+
+    base_dataset = getattr(raw_dataset, "base_dataset", None)
+    base_root = getattr(base_dataset, "root", None)
+    sample_ids: List[str] = []
+    for image_path in image_paths:
+        sample_path = str(image_path)
+        if base_root:
+            try:
+                sample_path = os.path.relpath(sample_path, str(base_root))
+            except Exception:
+                sample_path = str(image_path)
+        sample_ids.append(sample_path.replace("\\", "/"))
+    return sample_ids
+
+
+def _sample_ids_hash(sample_ids: Optional[Sequence[str]]) -> Optional[str]:
+    if sample_ids is None:
+        return None
+    h = hashlib.sha1()
+    for sample_id in sample_ids:
+        h.update(str(sample_id).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()[:16]
+
+
 def _load_or_build_image_sizes(
     raw_dataset: Dataset,
     args,
@@ -330,6 +359,9 @@ def load_spatial_supervision(
     keep_idx: Optional[Sequence[int]] = None,
 ) -> Tuple[np.ndarray, List[Dict[int, np.ndarray]], List[int]]:
     cache_path = _supervision_cache_path(args, split_name, concepts, raw_dataset=raw_dataset)
+    current_sample_ids = _dataset_sample_ids(raw_dataset)
+    current_sample_ids_hash = _sample_ids_hash(current_sample_ids)
+    current_annotation_dir = os.path.abspath(annotation_dir)
     if os.path.exists(cache_path) and not getattr(args, "recompute_spatial_sims", False):
         logger.info("Loading cached SAVLG supervision from {}", cache_path)
         payload = torch.load(cache_path, weights_only=False)
@@ -341,9 +373,15 @@ def load_spatial_supervision(
                 args,
             )
         cached_mask_entries = payload.get("mask_entries")
+        cache_format_version = int(payload.get("cache_format_version", 0) or 0)
+        cached_sample_ids_hash = payload.get("sample_ids_hash")
+        cached_annotation_dir = payload.get("annotation_dir")
         cache_ok = True
         reason = ""
-        if cached_global_targets is None or cached_mask_entries is None:
+        if cache_format_version < 2:
+            cache_ok = False
+            reason = f"unsupported cache format version {cache_format_version}"
+        elif cached_global_targets is None or cached_mask_entries is None:
             cache_ok = False
             reason = "missing fields"
         elif len(cached_global_targets) != len(raw_dataset):
@@ -355,6 +393,29 @@ def load_spatial_supervision(
         elif keep_idx is not None and cached_keep_idx != list(keep_idx):
             cache_ok = False
             reason = f"keep_idx changed (cached={len(cached_keep_idx)} current={len(list(keep_idx))})"
+        elif current_sample_ids_hash is not None:
+            if cached_sample_ids_hash is None:
+                cache_ok = False
+                reason = "missing sample identity metadata"
+            elif str(cached_sample_ids_hash) != str(current_sample_ids_hash):
+                cache_ok = False
+                reason = (
+                    f"sample identity changed "
+                    f"(cached={cached_sample_ids_hash} current={current_sample_ids_hash})"
+                )
+        elif cached_sample_ids_hash is not None:
+            cache_ok = False
+            reason = "current dataset has no sample identities but cache expects them"
+        if cache_ok and cached_annotation_dir is not None:
+            if os.path.abspath(str(cached_annotation_dir)) != current_annotation_dir:
+                cache_ok = False
+                reason = (
+                    f"annotation dir changed "
+                    f"(cached={cached_annotation_dir} current={current_annotation_dir})"
+                )
+        elif cache_ok:
+            cache_ok = False
+            reason = "missing annotation dir metadata"
         if cache_ok:
             return cached_global_targets, cached_mask_entries, cached_keep_idx
         logger.info("Ignoring cached SAVLG supervision at {} due to {}", cache_path, reason)
@@ -449,11 +510,14 @@ def load_spatial_supervision(
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     torch.save(
         {
+            "cache_format_version": 2,
             "global_concept_scores": filtered_scores,
             "global_concept_targets": global_concept_targets,
             "presence_scores": filtered_scores,
             "mask_entries": filtered_entries,
             "keep_idx": keep_idx_array.tolist(),
+            "sample_ids_hash": current_sample_ids_hash,
+            "annotation_dir": current_annotation_dir,
         },
         cache_path,
     )
@@ -1198,25 +1262,6 @@ def compute_savlg_concept_logits(
     return global_logits, spatial_logits, global_logits
 
 
-def compute_local_trust_weights(
-    global_concept_targets: torch.Tensor,
-    args,
-) -> torch.Tensor:
-    mode = str(getattr(args, "savlg_local_weight_mode", "uniform")).lower()
-    if mode == "uniform":
-        return torch.ones_like(global_concept_targets)
-    if mode != "confidence":
-        raise ValueError(f"Unsupported SAVLG local weighting mode: {mode}")
-
-    threshold = float(getattr(args, "cbl_confidence_threshold", 0.15))
-    denom = max(1.0 - threshold, 1e-6)
-    floor = float(getattr(args, "savlg_local_weight_floor", 0.25))
-    floor = min(max(floor, 0.0), 1.0)
-    power = max(float(getattr(args, "savlg_local_weight_power", 1.0)), 1e-6)
-    normalized = ((global_concept_targets - threshold) / denom).clamp(0.0, 1.0)
-    return floor + (1.0 - floor) * normalized.pow(power)
-
-
 def compute_spatial_losses(
     pooled_logits: torch.Tensor,
     map_logits: torch.Tensor,
@@ -1225,7 +1270,6 @@ def compute_spatial_losses(
     mask_targets: torch.Tensor,
     mask_valid: torch.Tensor,
     global_bce_pos_weight: float = 1.0,
-    local_trust_weights: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Global concept BCE plus spatial soft-align KL for positive boxed concepts."""
     return sgcbm_concept_losses(
@@ -1236,7 +1280,24 @@ def compute_spatial_losses(
         mask_targets,
         mask_valid,
         global_pos_weight=global_bce_pos_weight,
-        local_trust_weights=local_trust_weights,
+    )
+
+
+def compute_global_spatial_alignment_loss(
+    global_logits: torch.Tensor,
+    spatial_logits: torch.Tensor,
+    global_concept_targets: torch.Tensor,
+    args,
+) -> torch.Tensor:
+    """Align global and pooled spatial branch concept probabilities."""
+    weight = float(getattr(args, "loss_global_spatial_align_w", 0.0) or 0.0)
+    if weight <= 0.0 or not savlg_residual_coupling_enabled(args):
+        return global_logits.sum() * 0.0
+    return probability_alignment_loss(
+        global_logits,
+        spatial_logits,
+        targets=global_concept_targets,
+        pos_weight=float(getattr(args, "global_bce_pos_weight", 1.0)),
     )
 
 
@@ -1305,13 +1366,12 @@ def train_concept_head(
                     batch_images = images.to(args.device)
                     feats = forward_savlg_backbone(backbone, batch_images, args)
                 global_outputs, spatial_maps = forward_savlg_concept_layer(concept_layer, feats)
-                _, _, final_logits = compute_savlg_concept_logits(
+                global_logits, spatial_logits, final_logits = compute_savlg_concept_logits(
                     global_outputs,
                     spatial_maps,
                     args,
                     concept_layer=concept_layer,
                 )
-                local_trust_weights = compute_local_trust_weights(global_concepts, args)
                 loss_global_concept, loss_mask = compute_spatial_losses(
                     final_logits,
                     spatial_maps,
@@ -1320,11 +1380,17 @@ def train_concept_head(
                     mask_pad,
                     valid_pad,
                     global_bce_pos_weight=float(getattr(args, "global_bce_pos_weight", 1.0)),
-                    local_trust_weights=local_trust_weights,
+                )
+                loss_align = compute_global_spatial_alignment_loss(
+                    global_logits,
+                    spatial_logits,
+                    global_concepts,
+                    args,
                 )
                 return (
                     global_concept_loss_weight * loss_global_concept
                     + float(getattr(args, "loss_mask_w", 1.0)) * loss_mask
+                    + float(getattr(args, "loss_global_spatial_align_w", 0.0)) * loss_align
                 )
 
             loss = compute_train_loss()
@@ -1348,13 +1414,12 @@ def train_concept_head(
                 mask_pad = mask_pad.to(args.device)
                 valid_pad = valid_pad.to(args.device)
                 global_outputs, spatial_maps = forward_savlg_concept_layer(concept_layer, feats)
-                _, _, final_logits = compute_savlg_concept_logits(
+                global_logits, spatial_logits, final_logits = compute_savlg_concept_logits(
                     global_outputs,
                     spatial_maps,
                     args,
                     concept_layer=concept_layer,
                 )
-                local_trust_weights = compute_local_trust_weights(global_concepts, args)
                 loss_global_concept, loss_mask = compute_spatial_losses(
                     final_logits,
                     spatial_maps,
@@ -1363,11 +1428,17 @@ def train_concept_head(
                     mask_pad,
                     valid_pad,
                     global_bce_pos_weight=float(getattr(args, "global_bce_pos_weight", 1.0)),
-                    local_trust_weights=local_trust_weights,
+                )
+                loss_align = compute_global_spatial_alignment_loss(
+                    global_logits,
+                    spatial_logits,
+                    global_concepts,
+                    args,
                 )
                 val_loss = (
                     global_concept_loss_weight * loss_global_concept
                     + float(getattr(args, "loss_mask_w", 1.0)) * loss_mask
+                    + float(getattr(args, "loss_global_spatial_align_w", 0.0)) * loss_align
                 )
                 val_running += float(val_loss.item()) * global_concepts.size(0)
             val_loss = val_running / max(len(val_loader.dataset), 1)
@@ -1784,6 +1855,7 @@ def train_savlg_cbm(args):
         "spatial_losses": {
             "loss_global_concept_w": _savlg_global_concept_loss_weight(args),
             "loss_mask_w": float(getattr(args, "loss_mask_w", 1.0)),
+            "loss_global_spatial_align_w": float(getattr(args, "loss_global_spatial_align_w", 0.0)),
             "global_bce_pos_weight": float(getattr(args, "global_bce_pos_weight", 1.0)),
             "global_target_mode": _savlg_global_target_mode(args),
             "target_mode": str(getattr(args, "savlg_target_mode", "hard_iou")),
@@ -1798,12 +1870,6 @@ def train_savlg_cbm(args):
             "alpha": float(getattr(args, "savlg_residual_spatial_alpha", 0.0)),
             "pooling": str(getattr(args, "savlg_residual_spatial_pooling", "lse")),
             "enabled": savlg_residual_coupling_enabled(args),
-        },
-        "selective_local_weighting": {
-            "mode": str(getattr(args, "savlg_local_weight_mode", "uniform")),
-            "floor": float(getattr(args, "savlg_local_weight_floor", 0.25)),
-            "power": float(getattr(args, "savlg_local_weight_power", 1.0)),
-            "enabled": str(getattr(args, "savlg_local_weight_mode", "uniform")).lower() != "uniform",
         },
         "vlg_warm_start": {
             "init_path": str(getattr(args, "savlg_init_from_vlg_path", "") or ""),

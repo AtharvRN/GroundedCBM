@@ -294,6 +294,9 @@ def train_cbm_and_save(args):
             data_parallel=args.data_parallel,
             cached_val_embeddings=cached_val_embeddings,
             cached_val_concepts=cached_val_concepts,
+            early_stop_patience=args.cbl_early_stop_patience,
+            min_delta=args.cbl_min_delta,
+            min_epochs=args.cbl_min_epochs,
         )
     else:
         logger.info("Loading CBL from {}".format(args.load_dir))
@@ -460,14 +463,16 @@ def main():
     parser.add_argument("--max_test_images", type=int, default=0, help="If >0, limit test images for quick checks.")
     parser.add_argument("--skip_test_eval", action="store_true", help="Skip final test-set evaluation.")
     parser.add_argument("--concept_set", type=str, default="concept_files/cub_filtered.txt", help="Concept list file.")
-    parser.add_argument("--backbone", type=str, default="resnet50_cub_mm", help="Backbone name.")
+    parser.add_argument("--backbone", type=str, default="resnet18_cub", help="Backbone name.")
     parser.add_argument("--cbl_batch_size", type=int, default=32, help="Concept-layer batch size.")
-    parser.add_argument("--cbl_epochs", type=int, default=20, help="Concept-layer training epochs.")
+    parser.add_argument("--cbl_epochs", type=int, default=75, help="Concept-layer training epochs.")
     parser.add_argument("--cbl_lr", type=float, default=5e-4, help="Concept-layer learning rate.")
+    parser.add_argument("--cbl_optimizer", choices=["adam", "sgd"], default="adam", help="Concept-layer optimizer.")
     parser.add_argument("--mask_h", type=int, default=14, help="SG-CBM spatial supervision mask height.")
     parser.add_argument("--mask_w", type=int, default=14, help="SG-CBM spatial supervision mask width.")
-    parser.add_argument("--loss_mask_w", type=float, default=1.0, help="SG-CBM spatial soft-align KL weight.")
-    parser.add_argument("--savlg_residual_spatial_alpha", type=float, default=0.2, help="Residual spatial-logit coupling weight.")
+    parser.add_argument("--loss_mask_w", type=float, default=0.25, help="SG-CBM spatial soft-align KL weight.")
+    parser.add_argument("--loss_global_spatial_align_w", type=float, default=0.0, help="SG-CBM global/spatial concept probability alignment weight.")
+    parser.add_argument("--savlg_residual_spatial_alpha", type=float, default=0.1, help="Residual spatial-logit coupling weight.")
     parser.add_argument("--savlg_target_mode", type=str, default="soft_box", choices=["hard_iou", "soft_box"], help="SG-CBM spatial target rasterization.")
     parser.add_argument("--disable_activation_cache", action="store_true", help="Disable deterministic activation caching.")
     parser.add_argument("--dense", action="store_true", help="Train a dense final layer instead of sparse SAGA.")
@@ -478,14 +483,14 @@ def main():
         cbl_auto_weight=False,
         cbl_bb_lr_rate=1.0,
         cbl_confidence_threshold=0.15,
-        cbl_early_stop_patience=0,
+        cbl_early_stop_patience=8,
         cbl_finetune=False,
         cbl_hidden_dim=0,
         cbl_loss_type="bce",
-        cbl_min_delta=0.0,
-        cbl_min_epochs=0,
+        cbl_min_delta=1e-3,
+        cbl_min_epochs=15,
         cbl_hidden_layers=1,
-        cbl_optimizer="sgd",
+        cbl_optimizer="adam",
         cbl_pos_weight=1.0,
         cbl_scheduler=None,
         cbl_twoway_tp=4.0,
@@ -502,13 +507,14 @@ def main():
         feature_layer="layer4",
         filter_set=None,
         global_bce_pos_weight=1.0,
-        grid_h=7,
-        grid_w=7,
+        grid_h=14,
+        grid_w=14,
         interpretability_cutoff=0.40,
         lf_batch_size=64,
         lf_clip_name="clip_RN50",
         lf_original_protocol=False,
         loss_global_concept_w=None,
+        loss_global_spatial_align_w=0.0,
         loss_presence_w=None,
         proj_batch_size=512,
         proj_early_stop_patience=0,
@@ -522,21 +528,18 @@ def main():
         patch_iou_thresh=0.5,
         recompute_spatial_sims=False,
         saga_batch_size=512,
-        saga_lam=0.0007,
-        saga_n_iters=2000,
+        saga_lam=0.0002,
+        saga_n_iters=4000,
         saga_step_size=0.1,
         savlg_branch_arch="dual",
         savlg_concept_filter_mode="spatial_threshold",
         savlg_freeze_global_head=False,
-        savlg_global_head_mode="spatial_pool",
+        savlg_global_head_mode="vlg_linear",
         savlg_global_hidden_dim=0,
         savlg_global_hidden_layers=0,
         savlg_global_use_batchnorm=False,
         savlg_init_from_vlg_path="",
         savlg_init_spatial_from_vlg=False,
-        savlg_local_weight_floor=0.25,
-        savlg_local_weight_mode="uniform",
-        savlg_local_weight_power=1.0,
         savlg_pooling="avg",
         savlg_residual_spatial_pooling="lse",
         savlg_spatial_branch_mode="multiscale_conv45",

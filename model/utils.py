@@ -2,7 +2,6 @@ import os
 import math
 import shutil
 import torch
-import clip
 from data import utils as data_utils
 import json
 import numpy as np
@@ -17,7 +16,20 @@ from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from torchvision import transforms
+
+
+def _import_transforms():
+    try:
+        _tv_lib = torch.library.Library("torchvision", "DEF")
+        _tv_lib.define("nms(Tensor dets, Tensor scores, float iou_threshold) -> Tensor")
+    except Exception:
+        pass
+    from torchvision import transforms as tv_transforms
+
+    return tv_transforms
+
+
+transforms = _import_transforms()
 
 try:
     from interpretability.cam import ScoreCAM  # type: ignore
@@ -102,6 +114,8 @@ def save_clip_text_features(model, text, save_name, batch_size=1000):
 
 
 def save_activations(clip_name, target_name, target_layers, d_probe, concept_set, batch_size, device, pool_mode, save_dir):
+    import clip
+
     target_save_name, clip_save_name, text_save_name = get_save_names(
         clip_name, target_name, "{}", d_probe, concept_set, pool_mode, save_dir
     )

@@ -71,12 +71,34 @@ def weighted_concept_bce(
     return (bce * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
+def probability_alignment_loss(
+    left_logits: torch.Tensor,
+    right_logits: torch.Tensor,
+    targets: Optional[torch.Tensor] = None,
+    pos_weight: float = 1.0,
+) -> torch.Tensor:
+    """Align two concept-logit branches in probability space.
+
+    This is intentionally scale-insensitive: spatial and global heads may use
+    different logit ranges, but their sigmoid probabilities should agree when
+    they describe the same concept.
+    """
+    loss = (torch.sigmoid(left_logits.float()) - torch.sigmoid(right_logits.float())).square()
+    if targets is None:
+        return loss.mean()
+    weights = torch.where(
+        targets > 0.5,
+        torch.full_like(targets, float(pos_weight), dtype=loss.dtype),
+        torch.ones_like(targets, dtype=loss.dtype),
+    )
+    return (loss * weights).sum() / torch.clamp(weights.sum(), min=1.0)
+
+
 def soft_align_kl_loss(
     map_logits: torch.Tensor,
     mask_indices: torch.Tensor,
     mask_targets: torch.Tensor,
     mask_valid: torch.Tensor,
-    concept_weights: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """KL-align selected concept maps to target masks.
 
@@ -119,12 +141,7 @@ def soft_align_kl_loss(
                 reduction="none",
             ).sum(dim=1)
 
-        if concept_weights is None:
-            batch_losses.append(per_concept_loss.mean())
-            continue
-
-        weights = concept_weights[batch_index].index_select(0, concept_ids).to(per_concept_loss.dtype)
-        batch_losses.append((per_concept_loss * weights).sum() / torch.clamp(weights.sum(), min=1.0))
+        batch_losses.append(per_concept_loss.mean())
 
     return torch.stack(batch_losses).mean() if batch_losses else map_logits.sum() * 0.0
 
@@ -137,7 +154,6 @@ def sgcbm_concept_losses(
     mask_targets: torch.Tensor,
     mask_valid: torch.Tensor,
     global_pos_weight: float = 1.0,
-    local_trust_weights: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """SG-CBM concept-layer losses: global BCE and spatial soft-align KL."""
     loss_global = weighted_concept_bce(
@@ -150,6 +166,5 @@ def sgcbm_concept_losses(
         mask_indices,
         mask_targets,
         mask_valid,
-        concept_weights=local_trust_weights,
     )
     return loss_global, loss_mask

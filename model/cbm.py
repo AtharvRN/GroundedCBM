@@ -11,7 +11,6 @@ from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import clip
 from data import utils as data_utils
 from glm_saga.elasticnet import glm_saga
 
@@ -175,6 +174,8 @@ class BackboneCLIP(nn.Module):
         self, backbone_name: str, use_penultimate: bool = True, device: str = "cuda"
     ):
         super().__init__()
+        import clip
+
         target_model, target_preprocess = clip.load(backbone_name[5:], device=device)
         if use_penultimate:
             logger.info("Using penultimate layer of CLIP")
@@ -469,6 +470,9 @@ def train_cbl(
     data_parallel=False,
     cached_val_embeddings: Optional[torch.Tensor] = None,
     cached_val_concepts: Optional[torch.Tensor] = None,
+    early_stop_patience: int = 0,
+    min_delta: float = 0.0,
+    min_epochs: int = 0,
 ):
     # setup optimizer
     base_optimizer_cls = None
@@ -490,6 +494,8 @@ def train_cbl(
     best_val_loss = float("inf")
     best_val_loss_epoch = None
     best_model_state = None
+    best_backbone_state = None
+    epochs_without_improvement = 0
     if data_parallel:
         backbone = torch.nn.DataParallel(backbone)
         cbl = torch.nn.DataParallel(cbl)
@@ -552,12 +558,16 @@ def train_cbl(
             cached_embeddings=cached_val_embeddings,
             cached_concepts=cached_val_concepts,
         )
-        if val_loss < best_val_loss:
+        improved = val_loss < best_val_loss - min_delta
+        if improved:
             logger.info(f"Updating best val loss at epoch: {epoch}")
             best_val_loss = val_loss
             best_val_loss_epoch = epoch
             best_backbone_state = backbone.state_dict()
             best_model_state = cbl.state_dict()
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
 
         # write to tensorboard
         if tb_writer is not None:
@@ -573,6 +583,19 @@ def train_cbl(
         # Step the scheduler
         if scheduler is not None:
             scheduler.step(val_loss)
+
+        if (
+            early_stop_patience
+            and epoch + 1 >= min_epochs
+            and epochs_without_improvement >= early_stop_patience
+        ):
+            logger.info(
+                f"Early stopping CBL at epoch {epoch}: best val loss "
+                f"{best_val_loss:.6f} at epoch {best_val_loss_epoch}, "
+                f"no improvement greater than {min_delta:.6f} for "
+                f"{epochs_without_improvement} epochs"
+            )
+            break
 
     # return best model based on validation loss
     logger.info(f"Best val loss: {best_val_loss:.6f} at epoch {best_val_loss_epoch}")
