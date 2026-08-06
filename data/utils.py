@@ -1,6 +1,7 @@
-import json
 import os
 import glob
+import json
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -43,6 +44,9 @@ def get_dataset_roots() -> Dict[str, str]:
         "IMAGENET_DATASET_ROOT", f"{DATASET_FOLDER}/imagenet/ILSVRC/Data/CLS-LOC"
     )
     cub_root = os.environ.get("CUB_DATASET_ROOT", f"{DATASET_FOLDER}/CUB")
+    places365_root = os.environ.get(
+        "PLACES365_ROOT", f"{DATASET_FOLDER}/places365_torch"
+    )
     roots = {
         "imagenet_train": os.environ.get(
             "IMAGENET_TRAIN_ROOT", f"{imagenet_root}/train"
@@ -52,6 +56,22 @@ def get_dataset_roots() -> Dict[str, str]:
         ),
         "cub_train": os.environ.get("CUB_TRAIN_ROOT", f"{cub_root}/train"),
         "cub_val": os.environ.get("CUB_VAL_ROOT", f"{cub_root}/test"),
+        "places365_train": os.environ.get("PLACES365_TRAIN_ROOT", places365_root),
+        "places365_val": os.environ.get("PLACES365_VAL_ROOT", places365_root),
+        "partimagenetpp_train": os.environ.get(
+            "PARTIMAGENETPP_TRAIN_MANIFEST",
+            os.environ.get(
+                "PARTIMAGENETPP_MANIFEST",
+                f"{DATASET_FOLDER}/partimagenetpp/manifest.jsonl",
+            ),
+        ),
+        "partimagenetpp_val": os.environ.get(
+            "PARTIMAGENETPP_VAL_MANIFEST",
+            os.environ.get(
+                "PARTIMAGENETPP_MANIFEST",
+                f"{DATASET_FOLDER}/partimagenetpp/manifest.jsonl",
+            ),
+        ),
     }
     return roots
 
@@ -61,6 +81,7 @@ DATASET_ROOTS = get_dataset_roots()
 LABEL_FILES = {
     "imagenet": "concept_files/imagenet_classes.txt",
     "cub": "concept_files/cub_classes.txt",
+    "places365": "concept_files/places365_classes.txt",
 }
 
 BACKBONE_ENCODING_DIMENSION = {
@@ -150,6 +171,31 @@ def get_resnet_imagenet_preprocess():
     return preprocess
 
 
+def load_resnet50_checkpoint(checkpoint_path: str, device: str):
+    """Load a torchvision ResNet-50 checkpoint trained by this repository."""
+    path = Path(os.path.expanduser(checkpoint_path)).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"ResNet-50 checkpoint not found: {path}")
+
+    payload = torch.load(path, map_location="cpu")
+    if isinstance(payload, dict):
+        state_dict = payload.get("model", payload.get("state_dict", payload))
+    else:
+        state_dict = payload
+    if not isinstance(state_dict, dict):
+        raise TypeError(
+            f"Expected a state-dict payload at {path}, got {type(state_dict).__name__}."
+        )
+
+    if state_dict and all(key.startswith("module.") for key in state_dict):
+        state_dict = _strip_prefix_state_dict(state_dict, "module.")
+
+    target_model = models.resnet50(weights=None)
+    target_model.load_state_dict(state_dict, strict=True)
+    target_model.to(device).eval()
+    return target_model, get_resnet_imagenet_preprocess()
+
+
 def _safe_imagenet_pil_loader(path: str) -> Image.Image:
     """
     Robust ImageNet loader.
@@ -175,7 +221,146 @@ def _safe_imagenet_pil_loader(path: str) -> Image.Image:
         return Image.new("RGB", (fallback_size, fallback_size), color=(0, 0, 0))
 
 
+class Places365FileListDataset(torch.utils.data.Dataset):
+    """Places365-small dataset backed by the official filelist metadata."""
+
+    def __init__(self, root: str, split: str, transform=None):
+        self.root = Path(os.path.expanduser(root))
+        self.split = split
+        self.transform = transform
+        if split == "train":
+            list_path = self.root / "places365_train_standard.txt"
+        elif split == "val":
+            list_path = self.root / "places365_val.txt"
+        else:
+            raise ValueError(f"Unsupported Places365 split: {split!r}")
+        if not list_path.is_file():
+            raise FileNotFoundError(
+                f"Places365 filelist not found: {list_path}. Set PLACES365_ROOT to the directory containing places365_train_standard.txt."
+            )
+
+        classes_path = self.root / "categories_places365.txt"
+        if classes_path.is_file():
+            self.classes = [
+                line.split()[0].strip("/").replace("_", " ").split("/", 1)[-1]
+                for line in classes_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        else:
+            self.classes = get_classes("places365")
+        self.class_to_idx = {name: idx for idx, name in enumerate(self.classes)}
+
+        self.samples = []
+        for line in list_path.read_text(encoding="utf-8").splitlines():
+            fields = line.split()
+            if len(fields) < 2:
+                continue
+            rel_path, label = fields[0], int(fields[1])
+            self.samples.append((rel_path, label))
+        if not self.samples:
+            raise RuntimeError(f"Places365 filelist is empty: {list_path}")
+        self.targets = [label for _, label in self.samples]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def _image_path(self, rel_path: str) -> Path:
+        rel = rel_path.lstrip("/")
+        if self.split == "train":
+            return self.root / "data_256" / rel
+        candidates = [
+            self.root / rel,
+            self.root / "val_256" / rel,
+            self.root / "data_256" / rel,
+            self.root / "data_256" / "val_256" / rel,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
+
+    def __getitem__(self, idx: int):
+        rel_path, target = self.samples[idx]
+        image = _safe_imagenet_pil_loader(str(self._image_path(rel_path)))
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, target
+
+
+class PartImageNetPPManifestDataset(torch.utils.data.Dataset):
+    """ImageNet-style dataset backed by the PartImageNet++ JSONL manifest."""
+
+    def __init__(self, manifest_path: str, transform=None):
+        self.manifest_path = str(manifest_path)
+        self.transform = transform
+        self.rows = []
+        manifest = Path(manifest_path)
+        if not manifest.is_file():
+            raise FileNotFoundError(
+                f"PartImageNet++ manifest not found: {manifest}. "
+                "Set PARTIMAGENETPP_MANIFEST or PARTIMAGENETPP_TRAIN_MANIFEST/PARTIMAGENETPP_VAL_MANIFEST."
+            )
+        with manifest.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    self.rows.append(json.loads(line))
+        if not self.rows:
+            raise RuntimeError(f"PartImageNet++ manifest is empty: {manifest}")
+
+        class_meta = {}
+        for row in self.rows:
+            wnid = str(row["wnid"])
+            class_meta.setdefault(wnid, str(row.get("object_name") or wnid))
+        self.wnids = sorted(class_meta)
+        self.classes = [class_meta[wnid] for wnid in self.wnids]
+        self.class_to_idx = {wnid: idx for idx, wnid in enumerate(self.wnids)}
+        self.targets = [self.class_to_idx[str(row["wnid"])] for row in self.rows]
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, idx: int):
+        row = self.rows[idx]
+        image = _safe_imagenet_pil_loader(str(row["image"]))
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, self.targets[idx]
+
+
+def _get_partimagenetpp_classes() -> List[str]:
+    manifest = get_dataset_roots()["partimagenetpp_train"]
+    data = PartImageNetPPManifestDataset(manifest, transform=None)
+    return data.classes
+
+
 def get_data(dataset_name, preprocess=None):
+    if dataset_name in {"places365_train", "places365_val"}:
+        dataset_roots = get_dataset_roots()
+        split = "train" if dataset_name.endswith("_train") else "val"
+        root = dataset_roots[dataset_name]
+        print(
+            f"[get_data] building Places365 dataset for dataset_name={dataset_name} root={root} split={split}",
+            flush=True,
+        )
+        data = Places365FileListDataset(root=root, split=split, transform=preprocess)
+        print(
+            f"[get_data] ready Places365 dataset for dataset_name={dataset_name} len={len(data)}",
+            flush=True,
+        )
+        return data
+
+    if dataset_name in {"partimagenetpp_train", "partimagenetpp_val"}:
+        dataset_roots = get_dataset_roots()
+        print(
+            f"[get_data] building PartImageNet++ manifest dataset for dataset_name={dataset_name} manifest={dataset_roots[dataset_name]}",
+            flush=True,
+        )
+        data = PartImageNetPPManifestDataset(dataset_roots[dataset_name], transform=preprocess)
+        print(
+            f"[get_data] ready PartImageNet++ dataset for dataset_name={dataset_name} len={len(data)} classes={len(data.classes)}",
+            flush=True,
+        )
+        return data
     if dataset_name in get_dataset_roots().keys():
         dataset_roots = get_dataset_roots()
         print(
@@ -195,7 +380,7 @@ def get_data(dataset_name, preprocess=None):
             flush=True,
         )
         return data
-    raise ValueError(f"Unsupported dataset {dataset_name!r}. This release supports CUB and ImageNet only.")
+    raise ValueError(f"Unsupported dataset {dataset_name!r}. This release supports CUB, ImageNet, Places365, and PartImageNet++.")
 
 
 def get_targets_only(dataset_name):
@@ -301,14 +486,16 @@ def canonicalize_concept_label(s: str) -> str:
     return format_concept(aliased)
 
 def get_classes(dataset_name):
+    if dataset_name == "partimagenetpp":
+        return _get_partimagenetpp_classes()
     with open(LABEL_FILES[dataset_name], "r") as f:
-        classes = f.read().split("\n")
+        classes = [line.strip() for line in f.read().splitlines() if line.strip()]
     return classes
 
 
 def get_concepts(concept_file: str, filter_file:Optional[str]=None) -> List[str]:
     with open(concept_file) as f:
-        concepts: List[str] = f.read().split("\n")
+        concepts: List[str] = [line.strip() for line in f.read().splitlines() if line.strip()]
 
     # remove repeated concepts and maintain order
     concepts = list(dict.fromkeys([canonicalize_concept_label(concept) for concept in concepts]))
@@ -317,7 +504,7 @@ def get_concepts(concept_file: str, filter_file:Optional[str]=None) -> List[str]
     if filter_file and os.path.exists(filter_file):
         logger.info(f"Filtering concepts using {filter_file}")
         with open(filter_file) as f:
-            to_filter_concepts = f.read().split("\n")
+            to_filter_concepts = [line.strip() for line in f.read().splitlines() if line.strip()]
         to_filter_concepts = [canonicalize_concept_label(concept) for concept in to_filter_concepts]
         concepts = [concept for concept in concepts if concept not in to_filter_concepts]
 

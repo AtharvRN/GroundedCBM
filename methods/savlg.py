@@ -39,13 +39,29 @@ from model.cbm import Backbone, BackboneCLIP, ConceptLayer, train_dense_final, t
 from PIL import Image
 
 
+def use_explicit_partimagenetpp_splits(args) -> bool:
+    return (
+        getattr(args, "dataset", None) == "partimagenetpp"
+        and bool(os.environ.get("PARTIMAGENETPP_TRAIN_MANIFEST"))
+        and bool(os.environ.get("PARTIMAGENETPP_VAL_MANIFEST"))
+    )
+
+
+def use_partimagenetpp_train_val_split(args) -> bool:
+    return (
+        use_explicit_partimagenetpp_splits(args)
+        and float(getattr(args, "partimagenetpp_train_val_split", 0.0)) > 0.0
+    )
+
+
 def create_savlg_splits(args):
     backbone = SpatialBackbone(
         args.backbone,
         device=args.device,
         spatial_stage=getattr(args, "savlg_spatial_stage", "conv5"),
+        checkpoint_path=getattr(args, "backbone_checkpoint", ""),
     )
-    if use_original_label_free_protocol(args):
+    if use_original_label_free_protocol(args) or use_explicit_partimagenetpp_splits(args):
         base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
         base_val_raw = data_utils.get_data(f"{args.dataset}_val", None)
         print(
@@ -57,8 +73,24 @@ def create_savlg_splits(args):
         if max_train > 0:
             train_total = min(train_total, max_train)
         train_indices = list(range(train_total))
+        inner_val_indices = []
+        if use_partimagenetpp_train_val_split(args):
+            val_fraction = float(getattr(args, "partimagenetpp_train_val_split", 0.0))
+            if not 0.0 < val_fraction < 1.0:
+                raise ValueError(
+                    "partimagenetpp_train_val_split must be in (0, 1) when enabled."
+                )
+            n_val = max(1, int(round(val_fraction * train_total)))
+            if n_val >= train_total:
+                raise ValueError(
+                    "partimagenetpp_train_val_split leaves no training examples."
+                )
+            generator = torch.Generator().manual_seed(args.seed)
+            shuffled = torch.randperm(train_total, generator=generator).tolist()
+            inner_val_indices = shuffled[:n_val]
+            train_indices = shuffled[n_val:]
         print(
-            f"[create_savlg_splits] train_indices ready n={len(train_indices)}",
+            f"[create_savlg_splits] train_indices ready n={len(train_indices)} inner_val={len(inner_val_indices)}",
             flush=True,
         )
         max_test = int(getattr(args, "max_test_images", 0) or 0)
@@ -72,13 +104,20 @@ def create_savlg_splits(args):
         )
         train_raw = RawSubset(base_train_raw, train_indices)
         print("[create_savlg_splits] train_raw ready", flush=True)
-        val_raw = RawSubset(base_val_raw, val_indices)
+        val_raw = RawSubset(
+            base_train_raw if inner_val_indices else base_val_raw,
+            inner_val_indices if inner_val_indices else val_indices,
+        )
         print("[create_savlg_splits] val_raw ready", flush=True)
         train_dataset = TransformedSubset(base_train_raw, train_indices, backbone.preprocess)
         print("[create_savlg_splits] train_dataset ready", flush=True)
-        val_dataset = TransformedSubset(base_val_raw, val_indices, backbone.preprocess)
+        val_dataset = TransformedSubset(
+            base_train_raw if inner_val_indices else base_val_raw,
+            inner_val_indices if inner_val_indices else val_indices,
+            backbone.preprocess,
+        )
         print("[create_savlg_splits] val_dataset ready", flush=True)
-        test_dataset = val_dataset
+        test_dataset = TransformedSubset(base_val_raw, val_indices, backbone.preprocess)
         print("[create_savlg_splits] returning original LF protocol splits", flush=True)
         return train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone
 
@@ -219,6 +258,11 @@ def _load_concepts_file(path: str) -> List[str]:
 def _subset_image_paths(raw_dataset: Dataset) -> Optional[List[str]]:
     base_dataset = getattr(raw_dataset, "base_dataset", None)
     indices = getattr(raw_dataset, "indices", None)
+    if base_dataset is not None and indices is not None and hasattr(base_dataset, "rows"):
+        rows = getattr(base_dataset, "rows")
+        return [str(rows[idx].get("image", "")) for idx in indices]
+    if hasattr(raw_dataset, "rows"):
+        return [str(row.get("image", "")) for row in getattr(raw_dataset, "rows")]
     if base_dataset is None or indices is None:
         return None
     samples = None
@@ -228,7 +272,37 @@ def _subset_image_paths(raw_dataset: Dataset) -> Optional[List[str]]:
         samples = base_dataset.imgs
     if samples is None:
         return None
-    return [str(samples[idx][0]) for idx in indices]
+    image_paths = []
+    for idx in indices:
+        sample_path = samples[idx][0]
+        if hasattr(base_dataset, "_image_path"):
+            try:
+                sample_path = base_dataset._image_path(sample_path)
+            except Exception:
+                pass
+        image_paths.append(str(sample_path))
+    return image_paths
+
+
+def _subset_image_sizes_from_metadata(raw_dataset: Dataset) -> Optional[List[Tuple[int, int]]]:
+    base_dataset = getattr(raw_dataset, "base_dataset", None)
+    indices = getattr(raw_dataset, "indices", None)
+    if base_dataset is not None and indices is not None and hasattr(base_dataset, "rows"):
+        rows = getattr(base_dataset, "rows")
+        selected_rows = [rows[idx] for idx in indices]
+    elif hasattr(raw_dataset, "rows"):
+        selected_rows = list(getattr(raw_dataset, "rows"))
+    else:
+        return None
+
+    sizes: List[Tuple[int, int]] = []
+    for row in selected_rows:
+        width = row.get("width")
+        height = row.get("height")
+        if width is None or height is None:
+            return None
+        sizes.append((int(width), int(height)))
+    return sizes
 
 
 def _dataset_sample_ids(raw_dataset: Dataset) -> Optional[List[str]]:
@@ -273,6 +347,19 @@ def _load_or_build_image_sizes(
         if len(sizes) == len(raw_dataset):
             logger.info("Loading cached SAVLG image sizes from {}", cache_path)
             return sizes
+
+    metadata_sizes = _subset_image_sizes_from_metadata(raw_dataset)
+    if metadata_sizes is not None:
+        logger.info(
+            "Building SAVLG image-size cache for {} from manifest metadata (rows={})",
+            split_name,
+            len(metadata_sizes),
+        )
+        sizes = metadata_sizes
+        with open(cache_path, "w") as f:
+            json.dump({"sizes": sizes}, f)
+        logger.info("Saved SAVLG image-size cache to {}", cache_path)
+        return sizes
 
     image_paths = _subset_image_paths(raw_dataset)
     sizes: List[Tuple[int, int]] = []
@@ -1324,6 +1411,12 @@ def train_concept_head(
             lr=args.cbl_lr,
             weight_decay=args.cbl_weight_decay,
         )
+    elif args.cbl_optimizer == "adamw":
+        base_optimizer_cls = torch.optim.AdamW
+        optimizer_kwargs = dict(
+            lr=args.cbl_lr,
+            weight_decay=args.cbl_weight_decay,
+        )
     elif args.cbl_optimizer == "sgd":
         base_optimizer_cls = torch.optim.SGD
         optimizer_kwargs = dict(
@@ -1566,8 +1659,10 @@ def train_savlg_cbm(args):
     raw_concepts = data_utils.get_concepts(args.concept_set, args.filter_set)
     train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone = create_savlg_splits(args)
     train_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "train")
-    # When train/val are split from the training images, both splits use train annotations.
-    if use_original_label_free_protocol(args):
+    # When train/val are explicit datasets, each split has its own annotations.
+    if use_partimagenetpp_train_val_split(args):
+        val_ann_dir = train_ann_dir
+    elif use_original_label_free_protocol(args) or use_explicit_partimagenetpp_splits(args):
         val_ann_dir = _annotation_split_dir(args.annotation_dir, args.dataset, "val")
     else:
         val_ann_dir = train_ann_dir
@@ -1707,6 +1802,12 @@ def train_savlg_cbm(args):
         train_supervision_loader,
         val_supervision_loader,
     )
+    torch.save(
+        concept_layer.state_dict(), os.path.join(save_dir, "concept_layer_cbl.pt")
+    )
+    with open(os.path.join(save_dir, "concepts_cbl.txt"), "w") as f:
+        f.write("\n".join(concepts))
+    logger.info("Saved SAVLG concept-head checkpoint before sparse-final training")
 
     if getattr(args, "cbl_only", False):
         with open(os.path.join(save_dir, "concepts.txt"), "w") as f:
@@ -1714,7 +1815,7 @@ def train_savlg_cbm(args):
         torch.save(concept_layer.state_dict(), os.path.join(save_dir, "concept_layer.pt"))
         logger.info("cbl_only=True — saved concept_layer.pt, skipping sparse final layer")
     else:
-        if _savlg_feature_cache_enabled(args):
+        if (not stream_supervision) and _savlg_feature_cache_enabled(args):
             cached_loader_kwargs = {
                 "batch_size": args.cbl_batch_size,
                 "shuffle": False,

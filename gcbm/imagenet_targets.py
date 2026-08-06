@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -32,6 +33,73 @@ IMAGENET_LABEL_ALIASES = {
     "ski": "a pair of skis",
     "metal nail": "nails",
 }
+
+_PRECOMPUTE_WORKER_STATE: Dict[str, Any] = {}
+
+
+def _init_precompute_worker(
+    annotation_root: str,
+    annotation_split_dir: str,
+    concept_to_idx: Mapping[str, int],
+    n_concepts: int,
+    cfg: Config,
+) -> None:
+    _PRECOMPUTE_WORKER_STATE.clear()
+    _PRECOMPUTE_WORKER_STATE.update(
+        {
+            "annotation_root": annotation_root,
+            "annotation_split_dir": annotation_split_dir,
+            "concept_to_idx": dict(concept_to_idx),
+            "n_concepts": int(n_concepts),
+            "cfg": cfg,
+        }
+    )
+
+
+def _worker_load_annotation(annotation_index: int) -> List[Dict[str, Any]]:
+    root = Path(str(_PRECOMPUTE_WORKER_STATE["annotation_root"]))
+    split_dir = str(_PRECOMPUTE_WORKER_STATE["annotation_split_dir"])
+    path = root / split_dir / f"{int(annotation_index)}.json"
+    if not path.exists():
+        return []
+    try:
+        with path.open("r") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+    if isinstance(payload, list):
+        return payload
+    return payload.get("concepts", [])
+
+
+def _precompute_count_worker(args: Tuple[int, str, int, int, int]) -> Tuple[int, np.ndarray, int]:
+    row_index, path, annotation_index, input_size, min_image_bytes = args
+    cfg: Config = _PRECOMPUTE_WORKER_STATE["cfg"]
+    image_size = get_image_size(path, int(input_size), int(min_image_bytes))
+    annotations = _worker_load_annotation(annotation_index)
+    global_target, concept_ids, _ = build_gdino_target_sample(
+        annotations,
+        image_size,
+        _PRECOMPUTE_WORKER_STATE["concept_to_idx"],
+        int(_PRECOMPUTE_WORKER_STATE["n_concepts"]),
+        cfg,
+    )
+    return int(row_index), global_target, int(concept_ids.shape[0])
+
+
+def _precompute_data_worker(args: Tuple[int, str, int, int, int]) -> Tuple[int, np.ndarray, np.ndarray]:
+    row_index, path, annotation_index, input_size, min_image_bytes = args
+    cfg: Config = _PRECOMPUTE_WORKER_STATE["cfg"]
+    image_size = get_image_size(path, int(input_size), int(min_image_bytes))
+    annotations = _worker_load_annotation(annotation_index)
+    _, concept_ids, masks = build_gdino_target_sample(
+        annotations,
+        image_size,
+        _PRECOMPUTE_WORKER_STATE["concept_to_idx"],
+        int(_PRECOMPUTE_WORKER_STATE["n_concepts"]),
+        cfg,
+    )
+    return int(row_index), concept_ids, masks
 
 
 def format_concept(text: str) -> str:
@@ -446,29 +514,70 @@ def precompute_target_store(
     )
     total_entries = 0
     start_time = time.perf_counter()
-    for sample_index in range(total_examples):
-        path, _ = dataset.dataset.samples[sample_index]
-        annotation_index = dataset.annotation_index_for_row(sample_index)
-        image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
-        annotations = dataset._load_annotation(annotation_index)
-        global_target, concept_ids, _ = build_gdino_target_sample(
-            annotations,
-            image_size,
-            dataset.concept_to_idx,
-            n_concepts,
-            cfg,
+    workers = max(0, int(os.environ.get("GCBM_PRECOMPUTE_WORKERS", "0") or "0"))
+    rows = [
+        (
+            int(sample_index),
+            str(dataset.dataset.samples[sample_index][0]),
+            int(dataset.annotation_index_for_row(sample_index)),
+            int(dataset.input_size),
+            int(dataset.min_image_bytes),
         )
-        global_targets[sample_index] = global_target
-        counts[sample_index] = int(concept_ids.shape[0])
-        total_entries += int(concept_ids.shape[0])
-        if (sample_index + 1) % 1000 == 0:
-            global_targets.flush()
-            elapsed = time.perf_counter() - start_time
-            print(
-                f"[precompute_targets:{dataset.split}] count_pass n={sample_index + 1}/{total_examples} "
-                f"ips={(sample_index + 1) / max(elapsed, 1e-6):.2f}",
-                flush=True,
+        for sample_index in range(total_examples)
+    ]
+    if workers > 0:
+        annotation_split_dir = dataset._annotation_path(0).parent.name
+        chunk_size = max(1, int(os.environ.get("GCBM_PRECOMPUTE_CHUNK_SIZE", "128") or "128"))
+        with mp.Pool(
+            processes=workers,
+            initializer=_init_precompute_worker,
+            initargs=(
+                str(dataset.annotation_dir),
+                annotation_split_dir,
+                dataset.concept_to_idx,
+                n_concepts,
+                cfg,
+            ),
+        ) as pool:
+            for done, (sample_index, global_target, count) in enumerate(
+                pool.imap_unordered(_precompute_count_worker, rows, chunksize=chunk_size),
+                start=1,
+            ):
+                global_targets[sample_index] = global_target
+                counts[sample_index] = int(count)
+                total_entries += int(count)
+                if done % 1000 == 0:
+                    global_targets.flush()
+                    elapsed = time.perf_counter() - start_time
+                    print(
+                        f"[precompute_targets:{dataset.split}] count_pass n={done}/{total_examples} "
+                        f"ips={done / max(elapsed, 1e-6):.2f} workers={workers}",
+                        flush=True,
+                    )
+    else:
+        for sample_index in range(total_examples):
+            path, _ = dataset.dataset.samples[sample_index]
+            annotation_index = dataset.annotation_index_for_row(sample_index)
+            image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
+            annotations = dataset._load_annotation(annotation_index)
+            global_target, concept_ids, _ = build_gdino_target_sample(
+                annotations,
+                image_size,
+                dataset.concept_to_idx,
+                n_concepts,
+                cfg,
             )
+            global_targets[sample_index] = global_target
+            counts[sample_index] = int(concept_ids.shape[0])
+            total_entries += int(concept_ids.shape[0])
+            if (sample_index + 1) % 1000 == 0:
+                global_targets.flush()
+                elapsed = time.perf_counter() - start_time
+                print(
+                    f"[precompute_targets:{dataset.split}] count_pass n={sample_index + 1}/{total_examples} "
+                    f"ips={(sample_index + 1) / max(elapsed, 1e-6):.2f}",
+                    flush=True,
+                )
     global_targets.flush()
 
     offsets = np.zeros((total_examples + 1,), dtype=np.int64)
@@ -488,32 +597,71 @@ def precompute_target_store(
     )
     offset = 0
     second_start = time.perf_counter()
-    for sample_index in range(total_examples):
-        path, _ = dataset.dataset.samples[sample_index]
-        annotation_index = dataset.annotation_index_for_row(sample_index)
-        image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
-        annotations = dataset._load_annotation(annotation_index)
-        _, concept_ids, masks = build_gdino_target_sample(
-            annotations,
-            image_size,
-            dataset.concept_to_idx,
-            n_concepts,
-            cfg,
-        )
-        count = int(concept_ids.shape[0])
-        if count > 0:
-            concept_ids_memmap[offset : offset + count] = concept_ids
-            mask_targets_memmap[offset : offset + count] = masks
-            offset += count
-        if (sample_index + 1) % 1000 == 0:
-            concept_ids_memmap.flush()
-            mask_targets_memmap.flush()
-            elapsed = time.perf_counter() - second_start
-            print(
-                f"[precompute_targets:{dataset.split}] data_pass n={sample_index + 1}/{total_examples} "
-                f"ips={(sample_index + 1) / max(elapsed, 1e-6):.2f}",
-                flush=True,
+    if workers > 0:
+        annotation_split_dir = dataset._annotation_path(0).parent.name
+        chunk_size = max(1, int(os.environ.get("GCBM_PRECOMPUTE_CHUNK_SIZE", "128") or "128"))
+        ordered_results: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+        next_to_write = 0
+        with mp.Pool(
+            processes=workers,
+            initializer=_init_precompute_worker,
+            initargs=(
+                str(dataset.annotation_dir),
+                annotation_split_dir,
+                dataset.concept_to_idx,
+                n_concepts,
+                cfg,
+            ),
+        ) as pool:
+            for done, (sample_index, concept_ids, masks) in enumerate(
+                pool.imap_unordered(_precompute_data_worker, rows, chunksize=chunk_size),
+                start=1,
+            ):
+                ordered_results[int(sample_index)] = (concept_ids, masks)
+                while next_to_write in ordered_results:
+                    concept_ids_to_write, masks_to_write = ordered_results.pop(next_to_write)
+                    count = int(concept_ids_to_write.shape[0])
+                    if count > 0:
+                        concept_ids_memmap[offset : offset + count] = concept_ids_to_write
+                        mask_targets_memmap[offset : offset + count] = masks_to_write
+                        offset += count
+                    next_to_write += 1
+                if done % 1000 == 0:
+                    concept_ids_memmap.flush()
+                    mask_targets_memmap.flush()
+                    elapsed = time.perf_counter() - second_start
+                    print(
+                        f"[precompute_targets:{dataset.split}] data_pass n={done}/{total_examples} "
+                        f"ips={done / max(elapsed, 1e-6):.2f} workers={workers}",
+                        flush=True,
+                    )
+    else:
+        for sample_index in range(total_examples):
+            path, _ = dataset.dataset.samples[sample_index]
+            annotation_index = dataset.annotation_index_for_row(sample_index)
+            image_size = get_image_size(path, dataset.input_size, dataset.min_image_bytes)
+            annotations = dataset._load_annotation(annotation_index)
+            _, concept_ids, masks = build_gdino_target_sample(
+                annotations,
+                image_size,
+                dataset.concept_to_idx,
+                n_concepts,
+                cfg,
             )
+            count = int(concept_ids.shape[0])
+            if count > 0:
+                concept_ids_memmap[offset : offset + count] = concept_ids
+                mask_targets_memmap[offset : offset + count] = masks
+                offset += count
+            if (sample_index + 1) % 1000 == 0:
+                concept_ids_memmap.flush()
+                mask_targets_memmap.flush()
+                elapsed = time.perf_counter() - second_start
+                print(
+                    f"[precompute_targets:{dataset.split}] data_pass n={sample_index + 1}/{total_examples} "
+                    f"ips={(sample_index + 1) / max(elapsed, 1e-6):.2f}",
+                    flush=True,
+                )
     concept_ids_memmap.flush()
     mask_targets_memmap.flush()
     metadata = {

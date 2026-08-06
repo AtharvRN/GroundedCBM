@@ -19,6 +19,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from gcbm.imagenet_config import Config
+from gcbm.ncc import ncc_counts_for_batch
 from gcbm.sparse import threshold_weight_truncation
 from gcbm.runtime import amp_dtype, configure_runtime, cuda_peak_stats_mb
 from gcbm.training_utils import prepare_images
@@ -48,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save_truncated_weights", action="store_true")
     parser.add_argument("--inference_alpha_override", type=float, default=None)
     parser.add_argument("--max_samples", type=int, default=None)
+    parser.add_argument("--ncc_tau", type=float, default=0.95)
+    parser.add_argument("--ncc_mode", choices=["all_classes", "predicted_class", "target_class"], default="all_classes")
+    parser.add_argument("--ncc_class_chunk_size", type=int, default=64)
     return parser.parse_args()
 
 
@@ -282,6 +286,12 @@ def _evaluate_logits(
     stacked_biases: torch.Tensor,
     top1: torch.Tensor,
     top5: torch.Tensor,
+    ncc_sum: torch.Tensor,
+    ncc_count: torch.Tensor,
+    *,
+    ncc_tau: float,
+    ncc_mode: str,
+    ncc_class_chunk_size: int,
 ) -> None:
     logits = torch.einsum("bc,koc->kbo", concept_logits, stacked_weights) + stacked_biases[:, None, :]
     pred1 = logits.argmax(dim=-1)
@@ -290,6 +300,18 @@ def _evaluate_logits(
     match5 = pred5.eq(targets.view(1, -1, 1)).any(dim=-1)
     top1.add_(match1.sum(dim=1).cpu())
     top5.add_(match5.sum(dim=1).cpu())
+    for idx in range(stacked_weights.shape[0]):
+        counts = ncc_counts_for_batch(
+            concept_logits,
+            stacked_weights[idx],
+            tau=ncc_tau,
+            mode=ncc_mode,
+            bias=stacked_biases[idx],
+            targets=targets,
+            class_chunk_size=ncc_class_chunk_size,
+        )
+        ncc_sum[idx] += counts.double().sum().cpu()
+        ncc_count[idx] += int(counts.numel())
 
 
 def evaluate_tar(
@@ -304,12 +326,17 @@ def evaluate_tar(
     cfg: Config,
     log_every: int,
     max_samples: int | None,
+    ncc_tau: float,
+    ncc_mode: str,
+    ncc_class_chunk_size: int,
 ) -> Dict[str, Any]:
     device = cfg.device
     stacked_weights = torch.stack([item["weight"].to(device).float() for item in sweep], dim=0)
     stacked_biases = torch.stack([item["bias"].to(device).float() for item in sweep], dim=0)
     top1 = torch.zeros(len(sweep), dtype=torch.long)
     top5 = torch.zeros(len(sweep), dtype=torch.long)
+    ncc_sum = torch.zeros(len(sweep), dtype=torch.float64)
+    ncc_count = torch.zeros(len(sweep), dtype=torch.long)
     total = 0
     next_log = max(int(log_every), 1)
     start = time.perf_counter()
@@ -336,7 +363,19 @@ def evaluate_tar(
                 outputs = head(feats)
                 concept_logits = outputs["final_logits"].float()
                 concept_logits = (concept_logits - feature_mean) / feature_std
-        _evaluate_logits(concept_logits, target_tensor, stacked_weights, stacked_biases, top1, top5)
+        _evaluate_logits(
+            concept_logits,
+            target_tensor,
+            stacked_weights,
+            stacked_biases,
+            top1,
+            top5,
+            ncc_sum,
+            ncc_count,
+            ncc_tau=ncc_tau,
+            ncc_mode=ncc_mode,
+            ncc_class_chunk_size=ncc_class_chunk_size,
+        )
         total += len(images)
         if total >= next_log:
             elapsed = time.perf_counter() - start
@@ -366,6 +405,10 @@ def evaluate_tar(
                 "weight_sparsity": item["weight_sparsity"],
                 "top1": float(top1[idx].item() / max(total, 1)),
                 "top5": float(top5[idx].item() / max(total, 1)),
+                "ncc_tau": float(ncc_tau),
+                "ncc_mode": ncc_mode,
+                "ncc": float(ncc_sum[idx].item() / max(int(ncc_count[idx].item()), 1)),
+                "ncc_count": int(ncc_count[idx].item()),
             }
         )
     payload: Dict[str, Any] = {
@@ -388,12 +431,17 @@ def evaluate_root(
     cfg: Config,
     log_every: int,
     max_samples: int | None,
+    ncc_tau: float,
+    ncc_mode: str,
+    ncc_class_chunk_size: int,
 ) -> Dict[str, Any]:
     device = cfg.device
     stacked_weights = torch.stack([item["weight"].to(device).float() for item in sweep], dim=0)
     stacked_biases = torch.stack([item["bias"].to(device).float() for item in sweep], dim=0)
     top1 = torch.zeros(len(sweep), dtype=torch.long)
     top5 = torch.zeros(len(sweep), dtype=torch.long)
+    ncc_sum = torch.zeros(len(sweep), dtype=torch.float64)
+    ncc_count = torch.zeros(len(sweep), dtype=torch.long)
     total = 0
     next_log = max(int(log_every), 1)
     start = time.perf_counter()
@@ -419,7 +467,19 @@ def evaluate_root(
                 outputs = head(feats)
                 concept_logits = outputs["final_logits"].float()
                 concept_logits = (concept_logits - feature_mean) / feature_std
-            _evaluate_logits(concept_logits, target_tensor, stacked_weights, stacked_biases, top1, top5)
+            _evaluate_logits(
+                concept_logits,
+                target_tensor,
+                stacked_weights,
+                stacked_biases,
+                top1,
+                top5,
+                ncc_sum,
+                ncc_count,
+                ncc_tau=ncc_tau,
+                ncc_mode=ncc_mode,
+                ncc_class_chunk_size=ncc_class_chunk_size,
+            )
             total += int(target_tensor.numel())
             if total >= next_log:
                 elapsed = time.perf_counter() - start
@@ -438,6 +498,10 @@ def evaluate_root(
                 "weight_sparsity": item["weight_sparsity"],
                 "top1": float(top1[idx].item() / max(total, 1)),
                 "top5": float(top5[idx].item() / max(total, 1)),
+                "ncc_tau": float(ncc_tau),
+                "ncc_mode": ncc_mode,
+                "ncc": float(ncc_sum[idx].item() / max(int(ncc_count[idx].item()), 1)),
+                "ncc_count": int(ncc_count[idx].item()),
             }
         )
     payload: Dict[str, Any] = {
@@ -493,6 +557,8 @@ def main() -> None:
         "nec_values": nec_values,
         "inference_alpha_override": args.inference_alpha_override,
         "max_samples": args.max_samples,
+        "ncc_tau": args.ncc_tau,
+        "ncc_mode": args.ncc_mode,
     }
 
     if args.val_tar:
@@ -515,6 +581,9 @@ def main() -> None:
             cfg,
             args.log_every,
             args.max_samples,
+            args.ncc_tau,
+            args.ncc_mode,
+            args.ncc_class_chunk_size,
         )
     elif args.val_root:
         val_root = Path(args.val_root).resolve()
@@ -532,6 +601,9 @@ def main() -> None:
             cfg,
             args.log_every,
             args.max_samples,
+            args.ncc_tau,
+            args.ncc_mode,
+            args.ncc_class_chunk_size,
         )
     else:
         raise ValueError("Provide either --val_tar/--devkit_dir or --val_root")

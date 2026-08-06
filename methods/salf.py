@@ -41,6 +41,17 @@ from methods.lf import (
 from model.cbm import train_dense_final, train_sparse_final
 
 
+RESNET_SPATIAL_BACKBONES = frozenset(
+    {
+        "resnet18_cub",
+        "resnet50_cub",
+        "resnet50_cub_mm",
+        "resnet50",
+        "resnet50_partimagenetpp_scratch",
+    }
+)
+
+
 class RawSubset(Dataset):
     def __init__(self, base_dataset: Dataset, indices: Iterable[int]):
         self.base_dataset = base_dataset
@@ -53,6 +64,15 @@ class RawSubset(Dataset):
     def __getitem__(self, idx: int):
         image, target = self.base_dataset[self.indices[idx]]
         return image, target
+
+
+def use_partimagenetpp_train_val_split(args) -> bool:
+    return (
+        getattr(args, "dataset", None) == "partimagenetpp"
+        and bool(os.environ.get("PARTIMAGENETPP_TRAIN_MANIFEST"))
+        and bool(os.environ.get("PARTIMAGENETPP_VAL_MANIFEST"))
+        and float(getattr(args, "partimagenetpp_train_val_split", 0.0)) > 0.0
+    )
 
 
 def pil_collate(batch):
@@ -295,11 +315,13 @@ class SpatialBackbone(nn.Module):
         backbone_name: str,
         device: str = "cuda",
         spatial_stage: str = "conv5",
+        checkpoint_path: str = "",
     ):
         super().__init__()
         self.device = device
         self.backbone_name = backbone_name
         self.spatial_stage = spatial_stage
+        self.checkpoint_path = str(checkpoint_path or "")
         if backbone_name.startswith("clip_"):
             if backbone_name == "clip_RN50":
                 if spatial_stage != "conv5":
@@ -345,12 +367,21 @@ class SpatialBackbone(nn.Module):
             return
 
         self.is_vit = False  # ResNet-style backbone
-        if backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50"}:
+        if backbone_name in RESNET_SPATIAL_BACKBONES:
             print(
                 f"[SpatialBackbone] loading backbone={backbone_name} stage={spatial_stage}",
                 flush=True,
             )
-            target_model, preprocess = data_utils.get_target_model(backbone_name, device)
+            if backbone_name == "resnet50_partimagenetpp_scratch":
+                if not self.checkpoint_path:
+                    raise ValueError(
+                        "backbone=resnet50_partimagenetpp_scratch requires --backbone_checkpoint."
+                    )
+                target_model, preprocess = data_utils.load_resnet50_checkpoint(
+                    self.checkpoint_path, device
+                )
+            else:
+                target_model, preprocess = data_utils.get_target_model(backbone_name, device)
             print(
                 f"[SpatialBackbone] target model ready for backbone={backbone_name}",
                 flush=True,
@@ -391,7 +422,7 @@ class SpatialBackbone(nn.Module):
             self.output_dim = self.stage_dims[spatial_stage]
             return
         raise NotImplementedError(
-            f"SALF first pass currently supports only clip_RN50, resnet18_cub, resnet50_cub, resnet50_cub_mm, and resnet50 as spatial backbones, got {backbone_name}."
+            f"SALF first pass currently supports only clip_RN50, {', '.join(sorted(RESNET_SPATIAL_BACKBONES))}, and supported ViTs as spatial backbones, got {backbone_name}."
         )
 
     def get_stage_dim(self, stage_name: str) -> int:
@@ -449,14 +480,14 @@ class SpatialBackbone(nn.Module):
                 )
             conv5 = self.backbone(x.to(self.device)).float()
             return {"conv5": conv5}
-        if self.backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50"}:
+        if self.backbone_name in RESNET_SPATIAL_BACKBONES:
             return self._forward_resnet_cub_stages(x, stage_names)
         raise NotImplementedError(
             f"Unsupported multistage request for backbone={self.backbone_name}."
         )
 
     def forward(self, x: torch.Tensor):
-        if self.backbone_name in {"resnet18_cub", "resnet50_cub", "resnet50_cub_mm", "resnet50"}:
+        if self.backbone_name in RESNET_SPATIAL_BACKBONES:
             return self._forward_resnet_cub_stages(x, [self.spatial_stage])[self.spatial_stage]
 
         # ViT backbones return dict, others return tensor
@@ -517,7 +548,12 @@ class DualBranchSpatialConceptLayer(nn.Module):
 
 def build_single_spatial_concept_layer(args, in_channels: int, n_concepts: int) -> nn.Module:
     if args.cbl_type == "linear":
-        return nn.Conv2d(in_channels, n_concepts, kernel_size=1, bias=True).to(args.device)
+        return nn.Conv2d(
+            in_channels,
+            n_concepts,
+            kernel_size=1,
+            bias=bool(getattr(args, "salf_cbl_bias", False)),
+        ).to(args.device)
     if args.cbl_type == "mlp":
         return ConceptSpatialMLP(
             in_channels=in_channels,
@@ -670,13 +706,19 @@ def create_salf_splits(args):
         args.backbone,
         device=args.device,
         spatial_stage=getattr(args, "savlg_spatial_stage", "conv5"),
+        checkpoint_path=getattr(args, "backbone_checkpoint", ""),
     )
 
     clip_name = getattr(args, "lf_clip_name", None) or args.backbone
     clip_model, clip_preprocess = clip.load(clip_name.replace("clip_", ""), device=args.device)
     clip_model = clip_model.float().eval()
 
-    if use_original_label_free_protocol(args):
+    has_explicit_partimagenetpp_splits = (
+        getattr(args, "dataset", None) == "partimagenetpp"
+        and bool(os.environ.get("PARTIMAGENETPP_TRAIN_MANIFEST"))
+        and bool(os.environ.get("PARTIMAGENETPP_VAL_MANIFEST"))
+    )
+    if use_original_label_free_protocol(args) or has_explicit_partimagenetpp_splits:
         base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
         base_val_raw = data_utils.get_data(f"{args.dataset}_val", None)
         max_train = int(getattr(args, "max_train_images", 0) or 0)
@@ -684,12 +726,35 @@ def create_salf_splits(args):
         train_total = min(len(base_train_raw), max_train) if max_train > 0 else len(base_train_raw)
         val_total = min(len(base_val_raw), max_test) if max_test > 0 else len(base_val_raw)
         train_indices = list(range(train_total))
+        inner_val_indices = []
+        if use_partimagenetpp_train_val_split(args):
+            val_fraction = float(getattr(args, "partimagenetpp_train_val_split", 0.0))
+            if not 0.0 < val_fraction < 1.0:
+                raise ValueError(
+                    "partimagenetpp_train_val_split must be in (0, 1) when enabled."
+                )
+            n_val = max(1, int(round(val_fraction * train_total)))
+            if n_val >= train_total:
+                raise ValueError(
+                    "partimagenetpp_train_val_split leaves no training examples."
+                )
+            generator = torch.Generator().manual_seed(args.seed)
+            shuffled = torch.randperm(train_total, generator=generator).tolist()
+            inner_val_indices = shuffled[:n_val]
+            train_indices = shuffled[n_val:]
         val_indices = list(range(val_total))
         train_raw = RawSubset(base_train_raw, train_indices)
-        val_raw = RawSubset(base_val_raw, val_indices)
+        val_raw = RawSubset(
+            base_train_raw if inner_val_indices else base_val_raw,
+            inner_val_indices if inner_val_indices else val_indices,
+        )
         train_dataset = TransformedSubset(base_train_raw, train_indices, backbone.preprocess)
-        val_dataset = TransformedSubset(base_val_raw, val_indices, backbone.preprocess)
-        test_dataset = val_dataset
+        val_dataset = TransformedSubset(
+            base_train_raw if inner_val_indices else base_val_raw,
+            inner_val_indices if inner_val_indices else val_indices,
+            backbone.preprocess,
+        )
+        test_dataset = TransformedSubset(base_val_raw, val_indices, backbone.preprocess)
         return train_raw, val_raw, train_dataset, val_dataset, test_dataset, backbone, clip_model, clip_preprocess
 
     base_train_raw = data_utils.get_data(f"{args.dataset}_train", None)
@@ -863,9 +928,35 @@ def train_spatial_cbl(
         parameter.requires_grad = False
 
     concept_layer.train()
-    optimizer = torch.optim.Adam(concept_layer.parameters(), lr=args.cbl_lr)
+    optimizer_name = str(getattr(args, "cbl_optimizer", "adam")).lower()
+    weight_decay = float(getattr(args, "cbl_weight_decay", 0.0) or 0.0)
+    if optimizer_name == "adam":
+        optimizer = torch.optim.Adam(
+            concept_layer.parameters(),
+            lr=args.cbl_lr,
+            weight_decay=weight_decay,
+        )
+    elif optimizer_name == "adamw":
+        optimizer = torch.optim.AdamW(
+            concept_layer.parameters(),
+            lr=args.cbl_lr,
+            weight_decay=weight_decay,
+        )
+    elif optimizer_name == "sgd":
+        optimizer = torch.optim.SGD(
+            concept_layer.parameters(),
+            lr=args.cbl_lr,
+            weight_decay=weight_decay,
+            momentum=float(getattr(args, "cbl_momentum", 0.9)),
+        )
+    else:
+        raise ValueError(f"Unsupported SALF optimizer: {optimizer_name}")
     best_loss = float("inf")
     best_state = None
+    epochs_without_improvement = 0
+    min_delta = float(getattr(args, "cbl_min_delta", 0.0) or 0.0)
+    min_epochs = int(getattr(args, "cbl_min_epochs", 0) or 0)
+    patience = int(getattr(args, "cbl_early_stop_patience", 0) or 0)
 
     for epoch in range(int(args.cbl_epochs)):
         running = 0.0
@@ -905,7 +996,8 @@ def train_spatial_cbl(
             for batch_idx, (images, _) in enumerate(val_loader):
                 images = images.to(args.device)
                 feats = backbone(images)
-                concept_maps = concept_layer(feats)
+                spatial_feats = feats["spatial"] if isinstance(feats, dict) else feats
+                concept_maps = concept_layer(spatial_feats)
                 concept_maps = F.interpolate(
                     concept_maps,
                     size=(int(args.grid_h), int(args.grid_w)),
@@ -919,19 +1011,30 @@ def train_spatial_cbl(
                 val_running += float(cbl_loss(concept_maps, target).item()) * images.size(0)
             val_loss = val_running / max(len(val_loader.dataset), 1)
         concept_layer.train()
-        if val_loss < best_loss:
+        if val_loss < best_loss - min_delta:
             best_loss = val_loss
+            epochs_without_improvement = 0
             best_state = {
                 key: value.detach().cpu().clone()
                 for key, value in concept_layer.state_dict().items()
             }
+        else:
+            epochs_without_improvement += 1
         logger.info(
-            "[SALF CBL] epoch={} train_loss={:.6f} val_loss={:.6f} best_val={:.6f}",
+            "[SALF CBL] epoch={} train_loss={:.6f} val_loss={:.6f} best_val={:.6f} stale_epochs={}",
             epoch,
             train_loss,
             val_loss,
             best_loss,
+            epochs_without_improvement,
         )
+        if patience > 0 and epoch + 1 >= min_epochs and epochs_without_improvement >= patience:
+            logger.info(
+                "[SALF CBL] early stopping at epoch={} after {} stale epochs",
+                epoch,
+                epochs_without_improvement,
+            )
+            break
 
     if best_state is not None:
         concept_layer.load_state_dict(best_state, strict=True)
@@ -954,10 +1057,26 @@ def extract_global_concepts(
             feats = backbone(images)
             spatial_feats = feats["spatial"] if isinstance(feats, dict) else feats
             maps = concept_layer(spatial_feats)
-            pooled = F.adaptive_avg_pool2d(maps, 1).flatten(1)
+            pooled = pool_salf_maps(args, maps)
             concept_features.append(pooled.cpu())
             labels.append(target)
     return torch.cat(concept_features, dim=0), torch.cat(labels, dim=0)
+
+
+def pool_salf_maps(args, maps: torch.Tensor) -> torch.Tensor:
+    """Pool SALF spatial maps into one concept score per concept."""
+    if maps.ndim <= 2:
+        return maps
+    mode = str(getattr(args, "salf_pool_mode", "avg") or "avg").lower()
+    if mode in {"avg", "average", "mean"}:
+        return F.adaptive_avg_pool2d(maps, 1).flatten(1)
+    if mode == "max":
+        return maps.flatten(2).max(dim=2).values
+    if mode == "softmax":
+        flat = maps.flatten(2)
+        weights = F.softmax(flat, dim=2)
+        return (flat * weights).sum(dim=2)
+    raise ValueError(f"Unsupported salf_pool_mode={mode!r}; expected avg, max, or softmax.")
 
 
 def evaluate_salf_accuracy(
@@ -983,7 +1102,7 @@ def evaluate_salf_accuracy(
             feats = backbone(images)
             spatial_feats = feats["spatial"] if isinstance(feats, dict) else feats
             maps = concept_layer(spatial_feats)
-            pooled = F.adaptive_avg_pool2d(maps, 1).flatten(1)
+            pooled = pool_salf_maps(args, maps)
             pooled = (pooled - mean.to(args.device)) / std.to(args.device)
             pred = final_layer(pooled).argmax(dim=-1).cpu()
             correct += int((pred == target).sum().item())
@@ -1026,12 +1145,27 @@ def train_salf_cbm(args):
         clip_preprocess,
     ) = create_salf_splits(args)
 
-    P_train = compute_spatial_sims_prompt_grid(
-        args, train_raw, clip_model, clip_preprocess, raw_concepts, "train"
-    )
-    P_val = compute_spatial_sims_prompt_grid(
-        args, val_raw, clip_model, clip_preprocess, raw_concepts, "val"
-    )
+    if use_partimagenetpp_train_val_split(args):
+        full_train_raw = RawSubset(
+            train_raw.base_dataset,
+            list(range(len(train_raw.indices) + len(val_raw.indices))),
+        )
+        P_full_train = compute_spatial_sims_prompt_grid(
+            args, full_train_raw, clip_model, clip_preprocess, raw_concepts, "train"
+        )
+        P_train = P_full_train.index_select(
+            0, torch.tensor(train_raw.indices, dtype=torch.long)
+        )
+        P_val = P_full_train.index_select(
+            0, torch.tensor(val_raw.indices, dtype=torch.long)
+        )
+    else:
+        P_train = compute_spatial_sims_prompt_grid(
+            args, train_raw, clip_model, clip_preprocess, raw_concepts, "train"
+        )
+        P_val = compute_spatial_sims_prompt_grid(
+            args, val_raw, clip_model, clip_preprocess, raw_concepts, "val"
+        )
 
     if getattr(args, "clip_cutoff", None) is not None:
         score_mode = getattr(args, "clip_score_mode", "topk")
@@ -1071,6 +1205,12 @@ def train_salf_cbm(args):
     concept_layer = train_spatial_cbl(
         args, backbone, concept_layer, train_loader, P_train, val_loader, P_val
     )
+    torch.save(
+        concept_layer.state_dict(), os.path.join(save_dir, "concept_layer_cbl.pt")
+    )
+    with open(os.path.join(save_dir, "concepts_cbl.txt"), "w") as f:
+        f.write("\n".join(concepts))
+    logger.info("Saved SALF concept-head checkpoint before sparse-final training")
 
     train_concepts, train_labels = extract_global_concepts(args, backbone, concept_layer, train_loader)
     val_concepts, val_labels = extract_global_concepts(args, backbone, concept_layer, val_loader)
@@ -1111,11 +1251,20 @@ def train_salf_cbm(args):
             args.saga_lam,
             step_size=args.saga_step_size,
             device=args.device,
+            path_steps=getattr(args, "saga_path_steps", 1),
+            min_lam_ratio=getattr(args, "saga_min_lam_ratio", 1.0),
         )
 
-    W_g = output_proj["path"][0]["weight"]
-    b_g = output_proj["path"][0]["bias"]
+    selected_final = output_proj["best"]
+    W_g = selected_final["weight"]
+    b_g = selected_final["bias"]
     final_layer.load_state_dict({"weight": W_g, "bias": b_g})
+    logger.info(
+        "Selected SALF sparse final head: lambda={} val_loss={} val_acc={}",
+        float(selected_final["lam"]),
+        selected_final["metrics"].get("loss_val"),
+        selected_final["metrics"].get("acc_val"),
+    )
 
     if getattr(args, "skip_train_val_eval", False):
         train_accuracy = None
@@ -1127,9 +1276,12 @@ def train_salf_cbm(args):
         val_accuracy = evaluate_salf_accuracy(
             args, backbone, concept_layer, train_mean, train_std, final_layer, val_dataset
         )
-    test_accuracy = evaluate_salf_accuracy(
-        args, backbone, concept_layer, train_mean, train_std, final_layer, test_dataset
-    )
+    if getattr(args, "skip_test_eval", False):
+        test_accuracy = None
+    else:
+        test_accuracy = evaluate_salf_accuracy(
+            args, backbone, concept_layer, train_mean, train_std, final_layer, test_dataset
+        )
 
     with open(os.path.join(save_dir, "concepts.txt"), "w") as f:
         f.write("\n".join(concepts))
@@ -1150,7 +1302,7 @@ def train_salf_cbm(args):
         with open(os.path.join(save_dir, filename), "w") as f:
             json.dump(payload, f, indent=2)
 
-    path0 = output_proj["path"][0]
+    path0 = selected_final
     metrics_payload = {
         key: float(path0[key]) for key in ("lam", "lr", "alpha", "time")
     }
@@ -1183,13 +1335,19 @@ def train_salf_cbm(args):
             "type": args.cbl_type,
             "hidden_layers": args.cbl_hidden_layers if args.cbl_type == "mlp" else 0,
             "use_batchnorm": bool(args.cbl_use_batchnorm) if args.cbl_type == "mlp" else False,
+            "bias": bool(getattr(args, "salf_cbl_bias", False)) if args.cbl_type == "linear" else None,
+            "optimizer": str(getattr(args, "cbl_optimizer", "adam")),
         },
         "sparse_final_layer": {
             "solver": "glm_saga",
             "lam": args.saga_lam,
+            "path_steps": int(getattr(args, "saga_path_steps", 1)),
+            "min_lam_ratio": float(getattr(args, "saga_min_lam_ratio", 1.0)),
+            "selected_lam": float(selected_final["lam"]),
             "saga_iters": args.saga_n_iters,
             "saga_batch_size": args.saga_batch_size,
         },
+        "salf_pool_mode": getattr(args, "salf_pool_mode", "avg"),
         "spatial_cache_paths": {
             "train": _concept_cache_base(args, "train", concepts) + "_P.pt",
             "val": _concept_cache_base(args, "val", concepts) + "_P.pt",
@@ -1211,7 +1369,9 @@ def train_salf_cbm(args):
             "sparse_eval_style": "not_yet_supported",
         },
     )
-    if train_accuracy is None or val_accuracy is None:
+    if test_accuracy is None:
+        logger.info("SALF-CBM test accuracy skipped")
+    elif train_accuracy is None or val_accuracy is None:
         logger.info("SALF-CBM test accuracy={:.4f} (train/val eval skipped)", test_accuracy)
     else:
         logger.info(

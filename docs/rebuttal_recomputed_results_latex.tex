@@ -1,0 +1,119 @@
+% Recomputed SG-CBM rebuttal results.
+% Values are mean $\pm$ std over five CUB seeds (42, 123, 1, 6885, 0)
+% unless a single-run value is explicitly shown. Empty cells mean not rerun
+% under the same protocol.
+
+\paragraph{Recomputed results.}
+We recomputed the key CUB metrics over five seeds and report mean $\pm$ standard deviation below. We also reran the VLM-judge evaluation with a single-concept protocol to avoid grouped-prompt artifacts.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Sparse classification on CUB-200 with RN18.}
+\begin{tabular}{lccc}
+\toprule
+Method & Test Acc. & ANEC-5 & ANEC-avg \\
+\midrule
+LF-CBM &  &  &  \\
+SALF-CBM & $0.7208 \pm 0.0016$ & $0.6213 \pm 0.0045$ & $0.6920 \pm 0.0007$ \\
+VLG-CBM &  &  &  \\
+SG-CBM (ours) & $0.7609 \pm 0.0018$ & $0.7601 \pm 0.0027$ & $0.7605 \pm 0.0020$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Grounding-DINO box localization on CUB-200 with RN18. RMA is \texttt{mass\_in\_gt}; pointing is \texttt{point\_hit}; mIoU@0.7 is fixed-threshold mean IoU.}
+\begin{tabular}{lcccc}
+\toprule
+Method & RMA & Pointing & mIoU@0.7 & Best mIoU \\
+\midrule
+LF-CBM &  &  &  &  \\
+SALF-CBM & $0.1612 \pm 0.0000$ & $0.2771 \pm 0.0023$ & $0.1925 \pm 0.0015$ & $0.1925 \pm 0.0015$ \\
+VLG-CBM &  &  &  &  \\
+SG-CBM (ours) & $0.3543 \pm 0.0716$ & $0.6416 \pm 0.0354$ & $0.2542 \pm 0.0218$ & $0.3006 \pm 0.0162$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{CUB70 localization against independent human part segmentation masks. Activation-selected uses the model-selected mapped concept for each part. Oracle is an upper-bound concept-selection protocol. For CUB70, mIoU@mean thresholds each normalized map at its own mean; Best IoU is best over thresholds $\{0.3,0.5,0.7,0.9\}$.}
+\begin{tabular}{llccccccc}
+\toprule
+Method & Selection & RMA & Pointing & mIoU@mean & MaskIoU@0.5 & Best IoU & mAP@0.3 & mAP@0.5 \\
+\midrule
+LF-CBM & activation &  &  &  &  &  &  &  \\
+SALF-CBM & activation & $0.0364 \pm 0.0001$ & $0.1106 \pm 0.0064$ & $0.0568 \pm 0.0016$ & $0.0622 \pm 0.0025$ & $0.0792 \pm 0.0043$ &  &  \\
+VLG-CBM & activation &  &  &  &  &  &  &  \\
+SG-CBM (ours) & activation & $0.1086 \pm 0.0283$ & $0.2436 \pm 0.0287$ & $0.0654 \pm 0.0022$ & $0.0694 \pm 0.0062$ & $0.1314 \pm 0.0116$ &  &  \\
+\midrule
+LF-CBM & oracle &  &  &  &  &  &  &  \\
+SALF-CBM & oracle & $0.0369 \pm 0.0000$ & $0.2958 \pm 0.0039$ & $0.0715 \pm 0.0001$ & $0.0861 \pm 0.0003$ & $0.2440 \pm 0.0015$ & $0.3379 \pm 0.0067$ & $0.0686 \pm 0.0051$ \\
+VLG-CBM & oracle &  &  &  &  &  &  &  \\
+SG-CBM (ours) & oracle & $0.1123 \pm 0.0257$ & $0.4280 \pm 0.0195$ & $0.0709 \pm 0.0013$ & $0.0766 \pm 0.0081$ & $0.3014 \pm 0.0173$ & $0.4652 \pm 0.0474$ & $0.1297 \pm 0.0313$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{CUB70 per-part localization, activation-selected protocol.}
+\begin{tabular}{llccc}
+\toprule
+Method & Part & RMA & Pointing & Best IoU \\
+\midrule
+SALF-CBM & beak & $0.0043 \pm 0.0000$ & $0.0206 \pm 0.0030$ & $0.0160 \pm 0.0010$ \\
+SALF-CBM & wing & $0.0558 \pm 0.0001$ & $0.1368 \pm 0.0086$ & $0.1043 \pm 0.0049$ \\
+SALF-CBM & tail & $0.0164 \pm 0.0000$ & $0.0379 \pm 0.0020$ & $0.0294 \pm 0.0009$ \\
+SALF-CBM & body & $0.0472 \pm 0.0001$ & $0.1537 \pm 0.0108$ & $0.1081 \pm 0.0072$ \\
+SG-CBM (ours) & beak & $0.0482 \pm 0.0195$ & $0.1530 \pm 0.0140$ & $0.0935 \pm 0.0121$ \\
+SG-CBM (ours) & wing & $0.1700 \pm 0.0449$ & $0.4068 \pm 0.0524$ & $0.1897 \pm 0.0189$ \\
+SG-CBM (ours) & tail & $0.0549 \pm 0.0176$ & $0.1225 \pm 0.0275$ & $0.0759 \pm 0.0164$ \\
+SG-CBM (ours) & body & $0.1262 \pm 0.0296$ & $0.2609 \pm 0.0287$ & $0.1460 \pm 0.0157$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Concept prediction on CUB-200 with RN18. GDINO-labeled concept prediction values are five-seed means for SALF-CBM and SG-CBM. VLM-judge values are strict precision on the common 498-image CUB subset; LF/VLG are single-run values, while SALF/SG are five-seed mean $\pm$ std.}
+\begin{tabular}{lccccc}
+\toprule
+Method & GDINO AUROC & GDINO AUPRC & GDINO P@5 & Qwen2.5-VL-32B & Qwen2.5-VL-7B \\
+\midrule
+LF-CBM &  &  &  & $67.00\%$ & $65.03\%$ \\
+SALF-CBM & $0.5373 \pm 0.0163$ & $0.0104 \pm 0.0005$ & $0.0160 \pm 0.0010$ & $60.17 \pm 2.29\%$ & $54.83 \pm 1.63\%$ \\
+VLG-CBM &  &  &  & $72.35\%$ & $65.23\%$ \\
+SG-CBM (ours) & $0.9614 \pm 0.0032$ & $0.5918 \pm 0.0273$ & $0.6182 \pm 0.0202$ & $74.40 \pm 0.69\%$ & $65.85 \pm 0.35\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{VLM-judge full precision breakdown on the common 498-image CUB subset. Strict precision is yes/total; resolved precision is yes/(yes+no).}
+\begin{tabular}{llrrrrcc}
+\toprule
+Method & Judge & Yes & No & Unsure & Total & Strict & Resolved \\
+\midrule
+LF-CBM & Qwen2.5-VL-7B & 1614 & 831 & 37 & 2482 & $65.03\%$ & $66.01\%$ \\
+LF-CBM & Qwen2.5-VL-32B & 1663 & 819 & 0 & 2482 & $67.00\%$ & $67.00\%$ \\
+SALF-CBM & Qwen2.5-VL-7B & 6819 & 5260 & 357 & 12436 & $54.83 \pm 1.63\%$ & $56.45 \pm 1.48\%$ \\
+SALF-CBM & Qwen2.5-VL-32B & 7483 & 4951 & 2 & 12436 & $60.17 \pm 2.29\%$ & $60.18 \pm 2.29\%$ \\
+VLG-CBM & Qwen2.5-VL-7B & 1392 & 693 & 49 & 2134 & $65.23\%$ & $66.76\%$ \\
+VLG-CBM & Qwen2.5-VL-32B & 1544 & 590 & 0 & 2134 & $72.35\%$ & $72.35\%$ \\
+SG-CBM (ours) & Qwen2.5-VL-7B & 7416 & 3617 & 228 & 11261 & $65.85 \pm 0.35\%$ & $67.22 \pm 0.26\%$ \\
+SG-CBM (ours) & Qwen2.5-VL-32B & 8379 & 2882 & 0 & 11261 & $74.40 \pm 0.69\%$ & $74.40 \pm 0.69\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Notes.}
+The CUB70 segmentation-mask evaluation is independent of the Grounding-DINO boxes used for SG-CBM training supervision. The five-seed CUB runs address the variance concern directly for SG-CBM and SALF-CBM. The VLM judge was rerun with a single-concept protocol to reduce grouped-prompt artifacts; Qwen2.5-VL-32B produces almost no unsure responses under this protocol, explaining why strict and resolved precision are nearly identical for that judge.

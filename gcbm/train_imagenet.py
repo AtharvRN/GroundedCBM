@@ -65,6 +65,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional JSONL manifest with path/class_id/sample_index entries.",
     )
+    parser.add_argument(
+        "--val_manifest",
+        default="",
+        help="Optional JSONL manifest for --val_root. Useful for flat validation sets.",
+    )
     parser.add_argument("--annotation_dir", required=True)
     parser.add_argument(
         "--precomputed_target_dir",
@@ -94,6 +99,11 @@ def parse_args() -> argparse.Namespace:
         choices=["v1", "v2"],
         default="v2",
         help="Torchvision ResNet-50 ImageNet weights. Use v1 for checkpoints compatible with original VLG-CBM.",
+    )
+    parser.add_argument(
+        "--resnet50_checkpoint",
+        default="",
+        help="Optional full ResNet-50 checkpoint. When set, it replaces torchvision ImageNet weights.",
     )
     parser.add_argument("--amp", choices=["fp16", "bf16", "none"], default="fp16")
     parser.add_argument("--channels_last", action="store_true", default=True)
@@ -162,6 +172,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log_every", type=int, default=20)
     parser.add_argument("--save_every", type=int, default=1)
     parser.add_argument(
+        "--resume_checkpoint",
+        default="",
+        help="Optional CBL checkpoint with head and optimizer state. Training resumes at checkpoint epoch + 1.",
+    )
+    parser.add_argument(
         "--eval_every",
         type=int,
         default=1,
@@ -204,6 +219,7 @@ def build_config(args: argparse.Namespace) -> Config:
         mode="train",
         train_root=args.train_root,
         train_manifest=args.train_manifest,
+        val_manifest=args.val_manifest,
         annotation_dir=args.annotation_dir,
         concept_file=args.concept_file,
         val_root=args.val_root,
@@ -231,6 +247,7 @@ def build_config(args: argparse.Namespace) -> Config:
         min_image_bytes=args.min_image_bytes,
         input_size=args.input_size,
         resnet50_weights=str(args.resnet50_weights),
+        resnet50_checkpoint=str(args.resnet50_checkpoint or ""),
         train_random_transforms=False,
         mask_h=args.mask_h,
         mask_w=args.mask_w,
@@ -284,6 +301,7 @@ def build_config(args: argparse.Namespace) -> Config:
         feature_batch_size=max(1, int(args.feature_batch_size)),
         feature_workers=max(0, int(args.feature_workers)),
         feature_prefetch_factor=max(1, int(args.feature_prefetch_factor)),
+        resume_checkpoint=str(args.resume_checkpoint or ""),
     )
 
 
@@ -311,6 +329,8 @@ def validate_config(cfg: Config) -> None:
         raise ValueError("--concept_max_frequency must be in [0, 1]")
     if cfg.concept_min_frequency > cfg.concept_max_frequency:
         raise ValueError("--concept_min_frequency cannot exceed --concept_max_frequency")
+    if cfg.resume_checkpoint and not Path(cfg.resume_checkpoint).is_file():
+        raise FileNotFoundError(f"--resume_checkpoint not found: {cfg.resume_checkpoint}")
 
 
 def compute_cbl_losses(
@@ -567,6 +587,7 @@ def build_datasets(cfg: Config) -> Tuple[DatasetView, DatasetView, Optional[Dict
             input_size=cfg.input_size,
             min_image_bytes=cfg.min_image_bytes,
             split="val",
+            manifest=cfg.val_manifest,
             train_random_transforms=False,
         )
         attach_targets_if_present(val_dataset_full)
@@ -702,6 +723,27 @@ def run_training(cfg: Config) -> Dict[str, Any]:
     backbone, head = build_model(cfg, n_concepts=len(concepts))
     init_global_head_from_vlg(head, cfg, concepts)
     optimizer = make_optimizer(head, cfg)
+    start_epoch = 1
+    resume_payload: Optional[Dict[str, Any]] = None
+    if cfg.resume_checkpoint:
+        resume_path = Path(cfg.resume_checkpoint).resolve()
+        print(f"[resume] loading CBL checkpoint from {resume_path}", flush=True)
+        resume_payload = torch.load(resume_path, map_location=cfg.device)
+        if not isinstance(resume_payload, dict) or "head" not in resume_payload:
+            raise ValueError(f"Resume checkpoint does not contain a head state: {resume_path}")
+        head.load_state_dict(resume_payload["head"])
+        if "optimizer" in resume_payload:
+            optimizer.load_state_dict(resume_payload["optimizer"])
+            for state in optimizer.state.values():
+                for key, value in state.items():
+                    if torch.is_tensor(value):
+                        state[key] = value.to(cfg.device)
+            print("[resume] restored optimizer state", flush=True)
+        resume_epoch = int(resume_payload.get("epoch", 0))
+        start_epoch = resume_epoch + 1
+        if start_epoch > int(cfg.epochs):
+            raise ValueError(f"Resume checkpoint epoch={resume_epoch} is already >= requested epochs={cfg.epochs}")
+        print(f"[resume] starting at epoch={start_epoch} target_epochs={cfg.epochs}", flush=True)
     scheduler = make_scheduler(optimizer, cfg)
     scaler = None
     if cfg.amp == "fp16" and str(cfg.device).startswith("cuda"):
@@ -716,7 +758,20 @@ def run_training(cfg: Config) -> Dict[str, Any]:
     best_val = float("inf")
     best_path = run_dir / "concept_head_best.pt"
     history: List[Dict[str, Any]] = []
-    for epoch in range(1, cfg.epochs + 1):
+    if resume_payload is not None:
+        torch.save(head.state_dict(), best_path)
+        (run_dir / "resume_source.json").write_text(
+            json.dumps(
+                {
+                    "resume_checkpoint": str(Path(cfg.resume_checkpoint).resolve()),
+                    "resume_epoch": int(resume_payload.get("epoch", 0)),
+                    "start_epoch": int(start_epoch),
+                    "note": "Head and optimizer were restored. Scheduler state was not present in the source checkpoint and was recreated.",
+                },
+                indent=2,
+            )
+        )
+    for epoch in range(start_epoch, cfg.epochs + 1):
         train_metrics = train_one_epoch(backbone, head, train_loader, train_dataset, optimizer, scaler, cfg, epoch)
         eval_every = int(getattr(cfg, "eval_every", 1))
         run_val = eval_every > 0 and (epoch % eval_every == 0 or epoch == cfg.epochs)

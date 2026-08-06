@@ -164,8 +164,14 @@ class SafeImageFolderWithAnnotations(Dataset):
             return Image.new("RGB", (self.input_size, self.input_size), color=0)
 
     def _annotation_path(self, sample_index: int) -> Path:
-        split_dir = "imagenet_train" if self.split == "train" else "imagenet_val"
-        return Path(self.annotation_dir) / split_dir / f"{sample_index}.json"
+        root = Path(self.annotation_dir)
+        split_candidates = [
+            f"places365_{self.split}",
+            f"partimagenetpp_{self.split}",
+            "imagenet_train" if self.split == "train" else "imagenet_val",
+        ]
+        split_dir = next((name for name in split_candidates if (root / name).is_dir()), split_candidates[-1])
+        return root / split_dir / f"{sample_index}.json"
 
     def _load_annotation(self, sample_index: int) -> List[Dict[str, Any]]:
         path = self._annotation_path(sample_index)

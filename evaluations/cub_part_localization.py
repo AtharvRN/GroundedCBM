@@ -89,6 +89,11 @@ def _normalize_map_with_mode(
     return (maps - mins) / (maxs - mins).clamp_min(1e-6)
 
 
+def spatial_distribution_from_maps(maps: torch.Tensor) -> torch.Tensor:
+    flat = maps.detach().float().flatten(1)
+    return F.softmax(flat, dim=1).view_as(maps)
+
+
 def resolve_base_index(ds: Dataset, idx: int) -> int:
     if isinstance(ds, torch.utils.data.Subset):
         return resolve_base_index(ds.dataset, int(ds.indices[idx]))
@@ -247,6 +252,7 @@ def min_normalized_distance(px: int, py: int, points: Sequence[Tuple[float, floa
 
 def batched_oracle_metrics(
     score_maps: torch.Tensor,
+    dist_maps: torch.Tensor,
     points_per_target: Sequence[Sequence[Tuple[float, float]]],
     gt_masks: torch.Tensor,
     point_masks: torch.Tensor,
@@ -257,6 +263,7 @@ def batched_oracle_metrics(
 ) -> Dict[str, object]:
     device = score_maps.device
     score_flat = score_maps.flatten(1)
+    dist_flat = dist_maps.to(device=device, dtype=torch.float32).flatten(1)
     gt_flat = gt_masks.to(device=device, dtype=torch.float32).flatten(1)
     point_flat = point_masks.to(device=device, dtype=torch.float32).flatten(1)
     gt_sum = gt_flat.sum(dim=1).view(1, -1)
@@ -267,6 +274,7 @@ def batched_oracle_metrics(
     mean_dist_sum = 0.0
     point_hits_sum = {r: 0.0 for r in radii}
     point_count = 0
+    region_point_hit_sum = 0.0
     for points in points_per_target:
         point_tensor = torch.tensor(points, dtype=torch.float32, device=device)
         dx = argmax_x[:, None] - point_tensor[None, :, 0]
@@ -281,8 +289,22 @@ def batched_oracle_metrics(
         for r in radii:
             point_hits_sum[r] += 1.0 if point_in_any_disk(best_x, best_y, points, float(r) * diag) else 0.0
 
+    mass_per_target = dist_flat @ gt_flat.T
+    mass_in_gt_sum = float(mass_per_target.max(dim=0).values.sum().item())
+    region_point_hit_per_concept = (gt_flat[:, flat_argmax].T > 0).float()
+    region_point_hit_sum = float(region_point_hit_per_concept.max(dim=0).values.sum().item())
+
     threshold_out: Dict[float, Dict[str, float]] = {}
+    best_mean_iou = torch.zeros((gt_flat.shape[0],), dtype=torch.float32, device=device)
     chunk_size = max(int(chunk_size), 1)
+    for start in range(0, score_flat.shape[0], chunk_size):
+        chunk = score_flat[start : start + chunk_size]
+        pred = (chunk >= chunk.mean(dim=1, keepdim=True)).float()
+        pred_sum = pred.sum(dim=1).view(-1, 1)
+        inter = pred @ gt_flat.T
+        union = pred_sum + gt_sum - inter
+        iou = torch.where(union > 0, inter / union.clamp_min(1.0), torch.zeros_like(union))
+        best_mean_iou = torch.maximum(best_mean_iou, iou.max(dim=0).values)
     for thr in thresholds:
         best_point = torch.zeros((gt_flat.shape[0],), dtype=torch.float32, device=device)
         best_iou = torch.zeros((gt_flat.shape[0],), dtype=torch.float32, device=device)
@@ -310,6 +332,9 @@ def batched_oracle_metrics(
         }
     return {
         "mean_dist_sum": mean_dist_sum,
+        "mass_in_gt_sum": mass_in_gt_sum,
+        "region_point_hit_sum": region_point_hit_sum,
+        "miou_at_mean_sum": float(best_mean_iou.sum().item()),
         "point_hits_sum": point_hits_sum,
         "point_count": point_count,
         "thresholds": threshold_out,
@@ -417,7 +442,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args_ns = parse_args()
+    from data import utils as data_utils
     from gcbm.savlg_eval_common import _load_args, _load_concepts
+    from methods.salf import SpatialBackbone, build_spatial_concept_layer
     from methods.savlg import (
         build_savlg_concept_layer,
         create_savlg_splits,
@@ -432,7 +459,16 @@ def main() -> None:
             flush=True,
         )
         args.skip_test_eval = False
-    _, _, _, _, test_dataset, backbone = create_savlg_splits(args)
+    is_salf = str(getattr(args, "model_name", "")).lower().replace("-", "_") == "salf_cbm"
+    if is_salf:
+        backbone = SpatialBackbone(
+            args.backbone,
+            device=args.device,
+            spatial_stage=getattr(args, "savlg_spatial_stage", "conv5"),
+        )
+        test_dataset = data_utils.get_data(f"{args.dataset}_val", preprocess=backbone.preprocess)
+    else:
+        _, _, _, _, test_dataset, backbone = create_savlg_splits(args)
     if args_ns.max_images is not None:
         keep = min(args_ns.max_images, len(test_dataset))
         test_dataset = torch.utils.data.Subset(test_dataset, list(range(keep)))
@@ -462,8 +498,23 @@ def main() -> None:
         proj_mean_all = None
         proj_std_all = None
 
-    concept_layer = build_savlg_concept_layer(args, backbone, len(concepts)).to(args.device)
-    concept_layer.load_state_dict(torch.load(os.path.join(args_ns.load_path, "concept_layer.pt"), map_location=args.device))
+    state_dict = torch.load(os.path.join(args_ns.load_path, "concept_layer.pt"), map_location=args.device)
+    if is_salf:
+        if "spatial_layer.weight" in state_dict:
+            n_outputs = int(state_dict["spatial_layer.weight"].shape[0])
+        elif "weight" in state_dict:
+            n_outputs = int(state_dict["weight"].shape[0])
+        else:
+            n_outputs = len(concepts)
+        concept_layer = build_spatial_concept_layer(
+            args,
+            backbone.output_dim,
+            n_outputs,
+            is_vit=getattr(backbone, "is_vit", False),
+        ).to(args.device)
+    else:
+        concept_layer = build_savlg_concept_layer(args, backbone, len(concepts)).to(args.device)
+    concept_layer.load_state_dict(state_dict)
     concept_layer.eval()
     backbone.eval()
 
@@ -477,6 +528,10 @@ def main() -> None:
     point_hits_count = 0
     mean_dist_sum = 0.0
     mean_dist_count = 0
+    mass_in_gt_sum = 0.0
+    region_point_hits_sum = 0.0
+    region_metrics_count = 0
+    miou_at_mean_sum = 0.0
     threshold_point_hits_sum = {thr: 0.0 for thr in thresholds}
     threshold_mask_iou_sum = {thr: 0.0 for thr in thresholds}
     threshold_dice_sum = {thr: 0.0 for thr in thresholds}
@@ -488,6 +543,10 @@ def main() -> None:
     oracle_point_hits_count = 0
     oracle_mean_dist_sum = 0.0
     oracle_mean_dist_count = 0
+    oracle_mass_in_gt_sum = 0.0
+    oracle_region_point_hits_sum = 0.0
+    oracle_region_metrics_count = 0
+    oracle_miou_at_mean_sum = 0.0
     oracle_threshold_point_hits_sum = {thr: 0.0 for thr in thresholds}
     oracle_threshold_mask_iou_sum = {thr: 0.0 for thr in thresholds}
     oracle_threshold_dice_sum = {thr: 0.0 for thr in thresholds}
@@ -504,8 +563,15 @@ def main() -> None:
     if args_ns.annotation_cache_json:
         cache_payload = json.loads(Path(args_ns.annotation_cache_json).read_text())
         mapped_gt_concepts_by_base_idx = {
-            int(base_idx): [(str(item["label"]), list(item["exact_parts"])) for item in items]
+            int(base_idx): [
+                (str(item["label"]), list(item["exact_parts"]))
+                for item in items
+                if str(item["label"]) in concept_to_idx
+            ]
             for base_idx, items in (cache_payload.get("items_by_base_idx") or {}).items()
+        }
+        mapped_gt_concepts_by_base_idx = {
+            base_idx: items for base_idx, items in mapped_gt_concepts_by_base_idx.items() if items
         }
     else:
         mapped_gt_concepts_by_base_idx = preload_mapped_gt_concepts(
@@ -521,8 +587,15 @@ def main() -> None:
         for batch in tqdm(loader, desc="cub part eval"):
             indices, images, _targets = batch
             images = images.to(args.device, non_blocking=True)
-            feats = forward_savlg_backbone(backbone, images, args)
-            _global_outputs, spatial_maps = forward_savlg_concept_layer(concept_layer, feats)
+            if is_salf:
+                feats = backbone(images)
+                spatial_feats = feats["spatial"] if isinstance(feats, dict) else feats
+                spatial_maps = concept_layer(spatial_feats)
+                if isinstance(spatial_maps, tuple):
+                    spatial_maps = spatial_maps[0]
+            else:
+                feats = forward_savlg_backbone(backbone, images, args)
+                _global_outputs, spatial_maps = forward_savlg_concept_layer(concept_layer, feats)
             img_h, img_w = int(images.shape[-2]), int(images.shape[-1])
 
             for b, ds_idx in enumerate(indices.tolist()):
@@ -577,8 +650,9 @@ def main() -> None:
                     mode="bilinear",
                     align_corners=False,
                 ).squeeze(1)
+                dist_maps = spatial_distribution_from_maps(maps_k)
                 if args_ns.point_source == "pred_dist":
-                    score_maps = F.softmax(maps_k.flatten(1), dim=1).view_as(maps_k)
+                    score_maps = dist_maps
                 else:
                     score_maps = _normalize_map_with_mode(
                         maps_k,
@@ -593,8 +667,9 @@ def main() -> None:
                         mode="bilinear",
                         align_corners=False,
                     ).squeeze(1)
+                    oracle_dist_maps = spatial_distribution_from_maps(all_maps)
                     if args_ns.point_source == "pred_dist":
-                        oracle_score_maps = F.softmax(all_maps.flatten(1), dim=1).view_as(all_maps)
+                        oracle_score_maps = oracle_dist_maps
                     else:
                         oracle_mean = proj_mean_all.view(-1, 1, 1) if proj_mean_all is not None else None
                         oracle_std = proj_std_all.view(-1, 1, 1) if proj_std_all is not None else None
@@ -605,8 +680,10 @@ def main() -> None:
                             proj_std=oracle_std,
                         )
                     oracle_score_maps_for_metrics = oracle_score_maps
+                    oracle_dist_maps_for_metrics = oracle_dist_maps
                 else:
                     oracle_score_maps_for_metrics = None
+                    oracle_dist_maps_for_metrics = None
 
                 argmax_flat = score_maps.flatten(1).argmax(dim=1)
                 argmax_y = (argmax_flat // score_maps.shape[-1]).cpu().tolist()
@@ -641,9 +718,28 @@ def main() -> None:
 
                 gt_masks_tensor = torch.stack(gt_masks, dim=0)
                 point_indicator_tensor = torch.stack(point_indicator_masks, dim=0)
+                gt_masks_float = gt_masks_tensor.to(device=dist_maps.device, dtype=torch.float32)
+                mass_vals = (dist_maps * gt_masks_float).flatten(1).sum(dim=1)
+                region_hit_vals = gt_masks_tensor.flatten(1)[
+                    torch.arange(gt_masks_tensor.shape[0]),
+                    torch.as_tensor(argmax_flat.cpu(), dtype=torch.long),
+                ].float()
+                mass_in_gt_sum += float(mass_vals.sum().item())
+                region_point_hits_sum += float(region_hit_vals.sum().item())
+                region_metrics_count += int(gt_masks_tensor.shape[0])
                 pred_masks = score_maps_cpu.unsqueeze(0) >= threshold_tensor[:, None, None, None]
                 gt_masks_exp = gt_masks_tensor.unsqueeze(0)
                 point_indicator_exp = point_indicator_tensor.unsqueeze(0)
+
+                pred_masks_mean = score_maps_cpu >= score_maps_cpu.mean(dim=(1, 2), keepdim=True)
+                mean_inter = (pred_masks_mean & gt_masks_tensor).flatten(1).sum(dim=1)
+                mean_union = (pred_masks_mean | gt_masks_tensor).flatten(1).sum(dim=1)
+                mean_iou_vals = torch.where(
+                    mean_union > 0,
+                    mean_inter.float() / mean_union.float(),
+                    torch.zeros_like(mean_union, dtype=torch.float32),
+                )
+                miou_at_mean_sum += float(mean_iou_vals.sum().item())
 
                 inter = (pred_masks & gt_masks_exp).flatten(2).sum(dim=2)
                 pred_sum = pred_masks.flatten(2).sum(dim=2)
@@ -672,6 +768,7 @@ def main() -> None:
                 if oracle_score_maps_for_metrics is not None:
                     oracle_batch = batched_oracle_metrics(
                         oracle_score_maps_for_metrics,
+                        oracle_dist_maps_for_metrics,
                         points_per_concept,
                         gt_masks_tensor,
                         point_indicator_tensor,
@@ -682,6 +779,10 @@ def main() -> None:
                     )
                     oracle_mean_dist_sum += float(oracle_batch["mean_dist_sum"])
                     oracle_mean_dist_count += int(oracle_batch["point_count"])
+                    oracle_mass_in_gt_sum += float(oracle_batch["mass_in_gt_sum"])
+                    oracle_region_point_hits_sum += float(oracle_batch["region_point_hit_sum"])
+                    oracle_miou_at_mean_sum += float(oracle_batch["miou_at_mean_sum"])
+                    oracle_region_metrics_count += int(oracle_batch["point_count"])
                     oracle_point_hits_count += int(oracle_batch["point_count"])
                     for r, value in oracle_batch["point_hits_sum"].items():
                         oracle_point_hits_sum[r] += float(value)
@@ -702,6 +803,8 @@ def main() -> None:
         "num_gt_instances": mean_dist_count,
         "point_metrics": {
             "mean_normalized_distance": float(mean_dist_sum / max(mean_dist_count, 1)),
+            "mass_in_gt": float(mass_in_gt_sum / max(region_metrics_count, 1)),
+            "region_point_hit": float(region_point_hits_sum / max(region_metrics_count, 1)),
             "point_hit": {str(r): float(point_hits_sum[r] / max(point_hits_count, 1)) for r in radii},
         },
         "threshold_metrics": {},
@@ -739,6 +842,15 @@ def main() -> None:
     results["best_mask_iou"] = best_mask_iou
     results["best_dice"] = best_dice
     results["best_point_in_mask"] = best_point_in_mask
+    mask_iou_at_0p5 = results["threshold_metrics"].get("0.5", {}).get("mask_iou")
+    results["concept_region_metrics"] = {
+        "definition": "Paper-style part-region metrics using the disk target mask around each annotated part point.",
+        "mass_in_gt": float(mass_in_gt_sum / max(region_metrics_count, 1)),
+        "point_hit": float(region_point_hits_sum / max(region_metrics_count, 1)),
+        "miou_at_mean": float(miou_at_mean_sum / max(region_metrics_count, 1)),
+        "mask_iou_at_0p5": mask_iou_at_0p5,
+        "disk_radius_frac": args_ns.disk_radius_frac,
+    }
     if args_ns.compute_concept_oracle:
         oracle_threshold_metrics_out: Dict[str, Dict[str, float]] = {}
         oracle_best_mask_iou = {"threshold": None, "value": None}
@@ -764,6 +876,8 @@ def main() -> None:
             "num_gt_instances": oracle_mean_dist_count,
             "point_metrics": {
                 "mean_normalized_distance": float(oracle_mean_dist_sum / max(oracle_mean_dist_count, 1)),
+                "mass_in_gt": float(oracle_mass_in_gt_sum / max(oracle_region_metrics_count, 1)),
+                "region_point_hit": float(oracle_region_point_hits_sum / max(oracle_region_metrics_count, 1)),
                 "point_hit": {
                     str(r): float(oracle_point_hits_sum[r] / max(oracle_point_hits_count, 1))
                     for r in radii
@@ -773,6 +887,14 @@ def main() -> None:
             "best_mask_iou": oracle_best_mask_iou,
             "best_dice": oracle_best_dice,
             "best_point_in_mask": oracle_best_point_in_mask,
+            "concept_region_metrics": {
+                "definition": "Paper-style part-region metrics with oracle concept selection per target.",
+                "mass_in_gt": float(oracle_mass_in_gt_sum / max(oracle_region_metrics_count, 1)),
+                "point_hit": float(oracle_region_point_hits_sum / max(oracle_region_metrics_count, 1)),
+                "miou_at_mean": float(oracle_miou_at_mean_sum / max(oracle_region_metrics_count, 1)),
+                "mask_iou_at_0p5": oracle_threshold_metrics_out.get("0.5", {}).get("mask_iou"),
+                "disk_radius_frac": args_ns.disk_radius_frac,
+            },
         }
 
     out = Path(args_ns.output)

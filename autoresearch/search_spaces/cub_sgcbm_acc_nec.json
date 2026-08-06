@@ -1,0 +1,52 @@
+{
+  "name": "cub_sgcbm_acc_nec",
+  "dataset": "cub",
+  "objective": "nec_avg",
+  "base_config": "configs/cub_gcbm.json",
+  "trial_root": "autoresearch/trials",
+  "save_root": "artifacts/autoresearch/cub_sgcbm",
+  "nec_values": [5, 10, 15, 20, 25, 30],
+  "fixed": {
+    "model_name": "savlg_cbm",
+    "dataset": "cub",
+    "annotation_dir": "/workspace/SAVLGCBM/annotations",
+    "backbone": "resnet18_cub",
+    "feature_layer": "layer4",
+    "savlg_global_head_mode": "vlg_linear",
+    "savlg_freeze_global_head": false,
+    "savlg_init_from_vlg_path": "",
+    "savlg_residual_spatial_alpha": 0.1,
+    "loss_mask_w": 0.25,
+    "grid_h": 14,
+    "grid_w": 14,
+    "cbl_batch_size": 32,
+    "cbl_epochs": 75,
+    "cbl_early_stop_patience": 8,
+    "cbl_min_epochs": 15,
+    "cbl_min_delta": 0.001,
+    "dense": false
+  },
+  "search": {
+    "loss_global_spatial_align_w": [0.0, 0.05, 0.1, 0.15, 0.2],
+    "savlg_residual_spatial_alpha": [0.05, 0.1, 0.2],
+    "loss_mask_w": [0.15, 0.25, 0.4],
+    "cbl_lr": [0.0003, 0.0005, 0.0008],
+    "saga_lam": [0.0001, 0.0002, 0.0004]
+  },
+  "known_good": [
+    {
+      "name": "cub_align01_current_best",
+      "params": {
+        "loss_global_spatial_align_w": 0.1,
+        "savlg_residual_spatial_alpha": 0.1,
+        "loss_mask_w": 0.25,
+        "cbl_lr": 0.0005,
+        "saga_lam": 0.0002
+      },
+      "metrics": {
+        "test_acc": 0.7632,
+        "nec_avg": 0.7633
+      }
+    }
+  ]
+}

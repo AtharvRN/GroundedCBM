@@ -138,8 +138,7 @@ class Backbone(nn.Module):
         def hook(module, input, output):
             self.feature_vals[output.device] = output
 
-        command = "target_model.{}.register_forward_hook(hook)".format(feature_layer)
-        eval(command)
+        target_model.get_submodule(feature_layer).register_forward_hook(hook)
 
         # assign backbone and preprocess
         self.backbone = target_model
@@ -644,6 +643,8 @@ def train_sparse_final(
     lam,
     step_size=0.1,
     device="cuda",
+    path_steps=1,
+    min_lam_ratio=1.0,
 ):
     # zero initialize
     num_classes = linear.weight.shape[0]
@@ -656,14 +657,19 @@ def train_sparse_final(
     metadata["max_reg"]["nongrouped"] = lam
 
     # Solve the GLM path
+    path_steps = max(1, int(path_steps))
+    min_lam_ratio = float(min_lam_ratio)
+    if not 0.0 < min_lam_ratio <= 1.0:
+        raise ValueError("min_lam_ratio must be in (0, 1].")
+
     output_proj = glm_saga(
         linear,
         indexed_train_loader,
         step_size,
         n_iters,
         ALPHA,
-        epsilon=1,
-        k=1,
+        epsilon=min_lam_ratio,
+        k=path_steps,
         val_loader=val_loader,
         do_zero=False,
         metadata=metadata,

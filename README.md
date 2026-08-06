@@ -112,6 +112,17 @@ python scripts/eval_nec.py --dataset cub --load_path /path/to/cub_run --output_j
 python scripts/eval_nec.py --dataset imagenet --artifact_dir /path/to/imagenet_run_or_sparse_sweep --val_root /path/to/imagenet_val --devkit_dir /path/to/ILSVRC2012_devkit_t12 --output_json results/imagenet_nec.json
 ```
 
+## Evaluate NCC
+
+NCC measures decision-level concept sparsity from concept contributions
+`abs(concept_logit * class_weight)`. The default matches the paper setting:
+`tau=0.95`, averaged over all classes.
+
+```bash
+python scripts/eval_ncc.py --dataset cub --load_path /path/to/cub_sgcbm_run --output_json results/cub_ncc.json
+python scripts/eval_nec.py --dataset imagenet --artifact_dir /path/to/imagenet_sgcbm_sweep --val_root /path/to/imagenet_val --devkit_dir /path/to/ILSVRC2012_devkit_t12 --output_json results/imagenet_nec_ncc.json
+```
+
 ## Evaluate Concept Accuracy
 
 Concept accuracy compares concept scores to binary concept-presence labels and

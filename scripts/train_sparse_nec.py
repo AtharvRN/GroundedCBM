@@ -57,6 +57,12 @@ def cub_nec_parser() -> argparse.ArgumentParser:
     parser.add_argument("--disable_activation_cache", action="store_true")
     parser.add_argument("--max_images", type=int, default=None)
     parser.add_argument("--savlg_branch_norm_mode", type=str, default="none")
+    parser.add_argument(
+        "--cache_features_device",
+        choices=["none", "cuda"],
+        default="none",
+        help="Keep normalized concept features on this device during sparse NEC training.",
+    )
     return parser
 
 
@@ -88,6 +94,7 @@ def run_cub_nec(load_path: str, remaining: list[str]) -> None:
             disable_activation_cache=cub_args.disable_activation_cache,
             max_images=cub_args.max_images,
             savlg_branch_norm_mode=cub_args.savlg_branch_norm_mode,
+            cache_features_device=cub_args.cache_features_device,
         )
         with open(os.path.join(load_path, "nec_metrics.json"), "w", encoding="utf-8") as handle:
             json.dump(
@@ -130,6 +137,7 @@ def run_cub_nec(load_path: str, remaining: list[str]) -> None:
         disable_activation_cache=cub_args.disable_activation_cache,
         max_images=cub_args.max_images,
         savlg_branch_norm_mode=cub_args.savlg_branch_norm_mode,
+        cache_features_device=cub_args.cache_features_device,
     )
     nec_rows = []
     for level, acc in zip(DEFAULT_MEASURE_LEVEL, accs):

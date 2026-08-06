@@ -21,10 +21,30 @@ def get_resnet50_weights(version: str) -> ResNet50_Weights:
 
 
 class ResNet50Conv45(nn.Module):
-    def __init__(self, weights_version: str = "v2") -> None:
+    def __init__(self, weights_version: str = "v2", checkpoint_path: str = "") -> None:
         super().__init__()
         self.weights_version = str(weights_version or "v2").lower()
-        model = resnet50(weights=get_resnet50_weights(self.weights_version))
+        model = resnet50(
+            weights=None if checkpoint_path else get_resnet50_weights(self.weights_version)
+        )
+        if checkpoint_path:
+            payload = torch.load(checkpoint_path, map_location="cpu")
+            if isinstance(payload, dict):
+                state_dict = payload.get("model", payload.get("state_dict", payload))
+            else:
+                state_dict = payload
+            if not isinstance(state_dict, dict):
+                raise TypeError(f"Unsupported ResNet-50 checkpoint payload at {checkpoint_path}")
+            state_dict = {
+                str(key).removeprefix("module."): value for key, value in state_dict.items()
+            }
+            missing, unexpected = model.load_state_dict(state_dict, strict=False)
+            allowed_missing = {"fc.weight", "fc.bias"}
+            if set(missing) - allowed_missing or unexpected:
+                raise RuntimeError(
+                    "Scratch ResNet-50 checkpoint is incompatible: "
+                    f"missing={missing}, unexpected={unexpected}"
+                )
         self.conv1 = model.conv1
         self.bn1 = model.bn1
         self.relu = model.relu
@@ -159,7 +179,10 @@ class MultiScaleDualBranchConceptHead(nn.Module):
 
 
 def build_model(cfg: Any, n_concepts: int) -> Tuple[nn.Module, nn.Module]:
-    backbone = ResNet50Conv45(weights_version=getattr(cfg, "resnet50_weights", "v2")).to(cfg.device)
+    backbone = ResNet50Conv45(
+        weights_version=getattr(cfg, "resnet50_weights", "v2"),
+        checkpoint_path=getattr(cfg, "resnet50_checkpoint", ""),
+    ).to(cfg.device)
     for parameter in backbone.parameters():
         parameter.requires_grad = False
     backbone.eval()

@@ -7,6 +7,7 @@ import argparse
 import dataclasses
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -14,7 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageFile
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
@@ -30,6 +31,8 @@ from gcbm.imagenet_models import build_model
 from gcbm.imagenet_targets import canonicalize_concept_label as canonicalize_imagenet_concept
 from gcbm.runtime import configure_runtime
 from gcbm.training_utils import prepare_images
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 PART_GROUP_TO_IDS = {
@@ -48,8 +51,12 @@ PART_GROUP_TO_IDS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate CBM concept scores against concept-presence ground truth.")
-    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet"])
-    parser.add_argument("--gt_source", default="gdino", choices=["gdino", "cub_parts"])
+    parser.add_argument("--dataset", required=True, choices=["cub", "imagenet", "partimagenetpp", "places365"])
+    parser.add_argument(
+        "--gt_source",
+        default="gdino",
+        choices=["gdino", "cub_parts", "partimagenetpp_manifest", "partimagenetpp_boxes"],
+    )
     parser.add_argument("--load_paths", nargs="+", required=True, help="One or more CBM run directories.")
     parser.add_argument("--model_names", nargs="+", default=None, help="Model types matching --load_paths: sgcbm/vlg_cbm/savlg_cbm/salf_cbm/lf_cbm.")
     parser.add_argument("--names", nargs="+", default=None, help="Display names matching --load_paths.")
@@ -78,11 +85,19 @@ def parse_args() -> argparse.Namespace:
     imagenet.add_argument("--persistent_workers", action="store_true")
     imagenet.add_argument("--pin_memory", action="store_true")
 
+    places = parser.add_argument_group("Places365 inputs")
+    places.add_argument("--places365_val_manifest", default="")
+
     cub_parts = parser.add_argument_group("CUB part GT inputs")
     cub_parts.add_argument("--concept_part_mapping", default="data/cub_concept_part_mapping_gpt54.json")
     cub_parts.add_argument("--part_locs", default="datasets/CUB/part_locs.txt")
     cub_parts.add_argument("--images_txt", default="datasets/CUB/images.txt")
     cub_parts.add_argument("--split_txt", default="datasets/CUB/train_test_split.txt")
+
+    pinpp = parser.add_argument_group("PartImageNet++ inputs")
+    pinpp.add_argument("--partimagenetpp_train_manifest", default="")
+    pinpp.add_argument("--partimagenetpp_val_manifest", default="")
+    pinpp.add_argument("--partimagenetpp_gt_boxes_jsonl", default="")
     return parser.parse_args()
 
 
@@ -195,6 +210,80 @@ def load_cub_parts_gt(indices: Sequence[int], concepts: Sequence[str], args: arg
         for col, concept in enumerate(concepts):
             part_group = concept_to_part.get(concept)
             if part_group and group_vis.get(part_group, False):
+                gt[row, col] = 1.0
+    return gt
+
+
+def partimagenetpp_manifest_path(args: argparse.Namespace, split: str) -> Path:
+    attr = f"partimagenetpp_{split}_manifest"
+    explicit = str(getattr(args, attr, "") or "")
+    env_name = f"PARTIMAGENETPP_{split.upper()}_MANIFEST"
+    fallback = os.environ.get(env_name) or os.environ.get("PARTIMAGENETPP_MANIFEST", "")
+    path = explicit or fallback
+    if not path:
+        raise ValueError(f"--{attr} or ${env_name} is required for PartImageNet++ concept accuracy")
+    return Path(path).resolve()
+
+
+def configure_partimagenetpp_env(args: argparse.Namespace) -> None:
+    if getattr(args, "partimagenetpp_train_manifest", ""):
+        os.environ["PARTIMAGENETPP_TRAIN_MANIFEST"] = str(Path(args.partimagenetpp_train_manifest).resolve())
+    if getattr(args, "partimagenetpp_val_manifest", ""):
+        os.environ["PARTIMAGENETPP_VAL_MANIFEST"] = str(Path(args.partimagenetpp_val_manifest).resolve())
+
+
+def load_partimagenetpp_presence_gt(indices: Sequence[int], concepts: Sequence[str], args: argparse.Namespace) -> np.ndarray:
+    manifest_path = partimagenetpp_manifest_path(args, "val")
+    concept_to_col = {concept: idx for idx, concept in enumerate(concepts)}
+    rows: List[dict] = []
+    with manifest_path.open() as f:
+        for line in f:
+            if line.strip():
+                rows.append(json.loads(line))
+    gt = np.zeros((len(indices), len(concepts)), dtype=np.float32)
+    for row, dataset_idx in enumerate(indices):
+        if int(dataset_idx) >= len(rows):
+            continue
+        payload = rows[int(dataset_idx)]
+        labels = payload.get("labels", payload.get("queried_parts", []))
+        for label in labels if isinstance(labels, list) else []:
+            col = concept_to_col.get(canonicalize_concept(str(label), "partimagenetpp"))
+            if col is not None:
+                gt[row, col] = 1.0
+    return gt
+
+
+def partimagenetpp_gt_boxes_path(args: argparse.Namespace) -> Path:
+    explicit = str(getattr(args, "partimagenetpp_gt_boxes_jsonl", "") or "")
+    fallback = os.environ.get("PARTIMAGENETPP_GT_BOXES_JSONL", "")
+    path = explicit or fallback
+    if not path:
+        raise ValueError("--partimagenetpp_gt_boxes_jsonl or $PARTIMAGENETPP_GT_BOXES_JSONL is required")
+    return Path(path).resolve()
+
+
+def load_partimagenetpp_box_presence_gt(indices: Sequence[int], concepts: Sequence[str], args: argparse.Namespace) -> np.ndarray:
+    gt_path = partimagenetpp_gt_boxes_path(args)
+    concept_to_col = {concept: idx for idx, concept in enumerate(concepts)}
+    rows: List[dict] = []
+    with gt_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                rows.append(json.loads(line))
+    gt = np.zeros((len(indices), len(concepts)), dtype=np.float32)
+    for row, dataset_idx in enumerate(indices):
+        dataset_idx = int(dataset_idx)
+        if dataset_idx >= len(rows):
+            continue
+        payload = rows[dataset_idx]
+        boxes_by_concept = payload.get("boxes", {})
+        if not isinstance(boxes_by_concept, dict):
+            continue
+        for label, boxes in boxes_by_concept.items():
+            if not boxes:
+                continue
+            col = concept_to_col.get(canonicalize_concept(str(label), "partimagenetpp"))
+            if col is not None:
                 gt[row, col] = 1.0
     return gt
 
@@ -346,6 +435,24 @@ def subset_by_concepts(
     return out_scores, out_train, out_mean, out_std
 
 
+def align_score_columns_to_concepts(scores: torch.Tensor, concepts: Sequence[str], context: str) -> torch.Tensor:
+    if int(scores.shape[1]) == len(concepts):
+        return scores
+    if int(scores.shape[1]) > len(concepts):
+        cache = getattr(align_score_columns_to_concepts, "_warned", set())
+        key = (context, int(scores.shape[1]), len(concepts))
+        if key not in cache:
+            print(
+                f"[concept-acc] {context}: score columns {scores.shape[1]} > named concepts {len(concepts)}; "
+                "using the leading named columns and dropping unnamed extras",
+                flush=True,
+            )
+            cache.add(key)
+            setattr(align_score_columns_to_concepts, "_warned", cache)
+        return scores[:, : len(concepts)]
+    raise RuntimeError(f"{context}: score columns {scores.shape[1]} < named concepts {len(concepts)}")
+
+
 def cub_annotation_dir(args: argparse.Namespace) -> Path:
     if not args.annotation_dir:
         raise ValueError("--annotation_dir is required for CUB GDINO concept accuracy")
@@ -441,22 +548,49 @@ def extract_cub_vlg_raw_scores(path: Path, args: argparse.Namespace) -> Dict[str
     train_scores = None
     if str(args.normalization).lower() in {"train_zscore", "train_minmax"}:
         train_scores, _train_labels = extract("train")
-    return {"scores": scores, "train_scores": train_scores, "concepts": concepts, "indices": list(range(int(scores.shape[0]))), "run_args": vars(run_args), "saved_mean": None, "saved_std": None, "test_labels": test_labels}
+    saved_mean = torch.load(path / "proj_mean.pt", map_location="cpu") if (path / "proj_mean.pt").exists() else None
+    saved_std = torch.load(path / "proj_std.pt", map_location="cpu") if (path / "proj_std.pt").exists() else None
+    if saved_mean is not None:
+        saved_mean = saved_mean.reshape(-1)[: len(concepts)]
+    if saved_std is not None:
+        saved_std = saved_std.reshape(-1)[: len(concepts)]
+    return {
+        "scores": scores,
+        "train_scores": train_scores,
+        "concepts": concepts,
+        "indices": list(range(int(scores.shape[0]))),
+        "run_args": vars(run_args),
+        "saved_mean": saved_mean,
+        "saved_std": saved_std,
+        "test_labels": test_labels,
+    }
 
 
 def extract_cub_salf_raw_scores(path: Path, args: argparse.Namespace) -> Dict[str, Any]:
     from data import utils as data_utils
-    from methods.salf import SpatialBackbone
+    from methods.salf import SpatialBackbone, build_spatial_concept_layer, pool_salf_maps
 
     run_args = argparse.Namespace(**json.loads((path / "args.txt").read_text()))
     run_args.device = args.device
     run_args.cbl_batch_size = int(args.batch_size)
     run_args.num_workers = int(args.num_workers)
-    concepts = load_concepts(path / "concepts.txt", "cub")
-    backbone = SpatialBackbone(run_args.backbone, device=run_args.device)
+    concepts = load_concepts(path / "concepts.txt", getattr(run_args, "dataset", args.dataset))
+    backbone = SpatialBackbone(
+        run_args.backbone,
+        device=run_args.device,
+        checkpoint_path=getattr(run_args, "backbone_checkpoint", ""),
+    )
     state_dict = torch.load(path / "concept_layer.pt", map_location=run_args.device)
     if "weight" in state_dict and state_dict["weight"].ndim == 4:
         concept_layer = torch.nn.Conv2d(int(state_dict["weight"].shape[1]), int(state_dict["weight"].shape[0]), kernel_size=1, bias=("bias" in state_dict)).to(run_args.device)
+    elif "spatial_layer.weight" in state_dict:
+        n_outputs = int(state_dict["spatial_layer.weight"].shape[0])
+        concept_layer = build_spatial_concept_layer(
+            run_args,
+            backbone.output_dim,
+            n_outputs,
+            is_vit=getattr(backbone, "is_vit", False),
+        )
     else:
         raise ValueError(f"Unsupported SALF concept layer format at {path / 'concept_layer.pt'}")
     concept_layer.load_state_dict(state_dict)
@@ -475,8 +609,9 @@ def extract_cub_salf_raw_scores(path: Path, args: argparse.Namespace) -> Dict[st
                 maps = concept_layer(backbone(images.to(run_args.device)))
                 if isinstance(maps, tuple):
                     maps = maps[0]
-                scores = maps.flatten(2).max(dim=2).values if maps.ndim > 2 else maps
-                score_chunks.append(scores.detach().cpu().float())
+                scores = pool_salf_maps(run_args, maps) if maps.ndim > 2 else maps
+                scores = align_score_columns_to_concepts(scores.detach().cpu().float(), concepts, f"SALF {split}")
+                score_chunks.append(scores)
                 label_chunks.append(labels.detach().cpu())
         return torch.cat(score_chunks, dim=0), torch.cat(label_chunks, dim=0)
 
@@ -503,14 +638,23 @@ def extract_cub_savlg_raw_scores(path: Path, args: argparse.Namespace) -> Dict[s
     if getattr(run_args, "skip_test_eval", False):
         run_args.skip_test_eval = False
 
-    concepts = load_concepts(path / "concepts.txt", "cub")
+    concepts = load_concepts(path / "concepts.txt", getattr(run_args, "dataset", args.dataset))
     _train_cbl, _val_cbl, train_dataset, _val_dataset, test_dataset, backbone = create_savlg_splits(run_args)
     if int(args.max_images) > 0:
         train_dataset = Subset(train_dataset, list(range(min(int(args.max_images), len(train_dataset)))))
         test_dataset = Subset(test_dataset, list(range(min(int(args.max_images), len(test_dataset)))))
 
-    concept_layer = build_savlg_concept_layer(run_args, backbone, len(concepts))
-    concept_layer.load_state_dict(torch.load(path / "concept_layer.pt", map_location=run_args.device))
+    state_dict = torch.load(path / "concept_layer.pt", map_location=run_args.device)
+    if "spatial_layer.weight" in state_dict:
+        n_outputs = int(state_dict["spatial_layer.weight"].shape[0])
+    elif "global_layer.weight" in state_dict:
+        n_outputs = int(state_dict["global_layer.weight"].shape[0])
+    elif "weight" in state_dict:
+        n_outputs = int(state_dict["weight"].shape[0])
+    else:
+        n_outputs = len(concepts)
+    concept_layer = build_savlg_concept_layer(run_args, backbone, n_outputs)
+    concept_layer.load_state_dict(state_dict)
     concept_layer.eval()
     backbone.eval()
 
@@ -523,7 +667,12 @@ def extract_cub_savlg_raw_scores(path: Path, args: argparse.Namespace) -> Dict[s
                 features = forward_savlg_backbone(backbone, images.to(run_args.device), run_args)
                 global_logits, spatial_maps = forward_savlg_concept_layer(concept_layer, features)
                 _global, _spatial, final_logits = compute_savlg_concept_logits(global_logits, spatial_maps, run_args)
-                score_chunks.append(final_logits.detach().cpu().float())
+                final_logits = align_score_columns_to_concepts(
+                    final_logits.detach().cpu().float(),
+                    concepts,
+                    "SAVLG",
+                )
+                score_chunks.append(final_logits)
                 label_chunks.append(labels.detach().cpu())
         return torch.cat(score_chunks, dim=0), torch.cat(label_chunks, dim=0)
 
@@ -658,6 +807,15 @@ def imagenet_annotation_inputs(args: argparse.Namespace) -> Tuple[Path, Optional
     return annotation_val_dir, annotation_val_root, annotation_mapping_json
 
 
+def resolve_split_annotation_dir(annotation_dir: Path, split_name: str) -> Path:
+    if (annotation_dir / "0.json").is_file():
+        return annotation_dir.resolve()
+    candidate = annotation_dir / split_name
+    if (candidate / "0.json").is_file():
+        return candidate.resolve()
+    raise FileNotFoundError(f"Could not find {split_name}/0.json under {annotation_dir}")
+
+
 def make_imagenet_dataset(args: argparse.Namespace, transform: Optional[Any] = None, input_size: int = 224) -> Dataset:
     annotation_val_dir, annotation_val_root, annotation_mapping_json = imagenet_annotation_inputs(args)
     dataset: Dataset = ImageNetConceptDataset(
@@ -681,6 +839,107 @@ def make_imagenet_loader(dataset: Dataset, args: argparse.Namespace) -> DataLoad
         num_workers=int(args.num_workers),
         pin_memory=bool(args.pin_memory),
         collate_fn=imagenet_collate,
+        **({"prefetch_factor": int(args.prefetch_factor), "persistent_workers": bool(args.persistent_workers)} if int(args.num_workers) > 0 else {}),
+    )
+
+
+class Places365ConceptDataset(Dataset):
+    def __init__(self, manifest: Path, annotation_dir: Path, input_size: int, transform: Optional[Any] = None) -> None:
+        self.rows: List[Dict[str, Any]] = []
+        with manifest.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if line:
+                    self.rows.append(json.loads(line))
+        if not self.rows:
+            raise ValueError(f"Places365 manifest has no rows: {manifest}")
+        self.annotation_dir = annotation_dir
+        self.transform = transform or transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop(input_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ]
+        )
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    @staticmethod
+    def _resolve_image_path(path: Path) -> Path:
+        if path.exists():
+            return path
+        raw = str(path)
+        candidates: List[Path] = []
+        replacements = (
+            ("/root/places365_torch", "/workspace/SAVLGCBM/datasets/places365_torch"),
+            ("/root/places365_full", "/workspace/SAVLGCBM/datasets/places365_torch"),
+            ("/root/places365_clean_val_20260725T201621Z", "/workspace/SAVLGCBM/datasets/places365_torch"),
+        )
+        for old, new in replacements:
+            if raw.startswith(old):
+                candidates.append(Path(raw.replace(old, new, 1)))
+        root = Path("/workspace/SAVLGCBM/datasets/places365_torch/val_256")
+        candidates.extend((root / path.name, root / "val_256" / path.name))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return path
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        row = self.rows[index]
+        image_path = self._resolve_image_path(Path(row["path"]))
+        annotation_index = int(row.get("annotation_index", row.get("sample_index", index)))
+        with Image.open(image_path) as image:
+            image = image.convert("RGB")
+            tensor = self.transform(image)
+        annotation_path = self.annotation_dir / f"{annotation_index}.json"
+        if annotation_path.is_file():
+            payload = json.loads(annotation_path.read_text(encoding="utf-8"))
+            annotations = payload if isinstance(payload, list) else payload.get("concepts", [])
+        else:
+            annotations = []
+        return {"image": tensor, "annotation": annotations}
+
+
+def places365_collate(batch: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "images": torch.stack([item["image"] for item in batch], dim=0),
+        "annotations": [item["annotation"] for item in batch],
+    }
+
+
+def places365_manifest_path(args: argparse.Namespace) -> Path:
+    path = str(getattr(args, "places365_val_manifest", "") or "")
+    if not path:
+        raise ValueError("--places365_val_manifest is required for Places365 concept accuracy")
+    return Path(path).resolve()
+
+
+def make_places365_dataset(args: argparse.Namespace, transform: Optional[Any] = None, input_size: int = 224) -> Dataset:
+    if not args.annotation_dir:
+        raise ValueError("--annotation_dir is required for Places365 concept accuracy")
+    annotation_val_dir = resolve_split_annotation_dir(Path(args.annotation_dir).resolve(), "places365_val")
+    dataset: Dataset = Places365ConceptDataset(
+        places365_manifest_path(args),
+        annotation_val_dir,
+        input_size=input_size,
+        transform=transform,
+    )
+    if args.max_images > 0:
+        dataset = Subset(dataset, list(range(min(args.max_images, len(dataset)))))
+    return dataset
+
+
+def make_places365_loader(dataset: Dataset, args: argparse.Namespace) -> DataLoader:
+    return DataLoader(
+        dataset,
+        batch_size=int(args.batch_size),
+        shuffle=False,
+        num_workers=int(args.num_workers),
+        pin_memory=bool(args.pin_memory),
+        collate_fn=places365_collate,
         **({"prefetch_factor": int(args.prefetch_factor), "persistent_workers": bool(args.persistent_workers)} if int(args.num_workers) > 0 else {}),
     )
 
@@ -726,12 +985,67 @@ def extract_imagenet_from_forward(
     }
 
 
+def extract_places365_from_forward(
+    *,
+    args: argparse.Namespace,
+    concepts: Sequence[str],
+    forward_scores,
+    transform: Optional[Any],
+    input_size: int,
+    device: str,
+    log_tag: str,
+    saved_mean: Optional[torch.Tensor] = None,
+    saved_std: Optional[torch.Tensor] = None,
+    run_args: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    dataset = make_places365_dataset(args, transform=transform, input_size=input_size)
+    loader = make_places365_loader(dataset, args)
+    scores: List[torch.Tensor] = []
+    gt_rows: List[np.ndarray] = []
+    start = time.perf_counter()
+    seen = 0
+    concept_to_idx = {concept: idx for idx, concept in enumerate(concepts)}
+    with torch.no_grad():
+        for batch in loader:
+            batch_scores = forward_scores(batch["images"].to(device))
+            scores.append(batch_scores.detach().cpu().float())
+            gt_rows.append(gdino_gt_from_annotations(batch["annotations"], concepts, concept_to_idx, "places365", args.gdino_threshold))
+            seen += int(batch["images"].shape[0])
+            if args.log_every > 0 and seen % int(args.log_every) == 0:
+                elapsed = time.perf_counter() - start
+                print(f"[concept-acc:{log_tag}] n={seen} ips={seen / max(elapsed, 1e-6):.2f}", flush=True)
+    return {
+        "scores": torch.cat(scores, dim=0),
+        "train_scores": None,
+        "concepts": list(concepts),
+        "gt": np.concatenate(gt_rows, axis=0),
+        "indices": list(range(sum(row.shape[0] for row in gt_rows))),
+        "run_args": run_args or {},
+        "saved_mean": saved_mean,
+        "saved_std": saved_std,
+    }
+
+
 def load_legacy_imagenet_args(path: Path, args: argparse.Namespace) -> argparse.Namespace:
     if (path / "args.txt").exists():
         run_args = argparse.Namespace(**json.loads((path / "args.txt").read_text()))
     else:
         run_args = argparse.Namespace(dataset="imagenet", backbone="resnet50", feature_layer="layer4", device=args.device)
     run_args.device = args.device
+    run_args.cbl_batch_size = int(args.batch_size)
+    run_args.num_workers = int(args.num_workers)
+    return run_args
+
+
+def load_legacy_places365_args(path: Path, args: argparse.Namespace) -> argparse.Namespace:
+    if (path / "args.txt").exists():
+        run_args = argparse.Namespace(**json.loads((path / "args.txt").read_text()))
+    else:
+        run_args = argparse.Namespace(dataset="places365", backbone="resnet50", feature_layer="layer4", device=args.device)
+    run_args.device = args.device
+    run_args.backbone = getattr(run_args, "backbone", "resnet50")
+    run_args.feature_layer = getattr(run_args, "feature_layer", "layer4")
+    run_args.use_clip_penultimate = getattr(run_args, "use_clip_penultimate", False)
     run_args.cbl_batch_size = int(args.batch_size)
     run_args.num_workers = int(args.num_workers)
     return run_args
@@ -812,6 +1126,65 @@ def extract_imagenet_legacy_linear_scores(path: Path, model_name: str, args: arg
         input_size=224,
         device=run_args.device,
         log_tag=f"imagenet:{model_name}",
+        saved_mean=saved_mean,
+        saved_std=saved_std,
+        run_args=vars(run_args),
+    )
+
+
+def extract_places365_legacy_linear_scores(path: Path, model_name: str, args: argparse.Namespace) -> Dict[str, Any]:
+    from model.cbm import Backbone, BackboneCLIP, ConceptLayer
+
+    run_args = load_legacy_places365_args(path, args)
+    concepts = load_concepts(path / "concepts.txt", "places365")
+    if str(run_args.backbone).startswith("clip_"):
+        backbone = BackboneCLIP(run_args.backbone, device=run_args.device, use_penultimate=run_args.use_clip_penultimate)
+    else:
+        backbone = Backbone(run_args.backbone, run_args.feature_layer, run_args.device)
+    cbl_path = path / "cbl.pt"
+    wc_path = path / "W_c.pt"
+    if model_name == "lf_cbm":
+        if not wc_path.exists():
+            raise RuntimeError(f"LF-CBM checkpoint {path} is missing W_c.pt")
+        W_c = torch.load(wc_path, map_location=run_args.device).float()
+        concept_layer = torch.nn.Linear(int(W_c.shape[1]), int(W_c.shape[0]), bias=False).to(run_args.device)
+        concept_layer.load_state_dict({"weight": W_c})
+    elif cbl_path.exists():
+        state = torch.load(cbl_path, map_location="cpu")
+        if not isinstance(state, dict) or "model.0.weight" not in state:
+            raise RuntimeError(f"Unsupported VLG-CBM cbl.pt format in {path}")
+        linear_weight_keys = [key for key in state if key.startswith("model.") and key.endswith(".weight")]
+        first_weight = state["model.0.weight"]
+        concept_layer = ConceptLayer(
+            in_features=int(first_weight.shape[1]),
+            out_features=int(first_weight.shape[0]),
+            num_hidden=max(0, len(linear_weight_keys) - 1),
+            bias="model.0.bias" in state,
+            device=run_args.device,
+        )
+        concept_layer.load_state_dict(state)
+    elif wc_path.exists():
+        W_c = torch.load(wc_path, map_location=run_args.device).float()
+        concept_layer = torch.nn.Linear(int(W_c.shape[1]), int(W_c.shape[0]), bias=False).to(run_args.device)
+        concept_layer.load_state_dict({"weight": W_c})
+    else:
+        raise RuntimeError(f"No cbl.pt or W_c.pt found in legacy Places365 checkpoint {path}")
+    backbone.eval()
+    concept_layer.eval()
+    saved_mean, saved_std = load_projection_stats(path, len(concepts))
+
+    def forward_scores(images: torch.Tensor) -> torch.Tensor:
+        raw_scores = concept_layer(backbone(images))
+        return align_score_columns_to_concepts(raw_scores, concepts, f"places365:{model_name}")
+
+    return extract_places365_from_forward(
+        args=args,
+        concepts=concepts,
+        forward_scores=forward_scores,
+        transform=backbone.preprocess,
+        input_size=224,
+        device=run_args.device,
+        log_tag=f"places365:{model_name}",
         saved_mean=saved_mean,
         saved_std=saved_std,
         run_args=vars(run_args),
@@ -905,6 +1278,113 @@ def extract_imagenet_unified_scores(path: Path, args: argparse.Namespace) -> Dic
     )
 
 
+def extract_places365_unified_scores(path: Path, args: argparse.Namespace) -> Dict[str, Any]:
+    source_run_dir = resolve_source_run_dir(path)
+    cfg = load_imagenet_config(source_run_dir, args)
+    configure_runtime(cfg)
+    concepts = load_concepts(source_run_dir / "concepts.txt", "places365")
+    backbone, head = build_model(cfg, n_concepts=len(concepts))
+    head.load_state_dict(torch.load(source_run_dir / "concept_head_best.pt", map_location=cfg.device))
+    backbone.eval()
+    head.eval()
+
+    def forward_scores(images: torch.Tensor) -> torch.Tensor:
+        outputs = head(backbone(prepare_images(images, cfg)))
+        return outputs["final_logits"]
+
+    saved_mean = saved_std = None
+    norm_path = path / "final_layer_normalization.pt"
+    if not norm_path.exists():
+        norm_path = source_run_dir / "final_layer_normalization.pt"
+    if norm_path.exists():
+        payload = torch.load(norm_path, map_location="cpu")
+        saved_mean = payload.get("mean")
+        saved_std = payload.get("std")
+    return extract_places365_from_forward(
+        args=args,
+        concepts=concepts,
+        forward_scores=forward_scores,
+        transform=None,
+        input_size=cfg.input_size,
+        device=cfg.device,
+        log_tag="places365",
+        saved_mean=saved_mean,
+        saved_std=saved_std,
+        run_args=dataclasses.asdict(cfg),
+    )
+
+
+def extract_partimagenetpp_unified_scores(path: Path, args: argparse.Namespace) -> Dict[str, Any]:
+    from data import utils as data_utils
+
+    configure_partimagenetpp_env(args)
+    source_run_dir = resolve_source_run_dir(path)
+    cfg = load_imagenet_config(source_run_dir, args)
+    configure_runtime(cfg)
+    concepts = load_concepts(source_run_dir / "concepts.txt", "partimagenetpp")
+    backbone, head = build_model(cfg, n_concepts=len(concepts))
+    head.load_state_dict(torch.load(source_run_dir / "concept_head_best.pt", map_location=cfg.device))
+    backbone.eval()
+    head.eval()
+
+    transform = transforms.Compose(
+        [
+            transforms.Resize(256),
+            transforms.CenterCrop(cfg.input_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ]
+    )
+    dataset: Dataset = data_utils.get_data("partimagenetpp_val", preprocess=transform)
+    if int(args.max_images) > 0:
+        dataset = Subset(dataset, list(range(min(int(args.max_images), len(dataset)))))
+    loader = DataLoader(
+        dataset,
+        batch_size=int(args.batch_size),
+        shuffle=False,
+        num_workers=int(args.num_workers),
+        pin_memory=bool(args.pin_memory),
+        **(
+            {"prefetch_factor": int(args.prefetch_factor), "persistent_workers": bool(args.persistent_workers)}
+            if int(args.num_workers) > 0
+            else {}
+        ),
+    )
+
+    scores: List[torch.Tensor] = []
+    labels: List[torch.Tensor] = []
+    start = time.perf_counter()
+    seen = 0
+    with torch.no_grad():
+        for images, targets in loader:
+            outputs = head(backbone(prepare_images(images, cfg)))
+            scores.append(outputs["final_logits"].detach().cpu().float())
+            labels.append(targets.detach().cpu())
+            seen += int(images.shape[0])
+            if args.log_every > 0 and seen % int(args.log_every) == 0:
+                elapsed = time.perf_counter() - start
+                print(f"[concept-acc:partimagenetpp:unified] n={seen} ips={seen / max(elapsed, 1e-6):.2f}", flush=True)
+
+    saved_mean = saved_std = None
+    norm_path = path / "final_layer_normalization.pt"
+    if not norm_path.exists():
+        norm_path = source_run_dir / "final_layer_normalization.pt"
+    if norm_path.exists():
+        payload = torch.load(norm_path, map_location="cpu")
+        saved_mean = payload.get("mean")
+        saved_std = payload.get("std")
+    return {
+        "scores": torch.cat(scores, dim=0),
+        "train_scores": None,
+        "concepts": concepts,
+        "indices": list(range(sum(int(chunk.shape[0]) for chunk in scores))),
+        "run_args": dataclasses.asdict(cfg),
+        "saved_mean": saved_mean,
+        "saved_std": saved_std,
+        "test_labels": torch.cat(labels, dim=0) if labels else torch.empty(0, dtype=torch.long),
+    }
+
+
 def extract_imagenet_scores(path: Path, model_name: str, args: argparse.Namespace) -> Dict[str, Any]:
     normalized = str(model_name).lower().replace("-", "_")
     if normalized == "salf_cbm":
@@ -912,6 +1392,29 @@ def extract_imagenet_scores(path: Path, model_name: str, args: argparse.Namespac
     if normalized in {"lf_cbm", "vlg_cbm", "cub_cbm"} and (path / "args.txt").exists() and not (path / "config.json").exists():
         return extract_imagenet_legacy_linear_scores(path, normalized, args)
     return extract_imagenet_unified_scores(path, args)
+
+
+def extract_partimagenetpp_scores(path: Path, model_name: str, args: argparse.Namespace) -> Dict[str, Any]:
+    configure_partimagenetpp_env(args)
+    normalized = str(model_name).lower().replace("-", "_")
+    if (path / "config.json").exists() or (path / "source_run_dir.txt").exists():
+        return extract_partimagenetpp_unified_scores(path, args)
+    if normalized == "salf_cbm":
+        return extract_cub_salf_raw_scores(path, args)
+    if normalized in {"savlg_cbm", "sg_cbm", "sgcbm"}:
+        return extract_cub_savlg_raw_scores(path, args)
+    if normalized in {"vlg_cbm", "cub_cbm"}:
+        return extract_cub_vlg_raw_scores(path, args)
+    return extract_cub_scores(path, model_name, args)
+
+
+def extract_places365_scores(path: Path, model_name: str, args: argparse.Namespace) -> Dict[str, Any]:
+    normalized = str(model_name).lower().replace("-", "_")
+    if normalized in {"lf_cbm", "vlg_cbm", "cub_cbm"} and (path / "args.txt").exists() and not (path / "config.json").exists():
+        return extract_places365_legacy_linear_scores(path, normalized, args)
+    if normalized not in {"sgcbm", "sg_cbm", "savlg_cbm"}:
+        raise RuntimeError(f"Unsupported Places365 concept accuracy checkpoint type: {model_name}")
+    return extract_places365_unified_scores(path, args)
 
 
 def gdino_gt_from_annotations(
@@ -938,7 +1441,14 @@ def evaluate_one(
     args: argparse.Namespace,
     common_concepts: Optional[Sequence[str]],
 ) -> Dict[str, Any]:
-    extracted = extract_imagenet_scores(path, model_name, args) if args.dataset == "imagenet" else extract_cub_scores(path, model_name, args)
+    if args.dataset == "imagenet":
+        extracted = extract_imagenet_scores(path, model_name, args)
+    elif args.dataset == "partimagenetpp":
+        extracted = extract_partimagenetpp_scores(path, model_name, args)
+    elif args.dataset == "places365":
+        extracted = extract_places365_scores(path, model_name, args)
+    else:
+        extracted = extract_cub_scores(path, model_name, args)
     concepts = list(extracted["concepts"])
     wanted = list(common_concepts) if common_concepts is not None else concepts
     scores, train_scores, saved_mean, saved_std = subset_by_concepts(
@@ -956,6 +1466,11 @@ def evaluate_one(
         gt = gt_full[:, [concept_to_idx[concept] for concept in wanted]]
     elif args.gt_source == "cub_parts":
         gt = load_cub_parts_gt(extracted["indices"], wanted, args)
+    elif args.dataset == "partimagenetpp":
+        if args.gt_source == "partimagenetpp_boxes" or getattr(args, "partimagenetpp_gt_boxes_jsonl", ""):
+            gt = load_partimagenetpp_box_presence_gt(extracted["indices"], wanted, args)
+        else:
+            gt = load_partimagenetpp_presence_gt(extracted["indices"], wanted, args)
     else:
         gt = load_gdino_gt_indexed(cub_annotation_dir(args), extracted["indices"], wanted, args.dataset, args.gdino_threshold)
     if int(args.max_images) > 0:
@@ -1029,7 +1544,11 @@ def main() -> None:
         )
     payload = {
         "dataset": args.dataset,
-        "gt_source": args.gt_source,
+        "gt_source": (
+            "partimagenetpp_boxes"
+            if args.dataset == "partimagenetpp" and (args.gt_source == "partimagenetpp_boxes" or getattr(args, "partimagenetpp_gt_boxes_jsonl", ""))
+            else ("partimagenetpp_manifest" if args.dataset == "partimagenetpp" else args.gt_source)
+        ),
         "normalization": args.normalization,
         "cub_score_source": args.cub_score_source,
         "concept_scope": args.concept_scope,

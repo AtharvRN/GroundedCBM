@@ -15,7 +15,7 @@ from data.concept_dataset import get_concept_dataloader, get_final_layer_dataset
 from gcbm.features import extract_labeled_feature_tensors, make_feature_loader, standardize_from_train
 from glm_saga.elasticnet import IndexedTensorDataset, glm_saga
 from methods.lf import TransformedSubset, use_original_label_free_protocol
-from methods.salf import SpatialBackbone, build_spatial_concept_layer
+from methods.salf import SpatialBackbone, build_spatial_concept_layer, pool_salf_maps
 from methods.savlg import (
     build_savlg_concept_layer,
     compute_savlg_concept_logits,
@@ -59,7 +59,15 @@ def _load_run_args(load_dir: str) -> argparse.Namespace:
 
 def _load_run_concepts(load_dir: str) -> list[str]:
     with open(os.path.join(load_dir, "concepts.txt"), "r") as f:
-        return f.read().split("\n")
+        return [line.strip() for line in f.read().splitlines() if line.strip()]
+
+
+def _use_explicit_partimagenetpp_splits(args: argparse.Namespace) -> bool:
+    return (
+        getattr(args, "dataset", None) == "partimagenetpp"
+        and bool(os.environ.get("PARTIMAGENETPP_TRAIN_MANIFEST"))
+        and bool(os.environ.get("PARTIMAGENETPP_VAL_MANIFEST"))
+    )
 
 
 def _apply_common_overrides(
@@ -105,6 +113,7 @@ def measure_acc(
     max_lam=0.01,
     measure_level=DEFAULT_MEASURE_LEVEL,
     max_glm_steps=MAX_GLM_STEP,
+    max_path_sparsity=None,
 ):
     linear = torch.nn.Linear(num_concepts, num_classes).to(device)
     linear.weight.data.zero_()
@@ -121,7 +130,11 @@ def measure_acc(
     metadata["max_reg"] = {}
     metadata["max_reg"]["nongrouped"] = max_lam
     # Solve the GLM path
-    max_sparsity = feasible_measure_level[-1] / num_concepts
+    max_sparsity = (
+        float(max_path_sparsity)
+        if max_path_sparsity is not None
+        else feasible_measure_level[-1] / num_concepts
+    )
     output_proj = glm_saga(linear, train_loader, saga_step_size, saga_n_iters, ALPHA, k=max_glm_steps, epsilon=1 / (GLM_STEP_SIZE ** max_glm_steps),
                     val_loader=val_loader, test_loader=test_concept_loader, do_zero=False, metadata=metadata, n_ex=num_samples, n_classes=num_classes,
                     max_sparsity=max_sparsity, eval_train=False, eval_val=False, eval_test=False)
@@ -168,7 +181,57 @@ def measure_acc(
     return path, {NEC: weight for NEC, weight in zip(feasible_measure_level, weights)}, accs
 
 
+class _CudaTensorFeatureDataset:
+    """Minimal dataset facade for GPU-resident feature batches."""
+
+    def __init__(self, features: torch.Tensor, labels: torch.Tensor):
+        self.features = features
+        self.labels = labels
+
+    def __len__(self) -> int:
+        return int(self.features.shape[0])
+
+
+class _CudaTensorBatchLoader:
+    """Avoid DataLoader collation/workers when the full feature matrix is on CUDA."""
+
+    def __init__(self, features, labels, batch_size, *, indexed: bool, shuffle: bool):
+        self.dataset = _CudaTensorFeatureDataset(features, labels)
+        self.batch_size = int(batch_size)
+        self.indexed = bool(indexed)
+        self.shuffle = bool(shuffle)
+
+    def __len__(self) -> int:
+        n_rows = len(self.dataset)
+        return (n_rows + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        features = self.dataset.features
+        labels = self.dataset.labels
+        n_rows = len(self.dataset)
+        if self.shuffle:
+            order = torch.randperm(n_rows, device=features.device)
+            for start in range(0, n_rows, self.batch_size):
+                indices = order[start : start + self.batch_size]
+                if self.indexed:
+                    yield features[indices], labels[indices], indices
+                else:
+                    yield features[indices], labels[indices]
+            return
+        for start in range(0, n_rows, self.batch_size):
+            end = min(start + self.batch_size, n_rows)
+            if self.indexed:
+                indices = torch.arange(start, end, device=features.device)
+                yield features[start:end], labels[start:end], indices
+            else:
+                yield features[start:end], labels[start:end]
+
+
 def _feature_loader(features, labels, batch_size, *, indexed: bool, shuffle: bool):
+    if features.is_cuda:
+        return _CudaTensorBatchLoader(
+            features, labels, batch_size, indexed=indexed, shuffle=shuffle
+        )
     return make_feature_loader(features, labels, batch_size, indexed=indexed, shuffle=shuffle)
 
 
@@ -256,8 +319,35 @@ def run_nec_sweep_from_features(
     device: str,
     lam_max: float = 0.1,
     max_glm_steps: int = MAX_GLM_STEP,
+    path_max_nec: int | None = None,
+    cache_features_device: str = "none",
 ) -> list[float]:
     """Train sparse final layers from already-extracted concept features."""
+    if cache_features_device not in {"none", "cuda"}:
+        raise ValueError("cache_features_device must be 'none' or 'cuda'")
+    if cache_features_device == "cuda":
+        if not str(device).startswith("cuda"):
+            raise ValueError("CUDA feature caching requires a CUDA execution device")
+        cache_device = torch.device(device)
+        print(f"[NEC] loading normalized concept features to {cache_device}", flush=True)
+        features = NECFeatureSet(
+            concepts=features.concepts,
+            classes=features.classes,
+            train_features=features.train_features.to(cache_device),
+            train_labels=features.train_labels.to(cache_device),
+            test_features=features.test_features.to(cache_device),
+            test_labels=features.test_labels.to(cache_device),
+            val_features=(
+                features.val_features.to(cache_device)
+                if features.val_features is not None
+                else None
+            ),
+            val_labels=(
+                features.val_labels.to(cache_device)
+                if features.val_labels is not None
+                else None
+            ),
+        )
     train_loader = _feature_loader(
         features.train_features,
         features.train_labels,
@@ -293,6 +383,11 @@ def run_nec_sweep_from_features(
         device=device,
         max_lam=lam_max,
         max_glm_steps=max_glm_steps,
+        max_path_sparsity=(
+            min(1.0, float(path_max_nec) / len(features.concepts))
+            if path_max_nec is not None
+            else None
+        ),
     )
     _save_nec_outputs(load_dir, features.concepts, path, truncated_weights)
     return accs
@@ -620,13 +715,13 @@ def sparsity_acc_test_lf_cbm(
     )
 
 
-def _extract_salf_concepts(backbone, concept_layer, loader, device):
+def _extract_salf_concepts(args, backbone, concept_layer, loader, device):
     backbone.eval()
     concept_layer.eval()
     def forward_salf_concepts(images):
         images = images.to(device)
         maps = concept_layer(backbone(images))
-        return torch.nn.functional.adaptive_avg_pool2d(maps, 1).flatten(1)
+        return pool_salf_maps(args, maps)
 
     features, labels, _ = extract_labeled_feature_tensors(
         loader,
@@ -807,7 +902,11 @@ def extract_salf_nec_features(
     )
     classes = data_utils.get_classes(args.dataset)
 
-    backbone = SpatialBackbone(args.backbone, device=args.device)
+    backbone = SpatialBackbone(
+        args.backbone,
+        device=args.device,
+        checkpoint_path=getattr(args, "backbone_checkpoint", ""),
+    )
     state_dict = torch.load(os.path.join(load_dir, "concept_layer.pt"), map_location=args.device)
     if (
         "weight" in state_dict
@@ -821,11 +920,18 @@ def extract_salf_nec_features(
             kernel_size=1,
             bias=False,
         ).to(args.device)
+    elif "spatial_layer.weight" in state_dict:
+        concept_layer = build_spatial_concept_layer(
+            args,
+            backbone.output_dim,
+            int(state_dict["spatial_layer.weight"].shape[0]),
+            is_vit=getattr(backbone, "is_vit", False),
+        )
     else:
         concept_layer = build_savlg_concept_layer(args, backbone, len(concepts))
     concept_layer.load_state_dict(state_dict)
 
-    if use_original_label_free_protocol(args):
+    if use_original_label_free_protocol(args) or _use_explicit_partimagenetpp_splits(args):
         train_dataset = data_utils.get_data(
             f"{args.dataset}_train", preprocess=backbone.preprocess
         )
@@ -877,10 +983,10 @@ def extract_salf_nec_features(
     )
 
     train_concepts, train_labels = _extract_salf_concepts(
-        backbone, concept_layer, train_loader, args.device
+        args, backbone, concept_layer, train_loader, args.device
     )
     test_concepts, test_labels = _extract_salf_concepts(
-        backbone, concept_layer, test_loader, args.device
+        args, backbone, concept_layer, test_loader, args.device
     )
 
     train_concepts, test_concepts = _normalize_with_saved_projection(
@@ -1123,6 +1229,7 @@ def train_sparse_nec_from_checkpoint(
     annotation_dir=None,
     n_iters=None,
     max_glm_steps=MAX_GLM_STEP,
+    path_max_nec=None,
     cbl_batch_size=None,
     saga_batch_size=None,
     num_workers=None,
@@ -1130,6 +1237,7 @@ def train_sparse_nec_from_checkpoint(
     disable_activation_cache=False,
     max_images=None,
     savlg_branch_norm_mode="none",
+    cache_features_device="none",
 ) -> tuple[list[float], NECFeatureSet, argparse.Namespace]:
     """Extract concept features once, then run the shared sparse NEC sweep."""
     feature_set, args = build_nec_feature_set(
@@ -1154,6 +1262,8 @@ def train_sparse_nec_from_checkpoint(
         device=args.device,
         lam_max=lam_max,
         max_glm_steps=max_glm_steps,
+        path_max_nec=path_max_nec,
+        cache_features_device=cache_features_device,
     )
     return accs, feature_set, args
 

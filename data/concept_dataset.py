@@ -389,6 +389,11 @@ def get_concept_dataloader(
     max_images: int = 0,
 ):
     dataset = ConceptDataset if not use_allones else partial(AllOneConceptDataset, get_classes(dataset_name))
+    has_explicit_partimagenetpp_splits = (
+        dataset_name == "partimagenetpp"
+        and bool(os.environ.get("PARTIMAGENETPP_TRAIN_MANIFEST"))
+        and bool(os.environ.get("PARTIMAGENETPP_VAL_MANIFEST"))
+    )
     if split == "test":
         dataset = dataset(
             dataset_name,
@@ -404,6 +409,22 @@ def get_concept_dataloader(
         if max_images and max_images > 0:
             dataset = torch.utils.data.Subset(dataset, list(range(min(int(max_images), len(dataset)))))
         logger.info(f"Test dataset size: {len(dataset)}")
+    elif has_explicit_partimagenetpp_splits:
+        split_suffix = "train" if split == "train" else "val"
+        dataset = dataset(
+            dataset_name,
+            data_utils.get_data(f"{dataset_name}_{split_suffix}", None),
+            concepts,
+            split_suffix=split_suffix,
+            preprocess=preprocess,
+            confidence_threshold=confidence_threshold,
+            crop_to_concept_prob=crop_to_concept_prob,
+            label_dir=label_dir,
+            concept_only=concept_only,
+        )
+        if max_images and max_images > 0:
+            dataset = torch.utils.data.Subset(dataset, list(range(min(int(max_images), len(dataset)))))
+        logger.info(f"{split.title()} dataset size: {len(dataset)}")
     else:
         assert val_split is not None
         dataset = dataset(

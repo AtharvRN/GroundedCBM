@@ -1,0 +1,95 @@
+% Requires: \usepackage{booktabs}
+% All values below are from the PartImageNet++ 10k annotation holdout.
+
+\subsection{PartImageNet++ Results and Evaluation Caveat}
+
+All methods use the same scratch ResNet-50 backbone trained on the 90k
+PartImageNet++ training split and the same 783 generic concepts.  NEC uses a
+SAGA/GLM sparse linear classifier fit on the concept activations.  Concept
+presence is evaluated against human COCO boxes.  The localization evaluation
+uses human polygons or boxes after the same \texttt{Resize(256)} and
+\texttt{CenterCrop(224)} transform applied to the models.  We exclude 1,120
+identity targets (4.19\% of the original image--concept targets), such as the
+whole-object label \emph{bakery} for a bakery image.
+
+\begin{table*}[t]
+\centering
+\caption{Classification and concept-prediction results on the 10k PIN++
+annotation holdout.  NEC columns are top-1 accuracy (\%).  Concept-presence
+metrics use filtered human GT boxes; higher is better for every metric.}
+\label{tab:pinpp-classification-concepts}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lrrrrrr|rrrrr}
+\toprule
+& \multicolumn{6}{c|}{NEC top-1 (\%)}
+& \multicolumn{5}{c}{Human-box concept presence} \\
+\cmidrule(lr){2-7}\cmidrule(l){8-12}
+Method & 5 & 10 & 15 & 20 & 25 & 30
+& AUROC & AP & Macro AP & P@5 & Best F1 \\
+\midrule
+SALF-CBM & 23.41 & 40.99 & 48.37 & 52.08 & 54.43 & 55.41
+& 0.5790 & 0.0047 & 0.0482 & 0.0063 & 0.0114 \\
+VLG-CBM & 19.05 & 24.56 & 29.36 & 32.44 & 35.40 & 37.49
+& \textbf{0.9945} & \textbf{0.6190} & \textbf{0.5016} & \textbf{0.4144} & \textbf{0.6555} \\
+SG-CBM & \textbf{47.02} & \textbf{55.08} & \textbf{58.29} & \textbf{59.34} & \textbf{59.81} & \textbf{60.21}
+& \textbf{0.9945} & 0.6075 & 0.4861 & 0.4055 & 0.6324 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{Human localization results on the same filtered 10k holdout.  Polygon
+metrics use human segmentation masks; box metrics use human COCO boxes.
+``Box IoU'' is the IoU of the tight predicted activation box and GT box at the
+per-map mean threshold.  Raw RMA is marked with $\dagger$ because spatial
+softmax mass depends on the arbitrary scale of each method's map logits.}
+\label{tab:pinpp-localization}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lrrrrrr|rrrrr}
+\toprule
+& \multicolumn{6}{c|}{Human polygons at $224\times224$}
+& \multicolumn{5}{c}{Human boxes at $224\times224$} \\
+\cmidrule(lr){2-7}\cmidrule(l){8-12}
+Method & RMA$^\dagger$ & Pointing & Soft IoU & mIoU & Dice & Pixel mAP
+& RMA$^\dagger$ & Pointing & Soft IoU & Box IoU & Acc@0.5 \\
+\midrule
+SALF-CBM & 0.1583 & 0.2532 & 0.1051 & 0.1790 & 0.2781 & 0.2501
+& 0.2515 & 0.3642 & 0.1801 & 0.2921 & 0.2243 \\
+VLG-CBM & \textbf{0.2811} & 0.2999 & 0.1004 & 0.1848 & 0.2851 & 0.2695
+& \textbf{0.4195} & 0.4412 & 0.1282 & 0.3051 & 0.2406 \\
+SG-CBM & 0.2749 & \textbf{0.4117} & \textbf{0.1774} & \textbf{0.2177} & \textbf{0.3231} & \textbf{0.3153}
+& 0.4097 & \textbf{0.5681} & \textbf{0.2629} & \textbf{0.3239} & \textbf{0.2693} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\paragraph{Interpretation and limitation.}
+PIN++ provides high-quality, class-specific human part annotations, but our
+derived 783-concept benchmark collapses the source vocabulary of 3,310
+class-specific part categories into generic names.  This loses the relation
+``\emph{part of which object}?''  For example, on an image containing a killer
+whale and people, a generic \emph{head} map that activates on a person's head
+is semantically reasonable but is scored as false because the annotation only
+labels the killer whale's head.  Thus the current unconditioned generic-part
+protocol conflates target-object association with generic-part localization.
+
+The generic vocabulary is also incomplete for this use case: some source
+categories deliberately use the entire foreground object as one ``part'', and
+target size varies substantially after preprocessing (13.8\% of targets cover
+less than 1\% of the crop, whereas 8.1\% cover more than half).  The identity
+filter removes the clearest whole-object cases but cannot resolve generic-part
+ambiguity or distractor instances.  Finally, this 10k split is a 9:1 holdout
+within the PIN++ annotations drawn from ImageNet training images, not the
+official ImageNet validation set.
+
+\paragraph{Recommended positioning.}
+These experiments are useful controlled evidence that SG-CBM has substantially
+better sparse classification and spatial overlap than the two baselines under
+the current protocol.  They should not be the sole evidence for a generic
+localization claim.  A stronger primary evaluation should be class-conditioned
+(e.g., \emph{killer whale head}) or explicitly target-object-conditioned, with
+an independently annotated ImageNet-validation test set, target-size strata,
+and a released manual QA audit of the genericization mapping.

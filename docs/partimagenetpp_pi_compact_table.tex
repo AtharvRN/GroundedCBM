@@ -1,0 +1,24 @@
+\documentclass[12pt]{article}
+\usepackage[landscape,margin=0.75in]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\pagestyle{empty}
+
+\begin{document}
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrr|rrr|rrr}
+\toprule
+& \multicolumn{2}{c|}{Classification}
+& \multicolumn{3}{c|}{Concept prediction}
+& \multicolumn{3}{c}{Human-box localization} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-6}\cmidrule(l){7-9}
+Method & NEC-5 & NEC-avg. & AUROC & AUPRC & P@5 & RMA & Pointing & mIoU \\
+\midrule
+SALF-CBM & 23.41 & 45.78 & 0.5790 & 0.0047 & 0.0063 & 0.2515 & 0.3642 & 0.2921 \\
+SG-CBM   & \textbf{47.02} & \textbf{56.62} & \textbf{0.9945} & \textbf{0.6075} & \textbf{0.4055} & \textbf{0.4097} & \textbf{0.5681} & \textbf{0.3239} \\
+\bottomrule
+\end{tabular}%
+}
+\end{center}
+\end{document}

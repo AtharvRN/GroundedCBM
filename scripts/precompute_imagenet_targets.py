@@ -49,6 +49,7 @@ def build_config(args: argparse.Namespace) -> Config:
         mode="precompute_targets",
         train_root=args.image_root,
         train_manifest=args.manifest,
+        val_manifest="",
         annotation_dir=args.annotation_dir,
         concept_file=args.concept_file,
         val_root="",

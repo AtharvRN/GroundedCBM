@@ -8,6 +8,7 @@ class Config:
     mode: str
     train_root: str
     train_manifest: str
+    val_manifest: str
     annotation_dir: str
     concept_file: str
     val_root: str
@@ -89,3 +90,5 @@ class Config:
     feature_batch_size: int = 256
     feature_workers: int = 4
     feature_prefetch_factor: int = 2
+    resume_checkpoint: str = ""
+    resnet50_checkpoint: str = ""

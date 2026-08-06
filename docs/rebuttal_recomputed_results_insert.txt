@@ -1,0 +1,63 @@
+e following recomputed results.
+
+Recomputed quantitative results for the rebuttal (mean +/- std over five CUB seeds: 42, 123, 1, 6885, 0, unless otherwise noted). Blank entries indicate metrics that were not rerun under the same protocol.
+
+1. Sparse classification on CUB-200 (RN18)
+Method	Test Acc.	ANEC-5	ANEC-avg
+LF-CBM			
+SALF-CBM	0.7208 +/- 0.0016	0.6213 +/- 0.0045	0.6920 +/- 0.0007
+VLG-CBM			
+SG-CBM (ours)	0.7609 +/- 0.0018	0.7601 +/- 0.0027	0.7605 +/- 0.0020
+
+2. Grounding-DINO box localization on CUB-200 (RN18)
+RMA = mass_in_gt; Pointing = point_hit; mIoU is the fixed-threshold 0.7 mean IoU; Best mIoU is best over thresholds.
+Method	RMA	Pointing	mIoU@0.7	Best mIoU
+LF-CBM				
+SALF-CBM	0.1612 +/- 0.0000	0.2771 +/- 0.0023	0.1925 +/- 0.0015	0.1925 +/- 0.0015
+VLG-CBM				
+SG-CBM (ours)	0.3543 +/- 0.0716	0.6416 +/- 0.0354	0.2542 +/- 0.0218	0.3006 +/- 0.0162
+
+3. CUB70 localization against independent human part segmentation masks
+Activation-selected mode uses the model-selected mapped concept for each part. Oracle mode is an upper-bound concept-selection protocol. For CUB70, mIoU@mean thresholds each normalized map at its own mean; Best IoU is best over thresholds {0.3, 0.5, 0.7, 0.9}. mAP is available only for the oracle-style AP calculation.
+Method	Selection	RMA	Pointing	mIoU@mean	MaskIoU@0.5	Best IoU	mAP@0.3	mAP@0.5
+LF-CBM	activation							
+SALF-CBM	activation	0.0364 +/- 0.0001	0.1106 +/- 0.0064	0.0568 +/- 0.0016	0.0622 +/- 0.0025	0.0792 +/- 0.0043		
+VLG-CBM	activation							
+SG-CBM (ours)	activation	0.1086 +/- 0.0283	0.2436 +/- 0.0287	0.0654 +/- 0.0022	0.0694 +/- 0.0062	0.1314 +/- 0.0116		
+LF-CBM	oracle							
+SALF-CBM	oracle	0.0369 +/- 0.0000	0.2958 +/- 0.0039	0.0715 +/- 0.0001	0.0861 +/- 0.0003	0.2440 +/- 0.0015	0.3379 +/- 0.0067	0.0686 +/- 0.0051
+VLG-CBM	oracle							
+SG-CBM (ours)	oracle	0.1123 +/- 0.0257	0.4280 +/- 0.0195	0.0709 +/- 0.0013	0.0766 +/- 0.0081	0.3014 +/- 0.0173	0.4652 +/- 0.0474	0.1297 +/- 0.0313
+
+4. CUB70 per-part localization, activation-selected RMA / Pointing / Best IoU
+Method	Part	RMA	Pointing	Best IoU
+SALF-CBM	beak	0.0043 +/- 0.0000	0.0206 +/- 0.0030	0.0160 +/- 0.0010
+SALF-CBM	wing	0.0558 +/- 0.0001	0.1368 +/- 0.0086	0.1043 +/- 0.0049
+SALF-CBM	tail	0.0164 +/- 0.0000	0.0379 +/- 0.0020	0.0294 +/- 0.0009
+SALF-CBM	body	0.0472 +/- 0.0001	0.1537 +/- 0.0108	0.1081 +/- 0.0072
+SG-CBM (ours)	beak	0.0482 +/- 0.0195	0.1530 +/- 0.0140	0.0935 +/- 0.0121
+SG-CBM (ours)	wing	0.1700 +/- 0.0449	0.4068 +/- 0.0524	0.1897 +/- 0.0189
+SG-CBM (ours)	tail	0.0549 +/- 0.0176	0.1225 +/- 0.0275	0.0759 +/- 0.0164
+SG-CBM (ours)	body	0.1262 +/- 0.0296	0.2609 +/- 0.0287	0.1460 +/- 0.0157
+
+5. Concept prediction on CUB-200 (RN18)
+GDINO-labeled concept prediction values are five-seed means for SALF-CBM and SG-CBM. VLM judge values are strict precision on the common 498-image CUB subset; LF/VLG are single-run values, while SALF/SG are five-seed mean +/- std.
+Method	GDINO AUROC	GDINO AUPRC	GDINO P@5	Qwen2.5-VL-32B strict	Qwen2.5-VL-7B strict
+LF-CBM				67.00%	65.03%
+SALF-CBM	0.5373 +/- 0.0163	0.0104 +/- 0.0005	0.0160 +/- 0.0010	60.17 +/- 2.29%	54.83 +/- 1.63%
+VLG-CBM				72.35%	65.23%
+SG-CBM (ours)	0.9614 +/- 0.0032	0.5918 +/- 0.0273	0.6182 +/- 0.0202	74.40 +/- 0.69%	65.85 +/- 0.35%
+
+6. VLM judge full precision breakdown on the common 498-image CUB subset
+Strict precision = yes / total. Resolved precision = yes / (yes + no).
+Method	Judge	Yes	No	Unsure	Total	Strict	Resolved
+LF-CBM	Qwen2.5-VL-7B	1614	831	37	2482	65.03%	66.01%
+LF-CBM	Qwen2.5-VL-32B	1663	819	0	2482	67.00%	67.00%
+SALF-CBM	Qwen2.5-VL-7B	6819	5260	357	12436	54.83 +/- 1.63%	56.45 +/- 1.48%
+SALF-CBM	Qwen2.5-VL-32B	7483	4951	2	12436	60.17 +/- 2.29%	60.18 +/- 2.29%
+VLG-CBM	Qwen2.5-VL-7B	1392	693	49	2134	65.23%	66.76%
+VLG-CBM	Qwen2.5-VL-32B	1544	590	0	2134	72.35%	72.35%
+SG-CBM (ours)	Qwen2.5-VL-7B	7416	3617	228	11261	65.85 +/- 0.35%	67.22 +/- 0.26%
+SG-CBM (ours)	Qwen2.5-VL-32B	8379	2882	0	11261	74.40 +/- 0.69%	74.40 +/- 0.69%
+
+Notes for response framing: (i) The CUB70 segmentation-mask evaluation is independent of the Grounding-DINO boxes used for SG-CBM training supervision. (ii) Five-seed CUB runs address the variance concern directly for SG-CBM and SALF-CBM. (iii) The VLM judge was rerun with a single-concept protocol to reduce grouped-prompt artifacts; Qwen2.5-VL-32B produces almost no unsure responses under this protocol, which explains why strict and resolved precision are nearly identical for that judge.

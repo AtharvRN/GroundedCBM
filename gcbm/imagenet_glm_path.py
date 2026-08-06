@@ -103,8 +103,11 @@ def resolve_source_run_dir(artifact_dir: Path) -> Path:
     return artifact_dir
 
 
-def load_config(config_dir: Path, device: str) -> Config:
-    payload = json.loads((config_dir / "config.json").read_text())
+def load_config(config_dir: Path, device: str) -> Config | None:
+    config_path = config_dir / "config.json"
+    if not config_path.exists():
+        return None
+    payload = json.loads(config_path.read_text())
     payload.setdefault("feature_storage_dtype", "fp16")
     payload.setdefault("saga_table_device", "cpu")
     payload.setdefault("dense_lr", 1e-3)

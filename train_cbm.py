@@ -455,6 +455,7 @@ def main():
     parser.add_argument("--dataset", type=str, default="cub", help="Dataset name. Use cub here; imagenet dispatches to the ImageNet trainer.")
     parser.add_argument("--annotation_dir", type=str, default="outputs", help="GDINO/SALF annotation directory.")
     parser.add_argument("--save_dir", type=str, default="saved_models", help="Output directory for trained runs.")
+    parser.add_argument("--activation_dir", type=str, default=None, help="Directory for cached activations/spatial similarities.")
     parser.add_argument("--load_dir", type=str, default=None, help="Optional existing CBL checkpoint directory.")
     parser.add_argument("--device", type=str, default="cuda", help="Torch device.")
     parser.add_argument("--num_workers", type=int, default=8, help="DataLoader worker count.")
@@ -464,10 +465,14 @@ def main():
     parser.add_argument("--skip_test_eval", action="store_true", help="Skip final test-set evaluation.")
     parser.add_argument("--concept_set", type=str, default="concept_files/cub_filtered.txt", help="Concept list file.")
     parser.add_argument("--backbone", type=str, default="resnet18_cub", help="Backbone name.")
+    parser.add_argument("--backbone_checkpoint", type=str, default="", help="Optional checkpoint for checkpoint-backed spatial backbones.")
     parser.add_argument("--cbl_batch_size", type=int, default=32, help="Concept-layer batch size.")
     parser.add_argument("--cbl_epochs", type=int, default=75, help="Concept-layer training epochs.")
     parser.add_argument("--cbl_lr", type=float, default=5e-4, help="Concept-layer learning rate.")
-    parser.add_argument("--cbl_optimizer", choices=["adam", "sgd"], default="adam", help="Concept-layer optimizer.")
+    parser.add_argument("--cbl_optimizer", choices=["adam", "adamw", "sgd"], default="adam", help="Concept-layer optimizer.")
+    parser.add_argument("--cbl_momentum", type=float, default=0.9, help="SGD momentum for concept-layer training.")
+    parser.add_argument("--salf_pool_mode", choices=["avg", "max", "softmax"], default=None, help="SALF spatial map pooling mode.")
+    parser.add_argument("--salf_cbl_bias", action=argparse.BooleanOptionalAction, default=None, help="Whether SALF linear 1x1 concept layer uses bias.")
     parser.add_argument("--mask_h", type=int, default=14, help="SG-CBM spatial supervision mask height.")
     parser.add_argument("--mask_w", type=int, default=14, help="SG-CBM spatial supervision mask width.")
     parser.add_argument("--loss_mask_w", type=float, default=0.25, help="SG-CBM spatial soft-align KL weight.")
@@ -489,6 +494,7 @@ def main():
         cbl_loss_type="bce",
         cbl_min_delta=1e-3,
         cbl_min_epochs=15,
+        cbl_momentum=0.9,
         cbl_hidden_layers=1,
         cbl_optimizer="adam",
         cbl_pos_weight=1.0,
@@ -526,10 +532,15 @@ def main():
         prompt_batch_size=1024,
         prompt_radius=3,
         patch_iou_thresh=0.5,
+        partimagenetpp_train_val_split=0.0,
         recompute_spatial_sims=False,
+        salf_cbl_bias=False,
+        salf_pool_mode="avg",
         saga_batch_size=512,
         saga_lam=0.0002,
+        saga_min_lam_ratio=1.0,
         saga_n_iters=4000,
+        saga_path_steps=1,
         saga_step_size=0.1,
         savlg_branch_arch="dual",
         savlg_concept_filter_mode="spatial_threshold",
