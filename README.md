@@ -1,6 +1,7 @@
 # SG-CBM
 
-Spatially Grounded Concept Bottleneck Models for CUB and ImageNet.
+Spatially Grounded Concept Bottleneck Models for CUB, ImageNet, Places365, and
+PartImageNet++.
 
 This repository contains the release code for training concept layers, fitting
 sparse GLM heads, and evaluating accuracy, concept prediction, and localization.
@@ -19,7 +20,9 @@ scripts/precompute_imagenet_targets.py Precompute ImageNet GDINO targets.
 scripts/train_sparse_nec.py          Fit sparse GLM heads for NEC sweeps.
 scripts/eval_nec.py                  Evaluate classification accuracy at NEC levels.
 scripts/eval_concept_accuracy.py     Evaluate concept prediction against GDINO/CUB labels.
-scripts/eval_gdino_localization.py   Evaluate GDINO-box localization for CUB/ImageNet.
+scripts/eval_gdino_localization.py   Evaluate GDINO-box localization for CUB/ImageNet/Places365.
+scripts/eval_places365_checkpoint.py Evaluate Places365 classification checkpoints.
+scripts/eval_partimagenetpp_gtbox_localization.py Evaluate PartImageNet++ GT-box localization.
 evaluations/cub_part_localization.py Evaluate CUB part-point localization.
 scripts/autoresearch.py              Propose, record, and rank ACC-NEC research trials.
 ```
@@ -44,12 +47,24 @@ with `path`, `class_id`, and `sample_index`. ImageNet validation can be an
 extracted directory or the official validation tar where supported by the eval
 script.
 
+Places365 expects the standard Places365-small file-list layout. Set
+`PLACES365_ROOT` to the directory containing `places365_train_standard.txt`,
+`places365_val.txt`, `categories_places365.txt`, and the referenced image
+folders.
+
+PartImageNet++ uses JSONL manifests rather than an ImageFolder tree. Set
+`PARTIMAGENETPP_TRAIN_MANIFEST` and `PARTIMAGENETPP_VAL_MANIFEST`, or pass
+the equivalent flags in evaluation scripts. Each manifest row should include
+the image path, class label/index, and part labels/boxes used by the selected
+evaluation protocol.
+
 GDINO annotations are expected as JSON files:
 
 ```text
 annotations/cub_train/0.json
 annotations/cub_val/0.json
 annotations/imagenet_val/0.json
+annotations/places365_val/0.json
 ```
 
 The annotation archives are distributed separately from this code repository.
@@ -63,6 +78,11 @@ annotation filenames are not in `ILSVRC2012_val_00000001.JPEG -> 0.json` order.
 The concept accuracy and localization scripts expose `--annotation_mapping_json`
 for this case.
 
+For Places365, use the Places365 validation manifest with the corresponding
+GDINO annotation directory. For PartImageNet++, the human GT part boxes are used
+for localization/concept-quality evaluation, while GDINO annotations can be used
+as SG-CBM training targets.
+
 ## Train Concept Layers
 
 The main entry point is `train_cbm.py`.
@@ -74,6 +94,9 @@ python train_cbm.py --config configs/cub_gcbm.json --model_name vlg_cbm
 python train_cbm.py --config configs/cub_gcbm.json --model_name lf_cbm
 python train_cbm.py --config configs/imagenet_gcbm.yaml
 python train_cbm.py --config configs/imagenet_vlg.yaml
+python train_cbm.py --config configs/places365_sgcbm.json
+python train_cbm.py --config configs/places365_vlg.json
+python train_cbm.py --config configs/partimagenetpp_sgcbm_scratch_resnet50.json
 ```
 
 For ImageNet SG-CBM, set these paths in `configs/imagenet_gcbm.yaml`:
@@ -94,6 +117,10 @@ Precompute ImageNet GDINO targets:
 ```bash
 python scripts/precompute_imagenet_targets.py --image_root /path/to/imagenet/train --annotation_dir /path/to/imagenet_annotations --concept_file concept_files/imagenet_filtered.txt --output_dir /path/to/precomputed_targets --split train
 ```
+
+For Places365, set `PLACES365_ROOT` and `annotation_dir` in the config before
+training. For PartImageNet++, set the manifest environment variables and the
+pretrained PartImageNet++ backbone checkpoint path in the config.
 
 ## Train Sparse NEC Heads
 
@@ -132,10 +159,13 @@ reports AUROC, AP, Macro AP, P@5, threshold metrics, and best-F1.
 python scripts/eval_concept_accuracy.py --dataset cub --gt_source gdino --load_paths /path/to/cub_sgcbm_run /path/to/cub_vlg_run --model_names savlg_cbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/cub_gdino_annotations --normalization sigmoid --output results/cub_concept_accuracy.json
 python scripts/eval_concept_accuracy.py --dataset imagenet --gt_source gdino --load_paths /path/to/imagenet_sgcbm_run --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --normalization sigmoid --output results/imagenet_concept_accuracy.json
 python scripts/eval_concept_accuracy.py --dataset imagenet --gt_source gdino --load_paths /path/to/salf_imagenet_checkpoint --model_names salf_cbm --names SALF-CBM --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --normalization concept_zscore_minmax --output results/imagenet_salf_concept_accuracy.json
+python scripts/eval_concept_accuracy.py --dataset places365 --gt_source gdino --load_paths /path/to/places365_sgcbm_run /path/to/places365_vlg_run --model_names savlg_cbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/places365_annotations --places365_val_manifest /path/to/places365_val_manifest.jsonl --normalization sigmoid --output results/places365_concept_accuracy.json
+python scripts/eval_concept_accuracy.py --dataset partimagenetpp --gt_source partimagenetpp_boxes --load_paths /path/to/partimagenetpp_sgcbm_run --partimagenetpp_val_manifest /path/to/partimagenetpp_val_manifest.jsonl --partimagenetpp_gt_boxes_jsonl /path/to/partimagenetpp_gt_boxes.jsonl --normalization sigmoid --output results/partimagenetpp_concept_accuracy.json
 ```
 
-ImageNet concept accuracy supports SG-CBM/VLG-style release checkpoints and
-SALF checkpoints with `W_c.pt`, `proj_mean.pt`, and `proj_std.pt`.
+ImageNet and Places365 concept accuracy support SG-CBM/VLG-style release
+checkpoints. ImageNet also supports SALF checkpoints with `W_c.pt`,
+`proj_mean.pt`, and `proj_std.pt`.
 
 ## Evaluate GDINO Localization
 
@@ -144,10 +174,17 @@ Localization uses the concept-layer checkpoint, not sparse GLM weights.
 ```bash
 python scripts/eval_gdino_localization.py --dataset cub --gcbm_path /path/to/cub_sgcbm_run --annotation_dir /path/to/cub_gdino_annotations --output results/cub_gdino_localization.json --map_normalization concept_zscore_minmax
 python scripts/eval_gdino_localization.py --dataset imagenet --gcbm_path /path/to/imagenet_sgcbm_run --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --output results/imagenet_gdino_localization.json --map_normalization concept_zscore_minmax
+python scripts/eval_gdino_localization.py --dataset places365 --gcbm_path /path/to/places365_sgcbm_run --annotation_dir /path/to/places365_annotations --val_manifest /path/to/places365_val_manifest.jsonl --output results/places365_gdino_localization.json --map_normalization concept_zscore_minmax
 ```
 
 The output includes RMA-style `mass_in_gt`, pointing accuracy, mean IoU, and
 LocAcc at requested IoU thresholds.
+
+PartImageNet++ localization against human part boxes uses the dataset GT boxes:
+
+```bash
+python scripts/eval_partimagenetpp_gtbox_localization.py --gcbm_path /path/to/partimagenetpp_sgcbm_run --val_manifest /path/to/partimagenetpp_val_manifest.jsonl --gt_boxes_jsonl /path/to/partimagenetpp_gt_boxes.jsonl --output results/partimagenetpp_gtbox_localization.json
+```
 
 ## Evaluate CUB Part Localization
 
