@@ -2,9 +2,9 @@
   "model_name": "savlg_cbm",
   "dataset": "partimagenetpp",
   "concept_set": "concept_files/partimagenetpp_generic_parts.txt",
-  "filter_set": "/workspace/partimagenetpp_eval_payload/partimagenetpp_sgcbm_filtered_out.txt",
+  "filter_set": "",
   "backbone": "resnet50_partimagenetpp_scratch",
-  "backbone_checkpoint": "/workspace/partimagenetpp_runs/resnet50_scratch_pinpp90k_strong/resnet50_scratch_pinpp90k_strong_20260727T015734Z/checkpoint_best.pt",
+  "backbone_checkpoint": "/path/to/partimagenetpp_resnet50_checkpoint.pt",
   "device": "cuda",
   "seed": 42,
   "num_workers": 12,
@@ -39,7 +39,7 @@
   "saga_n_iters": 100,
   "saga_lam": 0.0007,
   "saga_step_size": 0.1,
-  "activation_dir": "/workspace/partimagenetpp_runs/sgcbm_scratch_resnet50_activations",
+  "activation_dir": "artifacts/partimagenetpp/sgcbm_activations",
   "skip_train_val_eval": true,
   "skip_test_eval": false
 }

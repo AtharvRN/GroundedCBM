@@ -870,18 +870,13 @@ class Places365ConceptDataset(Dataset):
     def _resolve_image_path(path: Path) -> Path:
         if path.exists():
             return path
-        raw = str(path)
         candidates: List[Path] = []
-        replacements = (
-            ("/root/places365_torch", "/workspace/SAVLGCBM/datasets/places365_torch"),
-            ("/root/places365_full", "/workspace/SAVLGCBM/datasets/places365_torch"),
-            ("/root/places365_clean_val_20260725T201621Z", "/workspace/SAVLGCBM/datasets/places365_torch"),
-        )
-        for old, new in replacements:
-            if raw.startswith(old):
-                candidates.append(Path(raw.replace(old, new, 1)))
-        root = Path("/workspace/SAVLGCBM/datasets/places365_torch/val_256")
-        candidates.extend((root / path.name, root / "val_256" / path.name))
+        places_root = os.environ.get("PLACES365_ROOT", "")
+        if places_root:
+            root = Path(places_root)
+            if not path.is_absolute():
+                candidates.append(root / path)
+            candidates.extend((root / path.name, root / "val_256" / path.name))
         for candidate in candidates:
             if candidate.exists():
                 return candidate

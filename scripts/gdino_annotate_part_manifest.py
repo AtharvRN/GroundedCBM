@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-DEFAULT_GDINO_ROOT = Path(os.environ.get("GROUNDINGDINO_ROOT", "/workspace/GroundingDINO"))
+DEFAULT_GDINO_ROOT = Path(os.environ.get("GROUNDINGDINO_ROOT", "GroundingDINO"))
 
 
 def iter_chunks(items: list[str], size: int) -> Iterable[list[str]]:

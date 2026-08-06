@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 # Optional dependency: most training/eval paths do not need matplotlib.
-# Keep this import soft so lightweight pods can run without it.
+# Keep this import soft so lightweight environments can run without it.
 try:
     from matplotlib import pyplot as plt  # type: ignore
 except Exception:  # pragma: no cover

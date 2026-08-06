@@ -25,6 +25,10 @@ artifacts/
 results/
 saved_models/
 saved_activations/
+output/
+tmp/
+tmp_pod_scripts/
+.codex-docs/
 
 # OS / Python noise
 .DS_Store

@@ -794,7 +794,7 @@ def _get_or_create_savlg_nec_components(
 ):
     # For NEC we only need concept activations, not raw backbone features.
     # Materializing whole-split backbone tensors causes heavy memory/page-cache
-    # pressure on the shared pod filesystem. Extract concepts directly once.
+    # pressure on shared filesystems. Extract concepts directly once.
     print(
         f"[SAVLG NEC] preparing split={split_name} len={len(dataset)} cbl_batch_size={args.cbl_batch_size} num_workers={args.num_workers}",
         flush=True,
