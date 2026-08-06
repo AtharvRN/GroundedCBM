@@ -24,7 +24,6 @@ scripts/eval_gdino_localization.py   Evaluate GDINO-box localization for CUB/Ima
 scripts/eval_places365_checkpoint.py Evaluate Places365 classification checkpoints.
 scripts/eval_partimagenetpp_gtbox_localization.py Evaluate PartImageNet++ GT-box localization.
 evaluations/cub_part_localization.py Evaluate CUB part-point localization.
-scripts/autoresearch.py              Propose, record, and rank ACC-NEC research trials.
 ```
 
 ## Data
@@ -156,10 +155,10 @@ Concept accuracy compares concept scores to binary concept-presence labels and
 reports AUROC, AP, Macro AP, P@5, threshold metrics, and best-F1.
 
 ```bash
-python scripts/eval_concept_accuracy.py --dataset cub --gt_source gdino --load_paths /path/to/cub_sgcbm_run /path/to/cub_vlg_run --model_names savlg_cbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/cub_gdino_annotations --normalization sigmoid --output results/cub_concept_accuracy.json
+python scripts/eval_concept_accuracy.py --dataset cub --gt_source gdino --load_paths /path/to/cub_sgcbm_run /path/to/cub_vlg_run --model_names sgcbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/cub_gdino_annotations --normalization sigmoid --output results/cub_concept_accuracy.json
 python scripts/eval_concept_accuracy.py --dataset imagenet --gt_source gdino --load_paths /path/to/imagenet_sgcbm_run --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --normalization sigmoid --output results/imagenet_concept_accuracy.json
 python scripts/eval_concept_accuracy.py --dataset imagenet --gt_source gdino --load_paths /path/to/salf_imagenet_checkpoint --model_names salf_cbm --names SALF-CBM --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --normalization concept_zscore_minmax --output results/imagenet_salf_concept_accuracy.json
-python scripts/eval_concept_accuracy.py --dataset places365 --gt_source gdino --load_paths /path/to/places365_sgcbm_run /path/to/places365_vlg_run --model_names savlg_cbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/places365_annotations --places365_val_manifest /path/to/places365_val_manifest.jsonl --normalization sigmoid --output results/places365_concept_accuracy.json
+python scripts/eval_concept_accuracy.py --dataset places365 --gt_source gdino --load_paths /path/to/places365_sgcbm_run /path/to/places365_vlg_run --model_names sgcbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/places365_annotations --places365_val_manifest /path/to/places365_val_manifest.jsonl --normalization sigmoid --output results/places365_concept_accuracy.json
 python scripts/eval_concept_accuracy.py --dataset partimagenetpp --gt_source partimagenetpp_boxes --load_paths /path/to/partimagenetpp_sgcbm_run --partimagenetpp_val_manifest /path/to/partimagenetpp_val_manifest.jsonl --partimagenetpp_gt_boxes_jsonl /path/to/partimagenetpp_gt_boxes.jsonl --normalization sigmoid --output results/partimagenetpp_concept_accuracy.json
 ```
 
@@ -199,19 +198,5 @@ selects the best concept per metric.
 ## Notes
 
 - Public model name: SG-CBM.
-- Some internal names still use `savlg` or `gcbm` for checkpoint compatibility.
 - SG-CBM training/localization uses GDINO annotations.
 - NEC and classification evaluation use sparse GLM heads; localization does not.
-
-## AutoResearch
-
-The lightweight ACC-NEC research loop lives in `autoresearch/`.
-
-```bash
-python scripts/autoresearch.py scoreboard --memory autoresearch/memory/cub_sgcbm_trials.jsonl
-python scripts/autoresearch.py propose --space autoresearch/search_spaces/cub_sgcbm_acc_nec.json --memory autoresearch/memory/cub_sgcbm_trials.jsonl
-bash autoresearch/trials/cub_sgcbm_acc_nec_000001/commands.sh
-```
-
-The memory file is seeded with the CUB spatial-alignment experiments, where
-`loss_global_spatial_align_w=0.1` is the current best setting.
