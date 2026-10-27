@@ -69,17 +69,20 @@ def test_invalid_fusion_configuration(options):
         cfg.validate()
 
 
-def test_learned_alpha_survives_selection_calibration_export_and_reload(tmp_path):
+@pytest.mark.parametrize('learned', [False, True])
+def test_alpha_survives_selection_calibration_export_and_reload(tmp_path, learned):
     prepared, _ = inputs(tmp_path)
     cfg = config(tmp_path, prepared)
-    cfg.model.fusion = 'convex'; cfg.model.alpha = .5; cfg.model.learn_alpha = True
+    cfg.model.fusion = 'convex'; cfg.model.alpha = .5 if learned else .9; cfg.model.learn_alpha = learned
     result = fit(cfg)
     selected = torch.load(Path(cfg.training.output)/'best.pt', weights_only=False)
-    assert result['best_alpha'] == selected['model']['fusion_logit'].sigmoid().item()
+    expected = selected['model']['fusion_logit'].sigmoid().item() if learned else cfg.model.alpha
+    assert result['best_alpha'] == expected
     assert 0 < result['best_alpha'] < 1
     assert result == fit(cfg, resume=True)
     assert assess(cfg)['checkpoint_epoch'] == result['best_epoch']
     assert assess(cfg, test=True)['checkpoint_epoch'] == result['best_epoch']
     export(cfg)
     _, head, _, _, _ = load_selected(cfg)
-    assert head.mixing_alpha().item() == result['best_alpha']
+    actual = head.mixing_alpha().item() if learned else head.mixing_alpha()
+    assert actual == result['best_alpha']

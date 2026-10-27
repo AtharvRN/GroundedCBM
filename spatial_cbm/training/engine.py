@@ -239,7 +239,8 @@ def fit(cfg, resume=False):
             record = dict(epoch=epoch, train_loss=tr['loss'], val_loss=va['loss'],
                           lr=optimizer.param_groups[0]['lr'], train=tr, validation=va)
             if head is not None and head.fusion == 'convex':
-                record['fusion_alpha'] = torch.as_tensor(head.mixing_alpha()).detach().item()
+                alpha = head.mixing_alpha()
+                record['fusion_alpha'] = alpha.detach().item() if torch.is_tensor(alpha) else alpha
             history.append(record)
             best = minimum_loss(history)
             if best['epoch'] == epoch:
