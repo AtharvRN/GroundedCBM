@@ -7,13 +7,65 @@ import pytest
 import torch
 from torchvision.models import resnet18
 
-from gcbm.training.config import Config, Data, Model, Training, load
-from gcbm.training.data import prepare, verify, Samples, occupancy
-from gcbm.training.engine import fit, objective
-from gcbm.training.export import export
-from gcbm.training.model import Backbone, ConceptHead
-from gcbm.validation_selection import minimum_loss, stop_for_loss
-from gcbm.losses import soft_align_kl_loss
+from spatial_cbm.training.config import Config, Data, Model, Training, load
+from spatial_cbm.training.data import prepare, verify, Samples, occupancy
+from spatial_cbm.training.engine import fit, objective
+from spatial_cbm.training.export import export
+from spatial_cbm.training.model import Backbone, ConceptHead
+from spatial_cbm.training.engine import minimum_loss, stop_for_loss
+from torch.nn import functional as F
+
+
+def soft_align_kl_loss(
+    map_logits: torch.Tensor,
+    mask_indices: torch.Tensor,
+    mask_targets: torch.Tensor,
+    mask_valid: torch.Tensor,
+) -> torch.Tensor:
+    """KL-align selected concept maps to target masks.
+
+    `mask_indices`, `mask_targets`, and `mask_valid` are padded per-image
+    tensors. Only valid concept/mask pairs contribute to the loss.
+    """
+    map_logits = F.interpolate(
+        map_logits,
+        size=mask_targets.shape[-2:],
+        mode="bilinear",
+        align_corners=False,
+    )
+    batch_losses = []
+    for batch_index in range(map_logits.shape[0]):
+        valid = mask_valid[batch_index]
+        if not bool(valid.any()):
+            continue
+        concept_ids = mask_indices[batch_index][valid]
+        pred = map_logits[batch_index].index_select(0, concept_ids)
+        pred_flat = pred.flatten(1).float()
+        target_mass = mask_targets[batch_index][valid].flatten(1).float().clamp(min=0.0)
+        target_mass_sum = target_mass.sum(dim=1, keepdim=True)
+        valid_targets = target_mass_sum.squeeze(1) > 0.0
+
+        per_concept_loss = torch.zeros(
+            (pred_flat.shape[0],),
+            device=pred.device,
+            dtype=pred_flat.dtype,
+        )
+        if bool(valid_targets.any()):
+            target_dist = torch.zeros_like(target_mass)
+            target_dist[valid_targets] = target_mass[valid_targets] / torch.clamp(
+                target_mass_sum[valid_targets],
+                min=1e-6,
+            )
+            pred_log_dist = F.log_softmax(pred_flat[valid_targets], dim=1)
+            per_concept_loss[valid_targets] = F.kl_div(
+                pred_log_dist,
+                target_dist[valid_targets],
+                reduction="none",
+            ).sum(dim=1)
+
+        batch_losses.append(per_concept_loss.mean())
+
+    return torch.stack(batch_losses).mean() if batch_losses else map_logits.sum() * 0.0
 
 
 @pytest.fixture(autouse=True)
@@ -127,7 +179,7 @@ def test_targets_cache_crop_and_confidence(tmp_path,monkeypatch):
     first=dataset[0]
     assert first[1].tolist()==[1.,0.]
     assert first[3].shape==(1,4,4)
-    monkeypatch.setattr('gcbm.training.data.occupancy',lambda *a:pytest.fail('cache miss'))
+    monkeypatch.setattr('spatial_cbm.training.data.occupancy',lambda *a:pytest.fail('cache miss'))
     second=dataset[0]
     for x,y in zip(first[:-1],second[:-1]): assert torch.equal(x,y)
     a=occupancy([.2,.2,.8,.8],'normalized_xyxy',(48,40),40,32,4)

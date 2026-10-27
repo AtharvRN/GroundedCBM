@@ -1,5 +1,4 @@
 """One training loop for all datasets, with validation-loss-only selection."""
-from dataclasses import asdict
 import copy
 import fcntl
 import json
@@ -14,12 +13,26 @@ import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from gcbm.losses import weighted_concept_bce
-from gcbm.spatial_loss_vectorized import spatial_losses_vectorized
-from gcbm.validation_selection import minimum_loss, stop_for_loss
+from spatial_cbm.losses import weighted_concept_bce, spatial_losses_vectorized
 from .data import Samples, collate, digest, save_json, verify
 from .model import Backbone, ConceptHead
 from .backbone_recipe import mix_batch, update_ema
+
+
+def minimum_loss(history):
+    if not history:
+        return None
+    if any("val_loss" not in row or not math.isfinite(row["val_loss"]) for row in history):
+        raise ValueError("Validation-loss history missing or nonfinite; legacy resume requires a new run")
+    return min(history, key=lambda row: (row["val_loss"], row["epoch"]))
+
+
+def stop_for_loss(history, patience, min_epochs):
+    if patience < 1 or min_epochs < 1:
+        raise ValueError("Validation-loss patience and minimum epochs must be positive")
+    best = minimum_loss(history)
+    return bool(best and history[-1]["epoch"] >= min_epochs
+                and history[-1]["epoch"] - best["epoch"] >= patience)
 
 
 def atomic_torch(path, value):
@@ -122,7 +135,7 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
 def provenance(cfg, data):
     root = Path(__file__).resolve().parents[1]
     paths = list((root/'training').glob('*.py')) + [root/x for x in
-        ['losses.py','sg_model.py','spatial_loss_vectorized.py','spatial_target_cache.py','target_batches.py','validation_selection.py']]
+        ['__init__.py','losses.py','layers.py','targets.py']]
     source = {str(p.relative_to(root.parent)):digest(p) for p in sorted(paths)}
     try:
         commit = subprocess.check_output(['git','rev-parse','HEAD'], cwd=root.parent, text=True).strip()

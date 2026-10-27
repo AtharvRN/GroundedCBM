@@ -13,8 +13,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from gcbm.spatial_target_cache import SpatialTargetCache
-from gcbm.target_batches import pad_sparse_targets
+from spatial_cbm.targets import SpatialTargetCache, pad_sparse_targets
 
 
 def digest(path):

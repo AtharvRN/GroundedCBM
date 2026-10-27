@@ -11,11 +11,11 @@ modified by this cleanup.
 
 | Historical path | Release path |
 | --- | --- |
-| `train_cbm.py`, `gcbm/train_imagenet.py`, `methods/savlg.py` | `python -m gcbm.training train --config ...` |
-| `gcbm/imagenet_config.py`, old dataset configs | `gcbm/training/config.py`, `configs/release/` |
-| ImageNet loaders, annotation indexes, target precomputation | Shared `manifest`, `prepare`, and target cache in `gcbm/training/data.py` |
-| `gcbm/imagenet_models.py` | `gcbm/training/model.py` and shared `gcbm/sg_model.py` |
-| `gcbm/imagenet_final_layers.py`, `gcbm/imagenet_glm_path.py`, `scripts/train_sparse_nec.py` | Shared `export` and `python -m gcbm.training.classifier` |
+| `train_cbm.py`, `gcbm/train_imagenet.py`, `methods/savlg.py` | `python -m spatial_cbm.training train --config ...` |
+| `gcbm/imagenet_config.py`, old dataset configs | `spatial_cbm/training/config.py`, `configs/release/` |
+| ImageNet loaders, annotation indexes, target precomputation | Shared `manifest`, `prepare`, and target cache in `spatial_cbm/training/data.py` |
+| `gcbm/imagenet_models.py` | `spatial_cbm/training/model.py` and shared `spatial_cbm/layers.py` |
+| `gcbm/imagenet_final_layers.py`, `gcbm/imagenet_glm_path.py`, `scripts/train_sparse_nec.py` | Shared `export` and `python -m spatial_cbm.training.classifier` |
 | Legacy evaluation scripts and baseline trainers | Deferred, not silently redirected or supported by this release |
 
 Dataset-specific vocabulary files and YAML configuration are intentional.
@@ -26,3 +26,13 @@ This is not a backward-compatible CLI replacement. Use the documented prepared
 manifest and explicit checkpoints; old experimental checkpoint formats are not
 automatically converted. Existing published results retain their original code
 and configuration provenance.
+
+The Python package is now `spatial_cbm`, not `gcbm`; update imports and commands
+accordingly. The old namespace is not kept as a duplicate compatibility layer.
+Losses are in `spatial_cbm/losses.py`, target caching/batching in `targets.py`,
+and validation-loss selection in `training/engine.py`. The memory-mapped feature
+dataset lives alongside classifier caching. Numerical algorithms are unchanged.
+
+Source hashes intentionally prevent resuming an old run across this refactor.
+Use its original pinned commit to resume it; this rename does not migrate or
+modify existing run artifacts.

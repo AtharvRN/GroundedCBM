@@ -9,10 +9,10 @@ from PIL import Image
 import pytest
 import torch
 
-from gcbm.training.config import load
-from gcbm.training.data import prepare, verify, Samples
-from gcbm.training.manifest import create
-from gcbm.training.engine import learning_rate
+from spatial_cbm.training.config import load
+from spatial_cbm.training.data import prepare, verify, Samples
+from spatial_cbm.training.manifest import create
+from spatial_cbm.training.engine import learning_rate
 from test_training import inputs, config
 
 
@@ -91,7 +91,7 @@ def test_places_imagefolder_and_manifest_adapters(tmp_path):
 
 
 def test_cosine_schedule_and_warmup():
-    from gcbm.training.config import Training
+    from spatial_cbm.training.config import Training
     cfg=Training(lr=.1,min_lr=.001,schedule='cosine',epochs=20,warmup_epochs=2)
     assert learning_rate(cfg,1)==.05
     assert learning_rate(cfg,2)==.1
@@ -99,6 +99,6 @@ def test_cosine_schedule_and_warmup():
 
 
 def test_cli_help_and_classifier_import():
-    for module in ['gcbm.training','gcbm.training.classifier']:
+    for module in ['spatial_cbm.training','spatial_cbm.training.classifier']:
         run=subprocess.run([sys.executable,'-m',module,'--help'],capture_output=True,text=True)
         assert run.returncode==0,run.stderr

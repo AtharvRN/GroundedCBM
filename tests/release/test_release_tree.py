@@ -8,8 +8,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_no_legacy_executable_paths():
-    assert not list((ROOT/'gcbm').glob('imagenet_*.py'))
-    assert not (ROOT/'gcbm/train_imagenet.py').exists()
+    assert not list((ROOT/'gcbm').rglob('*.py'))
+    assert not list((ROOT/'spatial_cbm').glob('imagenet_*.py'))
+    assert not (ROOT/'spatial_cbm/train_imagenet.py').exists()
     assert not (ROOT/'train_cbm.py').exists()
     for folder in ('scripts','methods','model','data','datasets','evaluations','clip'):
         assert not list((ROOT/folder).rglob('*.py')), folder
@@ -18,7 +19,7 @@ def test_no_legacy_executable_paths():
 
 
 def test_all_release_internal_imports_resolve_to_source():
-    for package in ('gcbm','glm_saga'):
+    for package in ('spatial_cbm','glm_saga'):
         for path in (ROOT/package).rglob('*.py'):
             module='.'.join(path.relative_to(ROOT).with_suffix('').parts)
             parent=module.rsplit('.',1)[0]
@@ -31,7 +32,7 @@ def test_all_release_internal_imports_resolve_to_source():
                     imports=[importlib.util.resolve_name('.'*node.level+name,parent)
                              if node.level else name]
                 for name in imports:
-                    if name.split('.')[0] in ('gcbm','glm_saga'):
+                    if name.split('.')[0] in ('spatial_cbm','glm_saga'):
                         target=ROOT.joinpath(*name.split('.'))
                         assert target.with_suffix('.py').is_file() or target.is_dir(), (path,name)
-                    assert name.split('.')[0] not in ('methods','model','data','evaluations','clip'), (path,name)
+                    assert name.split('.')[0] not in ('gcbm','methods','model','data','evaluations','clip'), (path,name)

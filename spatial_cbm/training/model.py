@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision import models
 
-from gcbm.sg_model import MultiScaleConceptLayer
+from spatial_cbm.layers import MultiScaleConceptLayer
 
 
 class Backbone(nn.Module):

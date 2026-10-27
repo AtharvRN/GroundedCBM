@@ -15,9 +15,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from glm_saga.elasticnet import glm_saga
-from gcbm.features import MemmapFeatureDataset
-from gcbm.sparse import threshold_weight_truncation
-from gcbm.training.data import digest
+from .classifier_cache import MemmapFeatureDataset
+from spatial_cbm.training.data import digest
 
 
 def parse_args() -> argparse.Namespace:
@@ -399,7 +398,7 @@ def main() -> None:
             shuffle=False,
         )
         if args.cache_features_device in ("cuda_preserve_sampler", "cpu_preserve_sampler"):
-            from gcbm.training.classifier_cache import cache_feature_loader
+            from spatial_cbm.training.classifier_cache import cache_feature_loader
             classes = infer_n_classes(train_target_path, val_target_path)
             cache_device = "cpu" if args.cache_features_device == "cpu_preserve_sampler" else args.device
             train_loader = cache_feature_loader(train_loader, cache_device,

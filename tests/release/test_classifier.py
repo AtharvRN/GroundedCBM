@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch
 
-from gcbm.training.classifier import select_path_points_for_nec, save_thresholded_nec_weights
-from gcbm.training.data import digest
+from spatial_cbm.training.classifier import select_path_points_for_nec, save_thresholded_nec_weights
+from spatial_cbm.training.data import digest
 
 
 def test_exact_nec_ties_and_unreached_path(tmp_path):
@@ -33,7 +33,7 @@ def test_cpu_cached_solver_end_to_end(tmp_path):
     files={str(p.relative_to(tmp_path)):digest(p) for p in folder.iterdir()}
     files['final_layer_normalization.pt']=digest(tmp_path/'final_layer_normalization.pt')
     (tmp_path/'features_complete.json').write_text(json.dumps(dict(files=files,identity=dict(checkpoint=digest(tmp_path/'best.pt')))))
-    run=subprocess.run([sys.executable,'-m','gcbm.training.classifier','--artifact_dir',str(tmp_path),
+    run=subprocess.run([sys.executable,'-m','spatial_cbm.training.classifier','--artifact_dir',str(tmp_path),
         '--output_dir',str(tmp_path/'nec'),'--device','cpu','--seed','42','--saga_workers','0',
         '--saga_batch_size','8','--n_iters','3','--max_glm_steps','5','--lam_max','.001',
         '--epsilon','.1','--nec_values','1','--skip_train_eval',

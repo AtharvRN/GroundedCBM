@@ -1,6 +1,21 @@
-"""Shared-gather spatial losses preserving the reference per-image reductions."""
+"""Concept BCE and vectorized spatial KL/BCE objectives."""
 import torch
 import torch.nn.functional as F
+
+
+def weighted_concept_bce(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    pos_weight: float = 1.0,
+) -> torch.Tensor:
+    """Binary concept loss with a scalar positive-class weight."""
+    bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    weights = torch.where(
+        targets > 0.5,
+        torch.full_like(targets, float(pos_weight)),
+        torch.ones_like(targets),
+    )
+    return (bce * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
 def spatial_losses_vectorized(maps, indices, targets, valid):

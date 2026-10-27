@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import torch
 
-import gcbm.training.engine as engine
+import spatial_cbm.training.engine as engine
 from test_training import inputs, config
 
 

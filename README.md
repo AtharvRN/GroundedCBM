@@ -24,12 +24,28 @@ trainers, baseline implementations, and their evaluation scripts are not part
 of this training-only SG-CBM release. Their source is preserved in Git history.
 See [migration notes](docs/migration.md).
 
+## Code Layout
+
+There are two command entry points, not separate scripts for each dataset:
+`python -m spatial_cbm.training` and
+`python -m spatial_cbm.training.classifier`.
+
+The remaining files are internal modules with distinct responsibilities:
+
+- `layers.py`, `losses.py`, `targets.py`: model layers, objectives, and target caching/batching.
+- `training/config.py`, `manifest.py`, `data.py`: configuration and dataset preparation/loading.
+- `training/model.py`, `engine.py`, `backbone_recipe.py`: backbone/head construction and training.
+- `training/export.py`, `classifier.py`, `classifier_cache.py`: feature export and sparse classifier fitting.
+
+Loss implementations, target helpers, and checkpoint selection are consolidated;
+unused legacy helpers are removed. The GLM-SAGA solver remains separate.
+
 ## Install
 
 ```bash
 pip install -r requirements-release.txt
 python -m pytest -q tests/release
-python -m gcbm.training --help
+python -m spatial_cbm.training --help
 ```
 
 Choose a compatible PyTorch/torchvision CUDA installation. No datasets,
@@ -56,7 +72,7 @@ Alternatively provide `annotation`, `annotation_image_id`, and
 The header filename/id must match `annotation_image_id` exactly.
 
 ```bash
-python -m gcbm.training prepare --source manifests/pinpp-train.jsonl \
+python -m spatial_cbm.training prepare --source manifests/pinpp-train.jsonl \
   --concepts concept_files/partimagenetpp_generic_parts.txt --dataset partimagenetpp \
   --output prepared/partimagenetpp --fraction 0.05 --seed 42
 ```
@@ -70,10 +86,10 @@ does not guarantee matching splits.
 Native-layout adapters emit the same schema:
 
 ```bash
-python -m gcbm.training manifest --layout cub --root /data/CUB_200_2011 --output manifests/cub.jsonl
-python -m gcbm.training manifest --layout imagefolder --root /data/imagenet/train --output manifests/imagenet.jsonl
-python -m gcbm.training manifest --layout places365 --root /data/places365 --filelist /data/places365_train_standard.txt --output manifests/places365.jsonl
-python -m gcbm.training manifest --layout manifest --root /data/pinpp --filelist /data/train90k.jsonl --output manifests/pinpp.jsonl
+python -m spatial_cbm.training manifest --layout cub --root /data/CUB_200_2011 --output manifests/cub.jsonl
+python -m spatial_cbm.training manifest --layout imagefolder --root /data/imagenet/train --output manifests/imagenet.jsonl
+python -m spatial_cbm.training manifest --layout places365 --root /data/places365 --filelist /data/places365_train_standard.txt --output manifests/places365.jsonl
+python -m spatial_cbm.training manifest --layout manifest --root /data/pinpp --filelist /data/train90k.jsonl --output manifests/pinpp.jsonl
 ```
 
 For concept training, add `--annotation-map mapping.json`. It maps each exact
@@ -88,11 +104,11 @@ JPEG bytes directly, including inside a nested tar.
 Edit the paths and hyperparameters in `configs/release/{dataset}.yaml`:
 
 ```bash
-python -m gcbm.training check --config configs/release/partimagenetpp_backbone.yaml
-python -m gcbm.training train --config configs/release/partimagenetpp_backbone.yaml
+python -m spatial_cbm.training check --config configs/release/partimagenetpp_backbone.yaml
+python -m spatial_cbm.training train --config configs/release/partimagenetpp_backbone.yaml
 # Set model.checkpoint in the concept config to the backbone run's best.pt.
-python -m gcbm.training train --config configs/release/partimagenetpp.yaml
-python -m gcbm.training train --config configs/release/partimagenetpp.yaml --resume
+python -m spatial_cbm.training train --config configs/release/partimagenetpp.yaml
+python -m spatial_cbm.training train --config configs/release/partimagenetpp.yaml --resume
 ```
 
 Use exactly the same commands with `cub.yaml`, `imagenet.yaml`, or
@@ -109,8 +125,8 @@ and prepared data locally when throughput matters.
 ## Sparse Classifiers
 
 ```bash
-python -m gcbm.training export --config configs/release/partimagenetpp.yaml
-python -m gcbm.training.classifier --artifact_dir runs/partimagenetpp/seed42 \
+python -m spatial_cbm.training export --config configs/release/partimagenetpp.yaml
+python -m spatial_cbm.training.classifier --artifact_dir runs/partimagenetpp/seed42 \
   --output_dir runs/partimagenetpp/seed42/nec --device cuda --seed 42 \
   --saga_workers 0 --saga_batch_size 512 --table_device cuda \
   --cache_features_device cuda_preserve_sampler --n_iters 1000 \

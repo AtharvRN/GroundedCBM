@@ -3,8 +3,8 @@ import copy
 import pytest
 import torch
 
-from gcbm.training.backbone_recipe import mix_batch, update_ema
-from gcbm.training.config import Training
+from spatial_cbm.training.backbone_recipe import mix_batch, update_ema
+from spatial_cbm.training.config import Training
 
 
 @pytest.mark.parametrize('cutmix', [False, True])

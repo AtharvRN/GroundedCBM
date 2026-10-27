@@ -2,6 +2,8 @@
 import mmap
 import os
 import time
+from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -94,3 +96,32 @@ def cache_feature_loader(original, device, table_classes=0, chunk_rows=4096):
     finally:
         os.close(fd)
     return CachedFeatureLoader(original, features, targets)
+
+
+class MemmapFeatureDataset(Dataset):
+    def __init__(
+        self,
+        feature_path: Path,
+        target_path: Path,
+        mean: Optional[np.ndarray] = None,
+        std: Optional[np.ndarray] = None,
+        include_index: bool = False,
+    ) -> None:
+        self.features = np.load(feature_path, mmap_mode="r")
+        self.targets = np.load(target_path, mmap_mode="r")
+        self.mean = None if mean is None else np.asarray(mean, dtype=np.float32)
+        self.std = None if std is None else np.asarray(std, dtype=np.float32)
+        self.include_index = include_index
+
+    def __len__(self) -> int:
+        return int(self.features.shape[0])
+
+    def __getitem__(self, index: int):
+        feature = np.asarray(self.features[index], dtype=np.float32)
+        if self.mean is not None and self.std is not None:
+            feature = (feature - self.mean) / self.std
+        tensor = torch.from_numpy(np.array(feature, dtype=np.float32, copy=True))
+        target = int(self.targets[index])
+        if self.include_index:
+            return tensor, target, int(index)
+        return tensor, target

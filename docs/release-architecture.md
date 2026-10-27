@@ -1,6 +1,6 @@
 # Unified Training Architecture
 
-`gcbm/training/config.py` defines one strict YAML schema. `manifest.py` contains
+`spatial_cbm/training/config.py` defines one strict YAML schema. `manifest.py` contains
 native-layout adapters; `data.py` creates identity-keyed SQLite annotations and
 one reusable split. `model.py` reuses the shared multiscale concept layer.
 `engine.py` owns the only release epoch loop, precision policy, validation-loss
