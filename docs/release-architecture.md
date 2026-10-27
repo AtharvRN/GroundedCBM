@@ -10,6 +10,8 @@ features and training-only normalization. `classifier.py` runs shared GLM-SAGA.
 There is no dataset-name dispatch in the training engine, model, or objective.
 ImageNet's useful archive reading is a generic optional image backend, not
 another model or trainer. All datasets use the vectorized spatial losses.
+Legacy executable paths and their unused dependencies have been removed from
+the release tree; see [migration notes](migration.md) for archived source.
 
 ## Provenance
 

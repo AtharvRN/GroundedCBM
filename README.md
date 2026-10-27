@@ -19,9 +19,10 @@ verified before replacing existing experiment pipelines.
 - Node-local target caches and optional direct image reads from indexed archives.
 - Saved split/data/source identities and guarded deterministic resume.
 
-Independent evaluation modules will be added later. Existing experiment and
-baseline scripts remain for provenance, not as competing release entry points.
-See [legacy documentation](docs/legacy-training.md).
+Independent evaluation modules will be added later. Legacy dataset-specific
+trainers, baseline implementations, and their evaluation scripts are not part
+of this training-only SG-CBM release. Their source is preserved in Git history.
+See [migration notes](docs/migration.md).
 
 ## Install
 
@@ -56,7 +57,7 @@ The header filename/id must match `annotation_image_id` exactly.
 
 ```bash
 python -m gcbm.training prepare --source manifests/pinpp-train.jsonl \
-  --concepts concept_files/partimagenetpp.txt --dataset partimagenetpp \
+  --concepts concept_files/partimagenetpp_generic_parts.txt --dataset partimagenetpp \
   --output prepared/partimagenetpp --fraction 0.05 --seed 42
 ```
 
