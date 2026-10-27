@@ -30,4 +30,4 @@ training:
   fused_bce: 1.0
   kl: 0.25
   spatial_bce: 0.25
-  positive_weight: 100.0
+  positive_weight: 1.0

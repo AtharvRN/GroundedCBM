@@ -16,6 +16,7 @@ def main():
     manifest.add_argument('--partition',choices=['train','test'],default='train')
     manifest.add_argument('--human-annotations')
     manifest.add_argument('--category-map')
+    manifest.add_argument('--class-map',help='Saved training class-name-to-ID JSON for ImageFolder evaluation')
     prepare = commands.add_parser('prepare')
     prepare.add_argument('--source', required=True)
     prepare.add_argument('--output', required=True)
@@ -37,7 +38,7 @@ def main():
     args = parser.parse_args()
     if args.command == 'manifest':
         from .manifest import create
-        create(args.layout,args.root,args.output,args.filelist,args.annotation_map,args.partition,args.human_annotations,args.category_map)
+        create(args.layout,args.root,args.output,args.filelist,args.annotation_map,args.partition,args.human_annotations,args.category_map,args.class_map)
         return
     if args.command == 'prepare':
         from .data import prepare

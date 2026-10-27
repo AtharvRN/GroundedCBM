@@ -137,6 +137,7 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
     if len(bank) != len(set(bank)):
         raise ValueError('Duplicate concept names')
     groups, identities, image_ids = {}, {}, set()
+    class_names, names_by_class = {}, {}
     image_roster = hashlib.sha256()
     annotated = 0
     with sqlite3.connect(output/'samples.sqlite') as db, source.open() as stream:
@@ -146,6 +147,14 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
             sample_id, category = row['id'], row['class_id']
             if not isinstance(sample_id, str) or not sample_id or type(category) is not int or category < 0:
                 raise ValueError('Each sample needs a nonempty string id and nonnegative integer class_id')
+            if 'class_name' in row:
+                name = row['class_name']
+                if not isinstance(name,str) or not name or class_names.get(name,category) != category:
+                    raise ValueError('Inconsistent training class-name mapping')
+                if names_by_class.get(category,name) != name:
+                    raise ValueError('Different class names share a training class ID')
+                class_names[name] = category
+                names_by_class[category] = name
             image = json.dumps(image_reference(row['image'], source.parent), sort_keys=True)
             if sample_id in identities or image in image_ids:
                 raise ValueError('Duplicate image or sample identity')
@@ -184,6 +193,8 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
                 sample_id, category = row['id'], row['class_id']
                 if not isinstance(sample_id,str) or not sample_id or type(category) is not int or category not in groups:
                     raise ValueError('Invalid held-out image identity or class')
+                if class_names and class_names.get(row.get('class_name')) != category:
+                    raise ValueError('Held-out class-name mapping differs from training; reuse the training class map')
                 image = json.dumps(image_reference(row['image'],heldout_source.parent),sort_keys=True)
                 if sample_id in identities or image in image_ids:
                     raise ValueError('Held-out test overlaps the training pool')

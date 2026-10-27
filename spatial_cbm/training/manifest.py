@@ -3,14 +3,29 @@ import json
 from pathlib import Path
 
 
-def rows(layout, root, filelist=None, partition='train'):
+def imagefolder_classes(root, partition, class_map=None):
+    folders = sorted(p.name for p in Path(root).iterdir() if p.is_dir())
+    if partition != 'train' and class_map is None:
+        raise ValueError('ImageFolder evaluation requires the saved training --class-map')
+    classes = ({name:i for i,name in enumerate(folders)} if class_map is None else class_map)
+    if (not isinstance(classes,dict) or not classes
+            or any(not isinstance(k,str) or not k or type(v) is not int for k,v in classes.items())
+            or sorted(classes.values()) != list(range(len(classes)))):
+        raise ValueError('Class map must contain unique contiguous integer IDs starting at zero')
+    if set(folders)-set(classes):
+        raise ValueError('ImageFolder contains classes absent from the training class map')
+    return classes
+
+
+def rows(layout, root, filelist=None, partition='train', class_map=None):
     root = Path(root).resolve()
     if layout == 'imagefolder':
-        classes = sorted(p for p in root.iterdir() if p.is_dir())
-        for label, folder in enumerate(classes):
+        classes = imagefolder_classes(root,partition,class_map)
+        for folder in sorted(p for p in root.iterdir() if p.is_dir()):
             for image in sorted(folder.rglob('*')):
                 if image.suffix.lower() in {'.jpg','.jpeg','.png'}:
-                    yield dict(id=str(image.relative_to(root)), image=str(image), class_id=label)
+                    yield dict(id=str(image.relative_to(root)), image=str(image),
+                               class_id=classes[folder.name],class_name=folder.name)
     elif layout == 'cub':
         names = dict(line.split(maxsplit=1) for line in (root/'images.txt').read_text().splitlines())
         labels = dict(line.split() for line in (root/'image_class_labels.txt').read_text().splitlines())
@@ -70,15 +85,24 @@ def coco_parts(path, category_map):
     return result
 
 
-def create(layout, root, output, filelist=None, annotation_map=None, partition='train', human_annotations=None, category_map=None):
+def create(layout, root, output, filelist=None, annotation_map=None, partition='train', human_annotations=None, category_map=None, class_map=None):
     if bool(human_annotations) != bool(category_map) or (human_annotations and annotation_map):
         raise ValueError('Human COCO input needs a category map and cannot be mixed with GDINO annotations')
     mapping = None if annotation_map is None else json.loads(Path(annotation_map).read_text())
     human = None if human_annotations is None else coco_parts(human_annotations,category_map)
     output = Path(output)
+    classes = None
+    if class_map is not None and layout != 'imagefolder':
+        raise ValueError('--class-map is only supported for ImageFolder manifests')
+    if layout == 'imagefolder':
+        classes = imagefolder_classes(root,partition,
+            None if class_map is None else json.loads(Path(class_map).read_text()))
+        classes_path = output.with_suffix('.classes.json')
+        if classes_path.exists() or output.exists():
+            raise FileExistsError('Manifest or saved class map already exists; use a new output path')
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('x') as stream:
-        for row in rows(layout, root, filelist,partition):
+        for row in rows(layout, root, filelist,partition,classes):
             if human is not None:
                 key = row.get('annotation_image_id',row['id'])
                 if key not in human: raise ValueError(f'Image identity missing from human COCO annotations: {key}')
@@ -93,3 +117,7 @@ def create(layout, root, output, filelist=None, annotation_map=None, partition='
                 metadata['annotation'] = str((Path(annotation_map).resolve().parent/metadata['annotation']).resolve())
                 row.update(metadata)
             stream.write(json.dumps(row)+'\n')
+    if classes is not None:
+        with classes_path.open('x') as stream:
+            json.dump(classes,stream,indent=2,sort_keys=True)
+            stream.write('\n')

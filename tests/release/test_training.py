@@ -13,6 +13,7 @@ from spatial_cbm.training.engine import fit, objective
 from spatial_cbm.training.export import export
 from spatial_cbm.training.model import Backbone, ConceptHead
 from spatial_cbm.training.engine import minimum_loss, stop_for_loss
+from spatial_cbm.losses import weighted_concept_bce
 from torch.nn import functional as F
 
 
@@ -178,6 +179,23 @@ def test_loss_matches_reference_kl_and_patch_bce():
     a=torch.autograd.grad(actual,(maps,logits),retain_graph=True)
     b=torch.autograd.grad(expected,(maps,logits))
     for x,y in zip(a,b): torch.testing.assert_close(x,y)
+
+
+@pytest.mark.parametrize('weight',[1.,2.,100.])
+def test_concept_bce_matches_pytorch_values_gradients_and_batch_aggregation(weight):
+    logits=torch.tensor([[2.,-1.],[.2,3.],[-2.,1.]],requires_grad=True)
+    targets=torch.tensor([[1.,1.],[0.,0.],[1.,0.]])
+    actual=weighted_concept_bce(logits,targets,weight)
+    expected=torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(weight))(logits,targets)
+    torch.testing.assert_close(actual,expected)
+    a=torch.autograd.grad(actual,logits,retain_graph=True)[0]
+    b=torch.autograd.grad(expected,logits)[0]
+    torch.testing.assert_close(a,b)
+    partitioned=(2*weighted_concept_bce(logits[:2],targets[:2],weight)
+                 +weighted_concept_bce(logits[2:],targets[2:],weight))/3
+    torch.testing.assert_close(actual,partitioned)
+    if weight==1.:
+        torch.testing.assert_close(actual,F.binary_cross_entropy_with_logits(logits,targets))
 
 
 def test_targets_cache_crop_and_confidence(tmp_path,monkeypatch):

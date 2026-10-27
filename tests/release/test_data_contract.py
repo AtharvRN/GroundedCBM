@@ -21,6 +21,7 @@ def test_all_release_yaml_files_load():
         cfg=load(path)
         assert cfg.training.patience==10
         assert cfg.training.stage in {'concept','backbone'}
+        assert cfg.training.positive_weight==1.
 
 
 def test_split_is_saved_reusable_and_disjoint(tmp_path):
@@ -96,6 +97,41 @@ def test_cosine_schedule_and_warmup():
     assert learning_rate(cfg,1)==.05
     assert learning_rate(cfg,2)==.1
     assert learning_rate(cfg,20)==.001
+
+
+def test_imagefolder_evaluation_reuses_training_classes(tmp_path):
+    for part,names in [('train',['a','z']),('test',['z'])]:
+        for name in names:
+            folder=tmp_path/part/name;folder.mkdir(parents=True)
+            for i in range(2): Image.new('RGB',(8,8)).save(folder/f'{part}-{i}.jpg')
+    train=tmp_path/'train.jsonl';test=tmp_path/'test.jsonl'
+    create('imagefolder',tmp_path/'train',train)
+    mapping=train.with_suffix('.classes.json')
+    assert json.loads(mapping.read_text())=={'a':0,'z':1}
+    with pytest.raises(ValueError,match='requires.*class-map'):
+        create('imagefolder',tmp_path/'test',test,partition='test')
+    assert not test.exists()
+    create('imagefolder',tmp_path/'test',test,partition='test',class_map=mapping)
+    rows=[json.loads(line) for line in test.read_text().splitlines()]
+    assert all(row['class_id']==1 and row['class_name']=='z' for row in rows)
+    prepare(train,tmp_path/'prepared','cub',fraction=.5,heldout_source=test)
+    # Even if a caller incorrectly generates the test manifest as training,
+    # preparation must catch the independent renumbering.
+    wrong=tmp_path/'wrong.jsonl'
+    create('imagefolder',tmp_path/'test',wrong)
+    with pytest.raises(ValueError,match='class-name mapping differs'):
+        prepare(train,tmp_path/'invalid','cub',fraction=.5,heldout_source=wrong)
+    unknown=tmp_path/'test'/'unseen';unknown.mkdir()
+    with pytest.raises(ValueError,match='absent from.*class map'):
+        create('imagefolder',tmp_path/'test',tmp_path/'unknown.jsonl',partition='test',class_map=mapping)
+
+
+@pytest.mark.parametrize('mapping',[{'a':0,'z':0},{'a':1},{'a':True},[],{}])
+def test_imagefolder_rejects_invalid_class_maps(tmp_path,mapping):
+    folder=tmp_path/'images'/'a';folder.mkdir(parents=True)
+    path=tmp_path/'classes.json';path.write_text(json.dumps(mapping))
+    with pytest.raises(ValueError,match='Class map'):
+        create('imagefolder',folder.parent,tmp_path/'out.jsonl',class_map=path)
 
 
 def test_cli_help_and_classifier_import():

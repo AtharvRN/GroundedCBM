@@ -45,7 +45,7 @@ class Training:
     fused_bce: float = 1.
     kl: float = .25
     spatial_bce: float = .25
-    positive_weight: float = 100.
+    positive_weight: float = 1.
     label_smoothing: float = .1
     schedule: str = 'constant'
     warmup_epochs: int = 0

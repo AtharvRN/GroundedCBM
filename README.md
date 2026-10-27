@@ -106,9 +106,16 @@ Native-layout adapters emit the same schema:
 python -m spatial_cbm.training manifest --layout cub --root /data/CUB_200_2011 --output manifests/cub.jsonl
 python -m spatial_cbm.training manifest --layout cub --partition test --root /data/CUB_200_2011 --output manifests/cub-test.jsonl
 python -m spatial_cbm.training manifest --layout imagefolder --root /data/imagenet/train --output manifests/imagenet.jsonl
+python -m spatial_cbm.training manifest --layout imagefolder --partition test --root /data/imagenet/val --class-map manifests/imagenet.classes.json --output manifests/imagenet-test.jsonl
 python -m spatial_cbm.training manifest --layout places365 --root /data/places365 --filelist /data/places365_train_standard.txt --output manifests/places365.jsonl
 python -m spatial_cbm.training manifest --layout manifest --root /data/pinpp --filelist /data/train90k.jsonl --output manifests/pinpp.jsonl
 ```
+
+ImageFolder manifests save a sibling `*.classes.json` mapping. Evaluation must
+reuse the training mapping with `--class-map`; missing evaluation classes retain
+their original IDs and unknown classes are rejected. Rows also retain class names
+so preparation rejects inconsistent train/test mappings. Existing manifests must
+be audited or regenerated; the adapter does not repair their labels in place.
 
 For concept training, add `--annotation-map mapping.json`. It maps each exact
 sample id to an object with `annotation`, `annotation_image_id`, and
@@ -130,8 +137,15 @@ python -m spatial_cbm.training train --config configs/release/partimagenetpp.yam
 ```
 
 Use exactly the same commands with `cub.yaml`, `imagenet.yaml`, or
-`places365.yaml`. Validation runs after **every epoch**, using the weighted
-training objective and native target resolution. Strict improvements reset
+`places365.yaml`. Concept prediction uses PyTorch's mean `BCEWithLogitsLoss`
+(via its functional equivalent), with `positive_weight: 1.0` in all default
+recipes: no positive-class reweighting or automatic class balancing. Optional
+positive weights use PyTorch's element-count normalization, not division by
+the sum of weights. This replaces the earlier release's weight-sum-normalized
+BCE; old checkpoints must not be resumed under the changed objective.
+
+Validation runs after **every epoch**, using the same combined training
+objective and native target resolution. Strict improvements reset
 patience; ties retain the earlier checkpoint. F1/AP and test accuracy never
 select the training checkpoint. The test set is not loaded by training.
 The same validation forward pass also logs exact concept AP and spatial AP.

@@ -8,14 +8,10 @@ def weighted_concept_bce(
     targets: torch.Tensor,
     pos_weight: float = 1.0,
 ) -> torch.Tensor:
-    """Binary concept loss with a scalar positive-class weight."""
-    bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
-    weights = torch.where(
-        targets > 0.5,
-        torch.full_like(targets, float(pos_weight)),
-        torch.ones_like(targets),
+    """PyTorch mean BCEWithLogitsLoss; unit positive weight is ordinary BCE."""
+    return F.binary_cross_entropy_with_logits(
+        logits, targets, pos_weight=logits.new_tensor(float(pos_weight)), reduction="mean",
     )
-    return (bce * weights).sum() / torch.clamp(weights.sum(), min=1.0)
 
 
 def spatial_losses_vectorized(maps, indices, targets, valid):
