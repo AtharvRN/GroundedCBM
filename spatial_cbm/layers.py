@@ -34,12 +34,15 @@ def pool_residual_spatial_logits(
     *,
     pooling: str = "lse",
     temperature: float = 1.0,
+    topk_fraction: float = 0.2,
 ) -> torch.Tensor:
     """Pool spatial residual maps while preserving constant-map scale."""
     flat = maps.flatten(2)
     mode = str(pooling).lower()
     if mode == "avg":
         return flat.mean(dim=-1)
+    if mode == "topk":
+        return pool_concept_maps(maps, pooling="topk", topk_fraction=topk_fraction)
     if mode == "lse":
         temp = max(float(temperature), 1e-6)
         num_patches = flat.shape[-1]
@@ -72,6 +75,7 @@ class DualBranchConceptLayer(nn.Module):
         residual_alpha: float = 0.0,
         residual_spatial_pooling: str = "lse",
         learn_spatial_residual_scale: bool = False,
+        residual_topk_fraction: float = 0.2,
     ) -> None:
         super().__init__()
         self.global_layer = global_layer
@@ -81,6 +85,7 @@ class DualBranchConceptLayer(nn.Module):
         self.global_pool = bool(global_pool)
         self.residual_alpha = float(residual_alpha)
         self.residual_spatial_pooling = str(residual_spatial_pooling).lower()
+        self.residual_topk_fraction = float(residual_topk_fraction)
         self.log_spatial_scale = nn.Parameter(torch.zeros(())) if learn_spatial_residual_scale else None
 
     def forward_global(self, feats) -> torch.Tensor:
@@ -101,6 +106,7 @@ class DualBranchConceptLayer(nn.Module):
         spatial_logits = pool_residual_spatial_logits(
             spatial_maps,
             pooling=self.residual_spatial_pooling,
+            topk_fraction=self.residual_topk_fraction,
         )
         spatial_scale = 1.0 if self.log_spatial_scale is None else torch.exp(self.log_spatial_scale)
         final_logits = global_logits + self.residual_alpha * spatial_scale * spatial_logits
@@ -127,6 +133,7 @@ class MultiScaleConceptLayer(nn.Module):
         residual_alpha: float = 0.0,
         residual_spatial_pooling: str = "lse",
         learn_spatial_residual_scale: bool = False,
+        residual_topk_fraction: float = 0.2,
     ) -> None:
         super().__init__()
         fusion_dim = int(fusion_dim or conv5_dim)
@@ -137,6 +144,7 @@ class MultiScaleConceptLayer(nn.Module):
         self.global_pool = bool(global_pool)
         self.residual_alpha = float(residual_alpha)
         self.residual_spatial_pooling = str(residual_spatial_pooling).lower()
+        self.residual_topk_fraction = float(residual_topk_fraction)
         self.log_spatial_scale = nn.Parameter(torch.zeros(())) if learn_spatial_residual_scale else None
 
     def fuse_spatial_features(self, feats) -> torch.Tensor:
@@ -170,6 +178,7 @@ class MultiScaleConceptLayer(nn.Module):
         spatial_logits = pool_residual_spatial_logits(
             spatial_maps,
             pooling=self.residual_spatial_pooling,
+            topk_fraction=self.residual_topk_fraction,
         )
         spatial_scale = 1.0 if self.log_spatial_scale is None else torch.exp(self.log_spatial_scale)
         final_logits = global_logits + self.residual_alpha * spatial_scale * spatial_logits

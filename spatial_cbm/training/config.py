@@ -27,6 +27,8 @@ class Model:
     alpha: float = .1
     fusion: str = 'residual'
     learn_alpha: bool = False
+    spatial_pooling: str = 'lse'
+    topk_fraction: float = .2
 
 
 @dataclass
@@ -79,6 +81,8 @@ class Config:
             raise ValueError('Unsupported backbone or spatial stages')
         if m.fusion not in {'residual', 'convex'} or type(m.learn_alpha) is not bool:
             raise ValueError('Unsupported concept fusion configuration')
+        if m.spatial_pooling not in {'lse','topk'} or not math.isfinite(m.topk_fraction) or not 0 < m.topk_fraction <= 1:
+            raise ValueError('Spatial pooling requires lse/topk and a finite top-k fraction in (0, 1]')
         if m.fusion == 'convex' and not 0 <= m.alpha <= 1:
             raise ValueError('Convex fusion alpha must be in [0, 1]')
         if m.learn_alpha and (m.fusion != 'convex' or not 0 < m.alpha < 1):

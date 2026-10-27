@@ -51,7 +51,8 @@ class ConceptHead(MultiScaleConceptLayer):
     def __init__(self, cfg, dims, concepts):
         super().__init__(nn.Linear(dims[2], concepts), nn.Conv2d(cfg.width, concepts, 1, bias=False),
             conv4_dim=dims[1], conv5_dim=dims[2], fusion_dim=cfg.width,
-            global_pool=True, residual_alpha=cfg.alpha, residual_spatial_pooling='lse')
+            global_pool=True, residual_alpha=cfg.alpha, residual_spatial_pooling=cfg.spatial_pooling,
+            residual_topk_fraction=cfg.topk_fraction)
         self.stages = cfg.stages
         if cfg.stages == 'conv345':
             self.conv3_proj = nn.Conv2d(dims[0], cfg.width, 1, bias=False)
