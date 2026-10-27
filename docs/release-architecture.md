@@ -6,6 +6,8 @@ one reusable split. `model.py` reuses the shared multiscale concept layer.
 `engine.py` owns the only release epoch loop, precision policy, validation-loss
 selection, checkpointing, and early stopping. `export.py` creates selected-head
 features and training-only normalization. `classifier.py` runs shared GLM-SAGA.
+`metrics.py` monitors AP without selecting checkpoints, calibrates thresholds on
+validation only, and applies frozen thresholds to the separate test database.
 
 There is no dataset-name dispatch in the training engine, model, or objective.
 ImageNet's useful archive reading is a generic optional image backend, not
@@ -45,6 +47,13 @@ ResNet-50, and ResNet-101.
    rate is updated per epoch rather than per batch; validation cross-entropy
    uses the configured label smoothing, without mixup or CutMix.
 5. Add the independent evaluations later, as requested.
+
+All datasets now require a saved, test-disjoint internal partition before
+training. The VLG permutation/truncated-count rule replaces the initial
+stratified default. A training seed does not regenerate the partition.
+Calibration uses the selected checkpoint: global concept threshold for maximum
+micro F1, separate map threshold for maximum mean foreground IoU. Both grids and
+selected thresholds are recorded. See the README for precise AP definitions.
 
 Synthetic test success is not a claim of reproduced paper accuracy or measured
 GPU throughput. Existing results stay attributed to their original code and

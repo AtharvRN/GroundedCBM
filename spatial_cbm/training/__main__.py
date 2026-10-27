@@ -13,15 +13,17 @@ def main():
     manifest.add_argument('--output', required=True)
     manifest.add_argument('--filelist')
     manifest.add_argument('--annotation-map')
+    manifest.add_argument('--partition',choices=['train','test'],default='train')
     prepare = commands.add_parser('prepare')
     prepare.add_argument('--source', required=True)
     prepare.add_argument('--output', required=True)
     prepare.add_argument('--dataset', choices=['cub','imagenet','places365','partimagenetpp'], required=True)
     prepare.add_argument('--concepts')
     prepare.add_argument('--split')
-    prepare.add_argument('--fraction', type=float, default=.05)
-    prepare.add_argument('--seed', type=int, default=42)
-    for name in ['check','train','export']:
+    prepare.add_argument('--test-source', required=True)
+    prepare.add_argument('--fraction', type=float)
+    prepare.add_argument('--seed', type=int, default=6885)
+    for name in ['check','train','export','calibrate','evaluate']:
         command = commands.add_parser(name)
         command.add_argument('--config', required=True)
         if name == 'train':
@@ -29,17 +31,19 @@ def main():
     args = parser.parse_args()
     if args.command == 'manifest':
         from .manifest import create
-        create(args.layout,args.root,args.output,args.filelist,args.annotation_map)
+        create(args.layout,args.root,args.output,args.filelist,args.annotation_map,args.partition)
         return
     if args.command == 'prepare':
         from .data import prepare
-        result = prepare(args.source,args.output,args.dataset,args.concepts,args.split,args.fraction,args.seed)
+        result = prepare(args.source,args.output,args.dataset,args.concepts,args.split,args.fraction,args.seed,args.test_source)
     else:
         cfg = load(args.config)
         if args.command == 'check':
             from pathlib import Path
             from .data import verify
             result = dict(config=cfg.asdict(), prepared=verify(cfg.data.prepared))
+            if not result['prepared'].get('test_disjoint_verified'):
+                raise ValueError('Held-out test isolation has not been checked')
             if cfg.dataset != result['prepared']['dataset']:
                 raise ValueError('Prepared dataset differs from config')
             if cfg.model.checkpoint and not Path(cfg.model.checkpoint).is_file():
@@ -51,6 +55,9 @@ def main():
         elif args.command == 'train':
             from .engine import fit
             result = fit(cfg,args.resume)
+        elif args.command in ('calibrate','evaluate'):
+            from .metrics import assess
+            result = assess(cfg,test=args.command=='evaluate')
         else:
             from .export import export
             result = export(cfg)

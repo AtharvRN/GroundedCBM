@@ -84,8 +84,10 @@ def detections(row, base):
     return result
 
 
-def prepare(source, output, dataset, concepts=None, split=None, fraction=.05, seed=42):
+def prepare(source, output, dataset, concepts=None, split=None, fraction=None, seed=6885, heldout_source=None):
     source, output = Path(source).resolve(), Path(output).resolve()
+    fraction = ({'cub':.1,'imagenet':.1,'places365':.05,'partimagenetpp':.05}.get(dataset)
+                if fraction is None else fraction)
     if dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp'} or not 0 < fraction < 1:
         raise ValueError('Invalid dataset or validation fraction')
     output.mkdir(parents=True, exist_ok=False)
@@ -116,28 +118,51 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=.05, se
         partition = json.loads(Path(split).read_text())
         train, validation = partition['train'], partition['validation']
     else:
-        rng = np.random.default_rng(seed)
-        train, validation = [], []
-        for category in sorted(groups):
-            ids = sorted(groups[category])
-            if len(ids) < 2:
-                raise ValueError('Every class needs at least two images for an internal holdout')
-            rng.shuffle(ids)
-            count = min(len(ids)-1, max(1, round(len(ids)*fraction)))
-            validation.extend(ids[:count]); train.extend(ids[count:])
+        ids = list(identities)
+        order = torch.randperm(len(ids), generator=torch.Generator().manual_seed(seed)).tolist()
+        boundary = len(ids) - int(len(ids)*fraction)
+        train = [ids[i] for i in order[:boundary]]
+        validation = [ids[i] for i in order[boundary:]]
     if (len(train) != len(set(train)) or len(validation) != len(set(validation))
             or set(train) & set(validation) or set(train) | set(validation) != set(identities)):
         raise ValueError('Split must be disjoint and partition the exact training pool')
-    train_ids, val_ids = set(train), set(validation)
-    if not train or not validation or any(not set(ids)&train_ids or not set(ids)&val_ids for ids in groups.values()):
-        raise ValueError('Every class must occur in both training and validation')
+    if not train or not validation:
+        raise ValueError('Training and validation partitions must both be nonempty')
+    test_ids, test_images, test_annotated = set(), set(), 0
+    if heldout_source is not None:
+        heldout_source = Path(heldout_source).resolve()
+        with sqlite3.connect(output/'test.sqlite') as db, heldout_source.open() as stream:
+            db.execute('CREATE TABLE samples (position INTEGER PRIMARY KEY, id TEXT UNIQUE, image TEXT UNIQUE, class_id INTEGER, detections TEXT)')
+            for i, line in enumerate(stream):
+                row = json.loads(line)
+                sample_id, category = row['id'], row['class_id']
+                if not isinstance(sample_id,str) or not sample_id or type(category) is not int or category not in groups:
+                    raise ValueError('Invalid held-out image identity or class')
+                image = json.dumps(image_reference(row['image'],heldout_source.parent),sort_keys=True)
+                if sample_id in identities or image in image_ids:
+                    raise ValueError('Held-out test overlaps the training pool')
+                if sample_id in test_ids or image in test_images:
+                    raise ValueError('Duplicate held-out image')
+                items = detections(row,heldout_source.parent)
+                test_annotated += items is not None
+                db.execute('INSERT INTO samples VALUES (?,?,?,?,?)',(i,sample_id,image,category,json.dumps(items)))
+                test_ids.add(sample_id); test_images.add(image)
+        if not test_ids:
+            raise ValueError('Held-out test manifest is empty')
     save_json(output/'split.json', dict(train=train, validation=validation))
     np.savez(output/'indices.npz', train=[identities[x] for x in train], validation=[identities[x] for x in validation])
     (output/'concepts.txt').write_text('\n'.join(bank) + ('\n' if bank else ''))
     files = {n:digest(output/n) for n in ['samples.sqlite','split.json','indices.npz','concepts.txt']}
+    if heldout_source is not None:
+        files['test.sqlite'] = digest(output/'test.sqlite')
     protocol = dict(version=1, dataset=dataset, source_sha256=digest(source), files=files,
                     classes=len(groups), images=len(identities), annotated_images=annotated,
-                    train=len(train), validation=len(validation), split_seed=seed if not split else None)
+                    train=len(train), validation=len(validation), split_seed=seed if not split else None,
+                    split_method='explicit_ids' if split else 'vlg_randperm_truncated',
+                    validation_fraction=fraction if not split else len(validation)/len(identities),
+                    test_images=len(test_ids), test_annotated_images=test_annotated,
+                    test_disjoint_verified=heldout_source is not None,
+                    test_source_sha256=digest(heldout_source) if heldout_source is not None else None)
     save_json(output/'prepared.json', protocol)
     return protocol
 
@@ -170,17 +195,25 @@ def occupancy(box, coordinates, size, resize, crop, grid):
 
 
 class Samples(Dataset):
-    def __init__(self, cfg, split, protocol, concepts=True):
+    def __init__(self, cfg, split, protocol, concepts=True, metrics=False):
         self.cfg, self.root, self.concepts = cfg, Path(cfg.data.prepared), concepts
-        self.indices = np.load(self.root/'indices.npz')[split]
+        self.database = 'test.sqlite' if split == 'test' else 'samples.sqlite'
+        self.indices = (np.arange(protocol['test_images']) if split == 'test'
+                        else np.load(self.root/'indices.npz')[split])
         self.bank = (self.root/'concepts.txt').read_text().splitlines()
         self.lookup = {c:i for i,c in enumerate(self.bank)}
-        if concepts and (not self.bank or protocol['annotated_images'] != protocol['images']):
+        count_key = 'test_images' if split == 'test' else 'images'
+        annotation_key = 'test_annotated_images' if split == 'test' else 'annotated_images'
+        if concepts and (not self.bank or protocol[annotation_key] != protocol[count_key]):
             raise ValueError('Concept training requires a vocabulary and explicit annotations for every image')
         self.grid = cfg.data.input_size // (8 if cfg.model.stages == 'conv345' else 16)
         self.cache = None if not concepts else SpatialTargetCache(cfg.data.cache, dict(
-            version=1, database=protocol['files']['samples.sqlite'], vocabulary=self.bank,
+            version=1, database=protocol['files'][self.database], vocabulary=self.bank,
             resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=self.grid,
+            confidence=cfg.data.confidence, presence='full_image', union='maximum_occupancy'))
+        self.metric_cache = None if not metrics else SpatialTargetCache(cfg.data.cache, dict(
+            version=1, database=protocol['files'][self.database], vocabulary=self.bank,
+            resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=cfg.data.input_size,
             confidence=cfg.data.confidence, presence='full_image', union='maximum_occupancy'))
         self.db, self.pid, self.fds = None, None, {}
         interpolation = transforms.InterpolationMode.BILINEAR if concepts else transforms.InterpolationMode.BICUBIC
@@ -207,7 +240,7 @@ class Samples(Dataset):
                 self.db.close()
             for fd in self.fds.values():
                 os.close(fd)
-            self.db = sqlite3.connect(f'file:{self.root / "samples.sqlite"}?mode=ro', uri=True)
+            self.db = sqlite3.connect(f'file:{self.root / self.database}?mode=ro', uri=True)
             self.pid, self.fds = os.getpid(), {}
         position = int(self.indices[index])
         _, reference, category, annotations = self.db.execute(
@@ -244,11 +277,36 @@ class Samples(Dataset):
                                                 np.zeros((0,self.grid,self.grid),dtype=np.float32)))
                     self.cache.put(position, targets)
                 tensor = self.transform(image.convert('RGB'))
+                if self.metric_cache is not None:
+                    evaluation = self.metric_cache.get(position)
+                    if evaluation is None:
+                        masks = {}
+                        for item in json.loads(annotations):
+                            c = self.lookup.get(item['concept'])
+                            if c is None or item['confidence'] <= self.cfg.data.confidence or item['box'] is None:
+                                continue
+                            mask = occupancy(item['box'],item['coordinates'],image.size,
+                                self.cfg.data.resize_size,self.cfg.data.input_size,self.cfg.data.input_size)
+                            if mask.any(): masks[c] = np.maximum(masks.get(c,np.zeros_like(mask)),mask)
+                        ids = targets[1].tolist()
+                        full = np.stack([masks[c] for c in ids]) if ids else np.zeros((0,self.cfg.data.input_size,self.cfg.data.input_size),dtype=np.float32)
+                        evaluation = (targets[0],targets[1],torch.from_numpy(full))
+                        self.metric_cache.put(position,evaluation)
+                    if not torch.equal(evaluation[1],targets[1]):
+                        raise ValueError('Metric and loss target identities differ')
+                    return tensor, *targets, evaluation[2], category
                 return tensor, *targets, category
             return self.transform(image.convert('RGB')), category
 
 
 def collate(samples):
+    if len(samples[0]) == 6:
+        images,labels,indices,masks,metric_masks,classes = zip(*samples)
+        _,full,full_valid = pad_sparse_targets(indices,metric_masks,
+            mask_h=metric_masks[0].shape[-2],mask_w=metric_masks[0].shape[-1])
+        batch = collate([(a,b,c,d,e) for a,b,c,d,e in zip(images,labels,indices,masks,classes)])
+        if not torch.equal(full_valid,batch[4]): raise ValueError('Metric target padding mismatch')
+        return (*batch[:-1],full,batch[-1])
     images, labels, indices, masks, classes = zip(*samples)
     h, w = masks[0].shape[-2:]
     indices, masks, valid = pad_sparse_targets(indices, masks, mask_h=h, mask_w=w)

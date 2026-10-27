@@ -85,9 +85,16 @@ def inputs(tmp_path, name='cub', seed=42):
             detections=[dict(concept='head', confidence=.9, box=[.2,.2,.8,.8], coordinates='normalized_xyxy')]))
     source = tmp_path/'source.jsonl'
     source.write_text(''.join(json.dumps(x)+'\n' for x in rows))
+    test_rows = []
+    for i in range(2):
+        image = tmp_path/f'test-{i}.png'
+        Image.new('RGB',(48,40),(i*40,80,60)).save(image)
+        test_rows.append(dict(rows[i],id=f'test-{i}',image=str(image),class_id=i))
+    heldout = tmp_path/'test.jsonl'
+    heldout.write_text(''.join(json.dumps(x)+'\n' for x in test_rows))
     bank = tmp_path/'concepts.txt'; bank.write_text('head\ntail\n')
     output = tmp_path/f'prepared-{name}'
-    prepare(source, output, name, bank, fraction=.25, seed=seed)
+    prepare(source, output, name, bank, fraction=.25, seed=seed,heldout_source=heldout)
     return output, rows
 
 
@@ -110,6 +117,7 @@ def test_same_training_export_and_resume_for_every_dataset(tmp_path, dataset):
     history = json.loads((root/'history.json').read_text())
     assert result['best_epoch'] == min(history,key=lambda r:r['val_loss'])['epoch']
     assert all(np.isfinite(r['val_loss']) for r in history)
+    assert all(r['validation']['concept_ap'] is not None and r['validation']['spatial_ap'] is not None for r in history)
     assert history[0]['train']['images'] == 6 and history[0]['validation']['images'] == 2
     state = torch.load(root/'best.pt',weights_only=False)
     assert state['val_loss'] == min(r['val_loss'] for r in history)

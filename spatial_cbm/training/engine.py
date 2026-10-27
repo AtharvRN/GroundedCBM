@@ -17,6 +17,7 @@ from spatial_cbm.losses import weighted_concept_bce, spatial_losses_vectorized
 from .data import Samples, collate, digest, save_json, verify
 from .model import Backbone, ConceptHead
 from .backbone_recipe import mix_batch, update_ema
+from .metrics import Metrics
 
 
 def minimum_loss(history):
@@ -42,7 +43,7 @@ def atomic_torch(path, value):
 
 
 def objective(output, batch, cfg):
-    _, labels, ids, masks, valid, _ = batch
+    _, labels, ids, masks, valid = batch[:5]
     bce = weighted_concept_bce(output['final_logits'].float(), labels, cfg.positive_weight)
     kl, patch = spatial_losses_vectorized(output['spatial_maps'].float(), ids, masks, valid)
     return cfg.fused_bce*bce + cfg.kl*kl + cfg.spatial_bce*patch
@@ -54,7 +55,7 @@ def loaders(cfg, protocol, epoch=0):
     kwargs = dict(batch_size=cfg.training.batch_size, num_workers=cfg.data.workers,
                   pin_memory=cfg.training.device.startswith('cuda'),
                   collate_fn=collate if concept else None)
-    return tuple(DataLoader(Samples(cfg, split, protocol, concepts=concept),
+    return tuple(DataLoader(Samples(cfg, split, protocol, concepts=concept,metrics=concept and split=='validation'),
         shuffle=split=='train', generator=generator if split=='train' else
         torch.Generator().manual_seed(cfg.training.seed), **kwargs) for split in ('train','validation'))
 
@@ -74,7 +75,7 @@ def learning_rate(cfg, epoch):
     return cfg.min_lr + .5*(cfg.lr-cfg.min_lr)*(1+math.cos(math.pi*fraction))
 
 
-def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress_path=None, ema=None):
+def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress_path=None, ema=None, metrics=None):
     train = optimizer is not None
     concept = head is not None
     backbone.train(train and not concept)
@@ -107,6 +108,9 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
                 +(1-lam)*F.cross_entropy(output.float(),target_b,label_smoothing=t.label_smoothing))
             if not torch.isfinite(loss):
                 raise ValueError('Nonfinite training/validation loss')
+            if metrics is not None:
+                if train or not concept: raise ValueError('Concept metrics require validation/evaluation mode')
+                metrics.update(output,batch)
             if train:
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
@@ -129,7 +133,10 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
                 print(json.dumps(progress), flush=True)
     if seen != len(loader.dataset) or not seen:
         raise ValueError('Incomplete epoch')
-    return dict(loss=total/seen, images=seen, seconds=time.monotonic()-began, amp_skipped_steps=skipped)
+    result = dict(loss=total/seen, images=seen, seconds=time.monotonic()-began, amp_skipped_steps=skipped)
+    if metrics is not None: result.update(metrics.result())
+    result['seconds'] = time.monotonic()-began
+    return result
 
 
 def provenance(cfg, data):
@@ -156,6 +163,8 @@ def fit(cfg, resume=False):
     data = verify(cfg.data.prepared)
     if data['dataset'] != cfg.dataset:
         raise ValueError('Dataset configuration does not match prepared data')
+    if not data.get('test_disjoint_verified'):
+        raise ValueError('Prepare an explicit disjoint held-out test manifest before training')
     output = Path(t.output); output.mkdir(parents=True, exist_ok=True)
     lock = (output/'writer.lock').open('a')
     try:
@@ -220,7 +229,11 @@ def fit(cfg, resume=False):
             train, val = loaders(cfg, data, epoch)
             tr = run_epoch(backbone, head, train, cfg, optimizer, scaler, output/'progress.json', ema)
             validation_backbone = ema['model'] if ema is not None else backbone
-            va = run_epoch(validation_backbone, head, val, cfg, progress_path=output/'progress.json')
+            metrics = Metrics(len(val.dataset),len(bank),cfg.data.cache) if head is not None else None
+            try:
+                va = run_epoch(validation_backbone, head, val, cfg, progress_path=output/'progress.json',metrics=metrics)
+            finally:
+                if metrics is not None: metrics.close()
             record = dict(epoch=epoch, train_loss=tr['loss'], val_loss=va['loss'],
                           lr=optimizer.param_groups[0]['lr'], train=tr, validation=va)
             history.append(record)

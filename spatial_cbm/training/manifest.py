@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 
-def rows(layout, root, filelist=None):
+def rows(layout, root, filelist=None, partition='train'):
     root = Path(root).resolve()
     if layout == 'imagefolder':
         classes = sorted(p for p in root.iterdir() if p.is_dir())
@@ -15,7 +15,7 @@ def rows(layout, root, filelist=None):
         names = dict(line.split(maxsplit=1) for line in (root/'images.txt').read_text().splitlines())
         labels = dict(line.split() for line in (root/'image_class_labels.txt').read_text().splitlines())
         for number, training in (line.split() for line in (root/'train_test_split.txt').read_text().splitlines()):
-            if training == '1':
+            if training == ('1' if partition=='train' else '0'):
                 yield dict(id=names[number], image=str(root/'images'/names[number]), class_id=int(labels[number])-1)
     elif layout == 'places365':
         if not filelist:
@@ -40,12 +40,12 @@ def rows(layout, root, filelist=None):
         raise ValueError('Unknown layout')
 
 
-def create(layout, root, output, filelist=None, annotation_map=None):
+def create(layout, root, output, filelist=None, annotation_map=None, partition='train'):
     mapping = None if annotation_map is None else json.loads(Path(annotation_map).read_text())
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('x') as stream:
-        for row in rows(layout, root, filelist):
+        for row in rows(layout, root, filelist,partition):
             if mapping is not None:
                 # Values contain annotation path, exact header identity, and coordinate convention.
                 metadata = mapping[row['id']]

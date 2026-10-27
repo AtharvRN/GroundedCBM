@@ -36,3 +36,10 @@ dataset lives alongside classifier caching. Numerical algorithms are unchanged.
 Source hashes intentionally prevent resuming an old run across this refactor.
 Use its original pinned commit to resume it; this rename does not migrate or
 modify existing run artifacts.
+
+Preparation now requires `--test-source`, audits identity/reference disjointness,
+and saves test records in a separate database. The generated split now follows
+VLG's seeded permutation and truncated validation count, not the initial
+stratified rule. Existing prepared directories without a verified test manifest
+cannot train under this protocol; create a new directory, optionally passing
+audited `--split` IDs, rather than altering an existing run's split in place.

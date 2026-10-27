@@ -15,6 +15,7 @@ verified before replacing existing experiment pipelines.
 - Existing normalized fused BCE and vectorized spatial KL/soft BCE losses.
 - FP16/BF16 training, FP32 validation/loss accumulation, channels-last.
 - Minimum validation loss selects `best.pt`; early-stopping patience defaults to 10.
+- Validation concept/pixel AP each epoch; saved validation-only thresholds for final metrics.
 - Shared feature export, training-only normalization, and GLM-SAGA/NEC fitting.
 - Node-local target caches and optional direct image reads from indexed archives.
 - Saved split/data/source identities and guarded deterministic resume.
@@ -36,6 +37,7 @@ The remaining files are internal modules with distinct responsibilities:
 - `training/config.py`, `manifest.py`, `data.py`: configuration and dataset preparation/loading.
 - `training/model.py`, `engine.py`, `backbone_recipe.py`: backbone/head construction and training.
 - `training/export.py`, `classifier.py`, `classifier_cache.py`: feature export and sparse classifier fitting.
+- `training/metrics.py`: shared AP monitoring, calibration, and frozen-threshold evaluation.
 
 Loss implementations, target helpers, and checkpoint selection are consolidated;
 unused legacy helpers are removed. The GLM-SAGA solver remains separate.
@@ -73,20 +75,34 @@ The header filename/id must match `annotation_image_id` exactly.
 
 ```bash
 python -m spatial_cbm.training prepare --source manifests/pinpp-train.jsonl \
+  --test-source manifests/pinpp-test.jsonl \
   --concepts concept_files/partimagenetpp_generic_parts.txt --dataset partimagenetpp \
-  --output prepared/partimagenetpp --fraction 0.05 --seed 42
+  --output prepared/partimagenetpp --fraction 0.05 --seed 6885
 ```
 
-This saves a prepared SQLite database, vocabulary, and explicit
-`split.json`/`indices.npz`. The default split is stratified by class. Supply
-`--split existing-split.json` to reuse an audited partition. Reuse the **same
-prepared directory for backbone and concept training**; matching seeds alone
-does not guarantee matching splits.
+This saves separate training-pool/test databases, a vocabulary, and explicit
+`split.json`/`indices.npz`. Test image IDs and image references must be disjoint
+from the entire training pool. Test annotations are packaged during preparation,
+but training and calibration never load test samples.
+
+The split follows VLG-CBM's rule: seeded `torch.randperm` in manifest order,
+with `int(N * fraction)` validation images taken from the permutation's tail.
+Defaults are 10% for CUB/ImageNet and 5% for Places365/PartImageNet++, seed 6885.
+PartImageNet++ uses this as our internal split of its 90K training pool, not an
+author-released VLG split; its 10K test set is separate. The split seed is
+independent of training seeds. Prepare once and reuse the **same directory for
+all methods/seeds, backbone training, and concept training**.
+
+Supply `--split existing-split.json` to reuse audited image IDs. Matching the
+upstream rule/seed is not proof of identical author-side membership unless the
+ordered image roster also matches. Manifest IDs must be canonical across train
+and test; this check does not detect duplicate image bytes under different IDs.
 
 Native-layout adapters emit the same schema:
 
 ```bash
 python -m spatial_cbm.training manifest --layout cub --root /data/CUB_200_2011 --output manifests/cub.jsonl
+python -m spatial_cbm.training manifest --layout cub --partition test --root /data/CUB_200_2011 --output manifests/cub-test.jsonl
 python -m spatial_cbm.training manifest --layout imagefolder --root /data/imagenet/train --output manifests/imagenet.jsonl
 python -m spatial_cbm.training manifest --layout places365 --root /data/places365 --filelist /data/places365_train_standard.txt --output manifests/places365.jsonl
 python -m spatial_cbm.training manifest --layout manifest --root /data/pinpp --filelist /data/train90k.jsonl --output manifests/pinpp.jsonl
@@ -115,12 +131,51 @@ Use exactly the same commands with `cub.yaml`, `imagenet.yaml`, or
 `places365.yaml`. Validation runs after **every epoch**, using the weighted
 training objective and native target resolution. Strict improvements reset
 patience; ties retain the earlier checkpoint. F1/AP and test accuracy never
-select the training checkpoint. The test set is not loaded.
+select the training checkpoint. The test set is not loaded by training.
+The same validation forward pass also logs exact concept AP and spatial AP.
+F1 and threshold searches are omitted from the epoch loop.
 
 Outputs: `protocol.json`, `history.json`, `best.pt`, `last.pt`, `complete.json`.
 Resume checks configuration, source hashes, data, split, backbone identity, and
 best/last consistency. Cache paths must be node-local, not NFS/PVC. Stage images
 and prepared data locally when throughput matters.
+
+## Calibration And Evaluation
+
+After training finishes, calibrate only the minimum-validation-loss checkpoint:
+
+```bash
+python -m spatial_cbm.training calibrate --config configs/release/cub.yaml
+python -m spatial_cbm.training evaluate --config configs/release/cub.yaml
+```
+
+The first command writes `calibration.json` from the internal validation split.
+The second writes `test_metrics.json` using the saved thresholds unchanged.
+Both are tied to checkpoint, vocabulary, source, and split/data hashes. Missing
+or mismatched calibration is an error, never an invitation to tune on test data.
+
+- Concept AP: exact rank-based macro AP over concepts with positive labels;
+  supported/total concept counts are recorded. This is not pooled micro AP.
+- Concept Precision, Recall, F1: micro-averaged over image-concept pairs, using
+  `sigmoid(fused_logit) >= threshold`. One global threshold maximizes validation
+  micro F1 on the fixed grid 0, 0.001, ..., 1 (plus a predict-none candidate).
+  This is a grid maximum, not an exact optimum over every observed score.
+- Spatial AP: exact pixel AP averaged over visible detected image-concept pairs,
+  after bilinear upsampling to input resolution. A pixel is positive if its
+  image region overlaps a retained GDINO box. This uses unthresholded maps.
+- Localization threshold: per-map min-max normalized upsampled logits, with
+  one threshold chosen for maximum validation mean foreground IoU on the grid
+  0, 0.02, ..., 1. Constant maps normalize to zero. Maps are evaluated for
+  detected concepts independently of concept-presence thresholding.
+
+Ties choose the highest threshold. Scores are stored on the 0-to-1 scale, along
+with the grids, objectives, aggregation definitions, and selected thresholds.
+These metrics measure agreement with GDINO, not independent human annotations.
+Human-mask evaluation remains separate and must not tune on human test masks.
+
+Exact AP ranking/sorting adds validation compute; it may cost more than an F1
+grid search. Concept logits/labels are spooled to node-local scratch rather than
+kept on GPU, and spatial sorts are chunked. Full-scale performance is unverified.
 
 ## Sparse Classifiers
 
@@ -143,8 +198,8 @@ Unreached targets fail explicitly; selection does not use test accuracy.
 ## Migration Boundaries
 
 These are **prospective recipes**, not claimed reproductions of historical
-paper results. The default stratified split differs from old random splits
-unless `--split` is supplied. ImageNet's example uses a 75-epoch maximum rather
+paper results. Reuse audited manifests to match prior splits; do not regenerate
+partitions per training seed. ImageNet's example uses a 75-epoch maximum rather
 than the historical 10, with patience 10. No experiment is launched by editing
 these configurations.
 
