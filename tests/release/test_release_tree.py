@@ -19,7 +19,7 @@ def test_no_legacy_executable_paths():
 
 
 def test_all_release_internal_imports_resolve_to_source():
-    for package in ('spatial_cbm','glm_saga'):
+    for package in ('spatial_cbm','glm_saga','cub70'):
         for path in (ROOT/package).rglob('*.py'):
             module='.'.join(path.relative_to(ROOT).with_suffix('').parts)
             parent=module.rsplit('.',1)[0]
@@ -32,7 +32,7 @@ def test_all_release_internal_imports_resolve_to_source():
                     imports=[importlib.util.resolve_name('.'*node.level+name,parent)
                              if node.level else name]
                 for name in imports:
-                    if name.split('.')[0] in ('spatial_cbm','glm_saga'):
+                    if name.split('.')[0] in ('spatial_cbm','glm_saga','cub70'):
                         target=ROOT.joinpath(*name.split('.'))
                         assert target.with_suffix('.py').is_file() or target.is_dir(), (path,name)
                     assert name.split('.')[0] not in ('gcbm','methods','model','data','evaluations','clip'), (path,name)

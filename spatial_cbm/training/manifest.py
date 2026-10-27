@@ -40,12 +40,50 @@ def rows(layout, root, filelist=None, partition='train'):
         raise ValueError('Unknown layout')
 
 
-def create(layout, root, output, filelist=None, annotation_map=None, partition='train'):
+def coco_parts(path, category_map):
+    """Resolve COCO image/category IDs explicitly, without filename-position joins."""
+    payload = json.loads(Path(path).read_text())
+    categories = json.loads(Path(category_map).read_text())
+    images, names = {}, set()
+    for image in payload['images']:
+        if image['id'] in images or image['file_name'] in names:
+            raise ValueError('Duplicate COCO image identity')
+        images[image['id']] = image['file_name']; names.add(image['file_name'])
+    result = {name:[] for name in names}
+    for item in payload['annotations']:
+        if item['image_id'] not in images: raise ValueError('Unknown COCO image_id')
+        category = str(item['category_id'])
+        if category not in categories: raise ValueError('Explicit category map must cover every annotation category')
+        concept = categories[category]
+        if concept is None: continue
+        if not isinstance(concept,str) or not concept: raise ValueError('Invalid category-to-concept map')
+        segmentation = item.get('segmentation')
+        if isinstance(segmentation,dict): raise ValueError('RLE masks are unsupported; provide polygon annotations')
+        if segmentation:
+            target = dict(concept=concept,polygons=segmentation,coordinates='pixel_xy')
+        elif 'bbox' in item:
+            x,y,w,h = item['bbox']
+            target = dict(concept=concept,box=[x,y,x+w,y+h],coordinates='pixel_xyxy')
+        else:
+            raise ValueError('Human annotation has neither polygons nor bbox')
+        result[images[item['image_id']]].append(target)
+    return result
+
+
+def create(layout, root, output, filelist=None, annotation_map=None, partition='train', human_annotations=None, category_map=None):
+    if bool(human_annotations) != bool(category_map) or (human_annotations and annotation_map):
+        raise ValueError('Human COCO input needs a category map and cannot be mixed with GDINO annotations')
     mapping = None if annotation_map is None else json.loads(Path(annotation_map).read_text())
+    human = None if human_annotations is None else coco_parts(human_annotations,category_map)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('x') as stream:
         for row in rows(layout, root, filelist,partition):
+            if human is not None:
+                key = row.get('annotation_image_id',row['id'])
+                if key not in human: raise ValueError(f'Image identity missing from human COCO annotations: {key}')
+                row.pop('detections',None); row.pop('annotation',None)
+                row['human_parts'] = human[key]
             if mapping is not None:
                 # Values contain annotation path, exact header identity, and coordinate convention.
                 metadata = mapping[row['id']]

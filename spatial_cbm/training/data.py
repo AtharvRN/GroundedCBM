@@ -8,10 +8,11 @@ from pathlib import Path
 import sqlite3
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision.transforms import functional as TF
 
 from spatial_cbm.targets import SpatialTargetCache, pad_sparse_targets
 
@@ -84,17 +85,59 @@ def detections(row, base):
     return result
 
 
-def prepare(source, output, dataset, concepts=None, split=None, fraction=None, seed=6885, heldout_source=None):
+def human_targets(row):
+    if 'human_parts' not in row:
+        raise ValueError('Human supervision requires explicit human_parts, never detector-label fallback')
+    if not isinstance(row['human_parts'],list): raise ValueError('human_parts must be a list')
+    result = []
+    for part in row['human_parts']:
+        label = part.get('concept')
+        if not isinstance(label,str) or not label.strip(): raise ValueError('Human part needs an exact concept name')
+        if 'polygons' in part:
+            if 'box' in part or part.get('coordinates') not in {'pixel_xy','normalized_xy'}:
+                raise ValueError('Human polygons need explicit coordinates and no ambiguous box')
+            polygons = part['polygons']
+            if not isinstance(polygons,list) or not polygons: raise ValueError('Empty human polygon target')
+            for polygon in polygons:
+                if len(polygon)<6 or len(polygon)%2 or not np.isfinite(polygon).all() or min(polygon)<0:
+                    raise ValueError('Invalid human polygon')
+                if part['coordinates']=='normalized_xy' and max(polygon)>1:
+                    raise ValueError('Normalized human polygon exceeds image bounds')
+            result.append(dict(concept=label,confidence=1.,box=None,polygons=[list(p) for p in polygons],coordinates=part['coordinates']))
+        elif 'box' in part:
+            checked = detections(dict(detections=[dict(part,confidence=1.)]),Path('.'))[0]
+            x0,y0,x1,y1 = checked['box']
+            result.append(dict(concept=label,confidence=1.,box=None,
+                polygons=[[x0,y0,x1,y0,x1,y1,x0,y1]],
+                coordinates='normalized_xy' if checked['coordinates']=='normalized_xyxy' else 'pixel_xy'))
+        else:
+            raise ValueError('Human target requires polygons or a part bounding box')
+    merged = {}
+    for item in result:
+        label = item['concept']
+        if label in merged:
+            if item['coordinates'] != merged[label]['coordinates']:
+                raise ValueError('All human instances of a concept must use the same coordinate convention')
+            merged[label]['polygons'].extend(item['polygons'])
+        else:
+            merged[label] = item
+    return list(merged.values())
+
+
+def prepare(source, output, dataset, concepts=None, split=None, fraction=None, seed=6885, heldout_source=None, supervision='gdino'):
     source, output = Path(source).resolve(), Path(output).resolve()
     fraction = ({'cub':.1,'imagenet':.1,'places365':.05,'partimagenetpp':.05}.get(dataset)
                 if fraction is None else fraction)
     if dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp'} or not 0 < fraction < 1:
         raise ValueError('Invalid dataset or validation fraction')
+    if supervision not in {'gdino','human'} or (supervision=='human' and dataset!='partimagenetpp'):
+        raise ValueError('Human supervision is supported only for PartImageNet++')
     output.mkdir(parents=True, exist_ok=False)
     bank = [] if concepts is None else [s.strip() for s in Path(concepts).read_text().splitlines() if s.strip()]
     if len(bank) != len(set(bank)):
         raise ValueError('Duplicate concept names')
     groups, identities, image_ids = {}, {}, set()
+    image_roster = hashlib.sha256()
     annotated = 0
     with sqlite3.connect(output/'samples.sqlite') as db, source.open() as stream:
         db.execute('CREATE TABLE samples (position INTEGER PRIMARY KEY, id TEXT UNIQUE, image TEXT UNIQUE, class_id INTEGER, detections TEXT)')
@@ -106,9 +149,12 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
             image = json.dumps(image_reference(row['image'], source.parent), sort_keys=True)
             if sample_id in identities or image in image_ids:
                 raise ValueError('Duplicate image or sample identity')
-            items = detections(row, source.parent)
+            items = human_targets(row) if supervision=='human' else detections(row, source.parent)
+            if supervision=='human' and any(item['concept'] not in bank for item in items):
+                raise ValueError('Human concept is not in the explicit vocabulary')
             annotated += items is not None
             db.execute('INSERT INTO samples VALUES (?,?,?,?,?)', (i, sample_id, image, category, json.dumps(items)))
+            image_roster.update((json.dumps([sample_id,image,category],separators=(',',':'))+'\n').encode())
             identities[sample_id] = i
             image_ids.add(image)
             groups.setdefault(category, []).append(sample_id)
@@ -143,7 +189,9 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
                     raise ValueError('Held-out test overlaps the training pool')
                 if sample_id in test_ids or image in test_images:
                     raise ValueError('Duplicate held-out image')
-                items = detections(row,heldout_source.parent)
+                items = human_targets(row) if supervision=='human' else detections(row,heldout_source.parent)
+                if supervision=='human' and any(item['concept'] not in bank for item in items):
+                    raise ValueError('Human test concept is not in the explicit vocabulary')
                 test_annotated += items is not None
                 db.execute('INSERT INTO samples VALUES (?,?,?,?,?)',(i,sample_id,image,category,json.dumps(items)))
                 test_ids.add(sample_id); test_images.add(image)
@@ -155,7 +203,8 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
     files = {n:digest(output/n) for n in ['samples.sqlite','split.json','indices.npz','concepts.txt']}
     if heldout_source is not None:
         files['test.sqlite'] = digest(output/'test.sqlite')
-    protocol = dict(version=1, dataset=dataset, source_sha256=digest(source), files=files,
+    protocol = dict(version=1, dataset=dataset, supervision=supervision, source_sha256=digest(source), files=files,
+                    training_images_sha256=image_roster.hexdigest(),
                     classes=len(groups), images=len(identities), annotated_images=annotated,
                     train=len(train), validation=len(validation), split_seed=seed if not split else None,
                     split_method='explicit_ids' if split else 'vlg_randperm_truncated',
@@ -194,8 +243,26 @@ def occupancy(box, coordinates, size, resize, crop, grid):
     return (ys[:,None]*xs[None,:]*grid*grid).clip(0,1).astype(np.float32)
 
 
+def target_mask(item, size, resize, crop, grid):
+    if 'polygons' not in item:
+        return occupancy(item['box'],item['coordinates'],size,resize,crop,grid)
+    width,height = size
+    canvas = Image.new('L',size,0)
+    draw = ImageDraw.Draw(canvas)
+    for polygon in item['polygons']:
+        xy = np.asarray(polygon,dtype=float).reshape(-1,2)
+        if item['coordinates']=='normalized_xy': xy *= [width,height]
+        if (xy>np.array([width,height])).any(): raise ValueError('Human polygon exceeds image bounds')
+        draw.polygon([tuple(p) for p in xy],fill=255)
+    canvas = TF.center_crop(TF.resize(canvas,resize,transforms.InterpolationMode.NEAREST),[crop,crop])
+    mask = torch.from_numpy((np.asarray(canvas)>0).astype(np.float32))[None,None]
+    return torch.nn.functional.adaptive_avg_pool2d(mask,(grid,grid))[0,0].numpy()
+
+
 class Samples(Dataset):
     def __init__(self, cfg, split, protocol, concepts=True, metrics=False):
+        if protocol.get('supervision','gdino') != cfg.data.supervision:
+            raise ValueError('Configured supervision differs from prepared annotations')
         self.cfg, self.root, self.concepts = cfg, Path(cfg.data.prepared), concepts
         self.database = 'test.sqlite' if split == 'test' else 'samples.sqlite'
         self.indices = (np.arange(protocol['test_images']) if split == 'test'
@@ -210,13 +277,14 @@ class Samples(Dataset):
         self.cache = None if not concepts else SpatialTargetCache(cfg.data.cache, dict(
             version=1, database=protocol['files'][self.database], vocabulary=self.bank,
             resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=self.grid,
-            confidence=cfg.data.confidence, presence='full_image', union='maximum_occupancy'))
+            confidence=cfg.data.confidence, supervision=cfg.data.supervision,presence='full_image', union='maximum_occupancy'))
         self.metric_cache = None if not metrics else SpatialTargetCache(cfg.data.cache, dict(
             version=1, database=protocol['files'][self.database], vocabulary=self.bank,
             resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=cfg.data.input_size,
-            confidence=cfg.data.confidence, presence='full_image', union='maximum_occupancy'))
+            confidence=cfg.data.confidence, supervision=cfg.data.supervision,presence='full_image', union='maximum_occupancy'))
         self.db, self.pid, self.fds = None, None, {}
-        interpolation = transforms.InterpolationMode.BILINEAR if concepts else transforms.InterpolationMode.BICUBIC
+        interpolation = (transforms.InterpolationMode.BILINEAR if concepts or cfg.training.stage=='concept'
+                         else transforms.InterpolationMode.BICUBIC)
         spatial = ([transforms.RandomResizedCrop(cfg.data.input_size, interpolation=interpolation), transforms.RandomHorizontalFlip()]
                    if not concepts and split == 'train' else
                    [transforms.Resize(cfg.data.resize_size, interpolation=interpolation), transforms.CenterCrop(cfg.data.input_size)])
@@ -263,11 +331,11 @@ class Samples(Dataset):
                     labels, masks = np.zeros(len(self.bank), dtype=np.float32), {}
                     for item in json.loads(annotations):
                         c = self.lookup.get(item['concept'])
-                        if c is None or item['confidence'] <= self.cfg.data.confidence:
+                        if c is None or (self.cfg.data.supervision=='gdino' and item['confidence'] <= self.cfg.data.confidence):
                             continue
                         labels[c] = 1.
-                        if item['box'] is not None:
-                            mask = occupancy(item['box'], item['coordinates'], image.size,
+                        if item['box'] is not None or 'polygons' in item:
+                            mask = target_mask(item, image.size,
                                 self.cfg.data.resize_size, self.cfg.data.input_size, self.grid)
                             if mask.any():
                                 masks[c] = np.maximum(masks.get(c, np.zeros_like(mask)), mask)
@@ -283,9 +351,10 @@ class Samples(Dataset):
                         masks = {}
                         for item in json.loads(annotations):
                             c = self.lookup.get(item['concept'])
-                            if c is None or item['confidence'] <= self.cfg.data.confidence or item['box'] is None:
+                            if c is None or (self.cfg.data.supervision=='gdino' and item['confidence'] <= self.cfg.data.confidence):
                                 continue
-                            mask = occupancy(item['box'],item['coordinates'],image.size,
+                            if item['box'] is None and 'polygons' not in item: continue
+                            mask = target_mask(item,image.size,
                                 self.cfg.data.resize_size,self.cfg.data.input_size,self.cfg.data.input_size)
                             if mask.any(): masks[c] = np.maximum(masks.get(c,np.zeros_like(mask)),mask)
                         ids = targets[1].tolist()

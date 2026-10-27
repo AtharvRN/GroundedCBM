@@ -14,6 +14,7 @@ class Data:
     resize_size: int = 256
     confidence: float = .15
     workers: int = 8
+    supervision: str = 'gdino'
 
 
 @dataclass
@@ -70,6 +71,8 @@ class Config:
         if self.dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp'}:
             raise ValueError('Unknown dataset')
         d, m, t = self.data, self.model, self.training
+        if d.supervision not in {'gdino','human'} or (d.supervision=='human' and self.dataset!='partimagenetpp'):
+            raise ValueError('Human supervision is supported only for PartImageNet++')
         if m.backbone not in {'resnet18', 'resnet50', 'resnet101'} or m.stages not in {'conv45', 'conv345'}:
             raise ValueError('Unsupported backbone or spatial stages')
         if t.stage not in {'backbone', 'concept'} or t.optimizer not in {'adam', 'adamw', 'sgd'}:

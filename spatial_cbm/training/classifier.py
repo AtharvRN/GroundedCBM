@@ -16,7 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from glm_saga.elasticnet import glm_saga
 from .classifier_cache import MemmapFeatureDataset
-from spatial_cbm.training.data import digest
+from spatial_cbm.training.data import digest, save_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -489,7 +489,82 @@ def main() -> None:
     }
     (output_dir / "source_run_dir.txt").write_text(f"{source_run_dir}\n")
     (output_dir / "glm_path_metrics.json").write_text(json.dumps(payload, indent=2))
+    files = {f'{prefix}@NEC={item["nec"]}.pt':digest(output_dir/f'{prefix}@NEC={item["nec"]}.pt')
+             for item in nec_selection for prefix in ('W_g','b_g')}
+    save_json(output_dir/'classifier_identity.json',dict(
+        feature_manifest_sha256=digest(artifact_dir/'features_complete.json'),
+        checkpoint_sha256=digest(artifact_dir/'best.pt'),
+        normalization_sha256=digest(normalization_path),head_files=files,
+        nec_values=nec_values,selection='regularization path, never test accuracy'))
     print(json.dumps(payload, indent=2))
+
+
+def evaluate(cfg, classifier_dir, nec_values=(5,10,15,20,25,30)):
+    """Apply all pre-fitted NEC heads to one held-out feature pass."""
+    import fcntl
+    from .model import load_selected
+    from .data import Samples
+
+    nec_values = list(nec_values)
+    if not nec_values or len(set(nec_values)) != len(nec_values) or any(n < 1 for n in nec_values):
+        raise ValueError('NEC values must be distinct positive integers')
+    root, classifier_dir = Path(cfg.training.output), Path(classifier_dir)
+    with (classifier_dir/'evaluation.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
+        backbone,head,bank,data,identity = load_selected(cfg)
+        recorded = json.loads((classifier_dir/'classifier_identity.json').read_text())
+        if recorded['checkpoint_sha256'] != identity['checkpoint_sha256']:
+            raise ValueError('Classifier belongs to another concept checkpoint')
+        if recorded['feature_manifest_sha256'] != digest(root/'features_complete.json'):
+            raise ValueError('Classifier feature provenance changed')
+        norm_path = root/'final_layer_normalization.pt'
+        if digest(norm_path) != recorded['normalization_sha256']:
+            raise ValueError('Classifier normalization changed')
+        norm = torch.load(norm_path,map_location=cfg.training.device,weights_only=True)
+        mean,std = norm['mean'].float(),norm['std'].float()
+        if mean.shape != (len(bank),) or std.shape != mean.shape or not torch.isfinite(mean).all() or not torch.isfinite(std).all() or (std<=0).any():
+            raise ValueError('Invalid training-only normalization')
+        heads = {}
+        for nec in nec_values:
+            tensors = []
+            for prefix in ('W_g','b_g'):
+                name = f'{prefix}@NEC={nec}.pt'
+                if name not in recorded['head_files'] or digest(classifier_dir/name) != recorded['head_files'][name]:
+                    raise ValueError('Missing or changed NEC head')
+                tensors.append(torch.load(classifier_dir/name,map_location=cfg.training.device,weights_only=True).float())
+            weight,bias = tensors
+            if weight.shape != (data['classes'],len(bank)) or bias.shape != (data['classes'],):
+                raise ValueError('NEC head dimensions differ from the trained model')
+            if not torch.isfinite(weight).all() or not torch.isfinite(bias).all() or int((weight.abs()>1e-5).sum()) != nec*data['classes']:
+                raise ValueError('Invalid weights or exact NEC mismatch')
+            heads[nec] = (weight,bias)
+        evaluation_identity = dict(model=identity,classifier=recorded,nec_values=nec_values)
+        output = classifier_dir/'classification_test.json'
+        if output.exists():
+            previous = json.loads(output.read_text())
+            if previous['identity'] != evaluation_identity:
+                raise ValueError('Existing classification evaluation has different provenance')
+            return previous
+        dataset = Samples(cfg,'test',data,concepts=False)
+        loader = DataLoader(dataset,batch_size=cfg.training.batch_size,num_workers=cfg.data.workers,shuffle=False)
+        counts,total = {nec:0 for nec in nec_values},0
+        with torch.inference_mode():
+            for images,labels in loader:
+                images,labels = images.to(cfg.training.device),labels.to(cfg.training.device)
+                if cfg.training.channels_last: images = images.contiguous(memory_format=torch.channels_last)
+                features = (head(backbone(images))['final_logits'].float()-mean)/std
+                if not torch.isfinite(features).all(): raise ValueError('Nonfinite classification features')
+                for nec,(weight,bias) in heads.items():
+                    counts[nec] += int(((features@weight.T+bias).argmax(1)==labels).sum())
+                total += len(images)
+        if total != data['test_images'] or not total: raise ValueError('Incomplete held-out classification cohort')
+        accuracy = {str(nec):100*counts[nec]/total for nec in nec_values}
+        result = dict(identity=evaluation_identity,images=total,correct={str(k):v for k,v in counts.items()},
+            accuracy_by_nec=accuracy,ACC_NEC5=accuracy.get('5'),AVGACC=float(np.mean(list(accuracy.values()))),
+            units='percent',AVGACC_definition='arithmetic mean over the explicitly listed NEC values',
+            cohort='held-out test; no fitting, threshold tuning or head selection')
+        save_json(output,result)
+        return result
 
 
 if __name__ == "__main__":

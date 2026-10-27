@@ -16,7 +16,9 @@ modified by this cleanup.
 | ImageNet loaders, annotation indexes, target precomputation | Shared `manifest`, `prepare`, and target cache in `spatial_cbm/training/data.py` |
 | `gcbm/imagenet_models.py` | `spatial_cbm/training/model.py` and shared `spatial_cbm/layers.py` |
 | `gcbm/imagenet_final_layers.py`, `gcbm/imagenet_glm_path.py`, `scripts/train_sparse_nec.py` | Shared `export` and `python -m spatial_cbm.training.classifier` |
-| Legacy evaluation scripts and baseline trainers | Deferred, not silently redirected or supported by this release |
+| Held-out NEC classification | `python -m spatial_cbm.training classify` with identity-checked saved heads |
+| CUB-70 human-mask evaluation | `python -m cub70`, for release CUB checkpoints only |
+| Other legacy evaluations and baseline trainers | Deferred, not silently redirected or supported by this release |
 
 Dataset-specific vocabulary files and YAML configuration are intentional.
 Native CUB/Places365 layouts still need small manifest adapters; they do not

@@ -5,9 +5,13 @@ native-layout adapters; `data.py` creates identity-keyed SQLite annotations and
 one reusable split. `model.py` reuses the shared multiscale concept layer.
 `engine.py` owns the only release epoch loop, precision policy, validation-loss
 selection, checkpointing, and early stopping. `export.py` creates selected-head
-features and training-only normalization. `classifier.py` runs shared GLM-SAGA.
+features and training-only normalization. `classifier.py` runs shared GLM-SAGA
+and evaluates the saved NEC heads on held-out images in one feature pass.
 `metrics.py` monitors AP without selecting checkpoints, calibrates thresholds on
 validation only, and applies frozen thresholds to the separate test database.
+`cub70/` independently evaluates CUB-trained models against human part masks.
+PartImageNet++ human supervision is an explicit data option in the same trainer,
+not a second training pipeline.
 
 There is no dataset-name dispatch in the training engine, model, or objective.
 ImageNet's useful archive reading is a generic optional image backend, not
@@ -46,7 +50,9 @@ ResNet-50, and ResNet-101.
    selects by validation loss, not held-out test accuracy. Its cosine learning
    rate is updated per epoch rather than per batch; validation cross-entropy
    uses the configured label smoothing, without mixup or CutMix.
-5. Add the independent evaluations later, as requested.
+5. Check the CUB-70 mapping against the actual checkpoint vocabulary and audit
+   mask coverage before reporting benchmark results. Other independent
+   evaluations and baseline adapters remain outside this release.
 
 All datasets now require a saved, test-disjoint internal partition before
 training. The VLG permutation/truncated-count rule replaces the initial

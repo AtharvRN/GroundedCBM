@@ -99,6 +99,6 @@ def test_cosine_schedule_and_warmup():
 
 
 def test_cli_help_and_classifier_import():
-    for module in ['spatial_cbm.training','spatial_cbm.training.classifier']:
+    for module in ['spatial_cbm.training','spatial_cbm.training.classifier','cub70']:
         run=subprocess.run([sys.executable,'-m',module,'--help'],capture_output=True,text=True)
         assert run.returncode==0,run.stderr

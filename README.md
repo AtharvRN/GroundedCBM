@@ -17,19 +17,21 @@ verified before replacing existing experiment pipelines.
 - Minimum validation loss selects `best.pt`; early-stopping patience defaults to 10.
 - Validation concept/pixel AP each epoch; saved validation-only thresholds for final metrics.
 - Shared feature export, training-only normalization, and GLM-SAGA/NEC fitting.
+- Held-out ACC@NEC5/AVGACC, separate CUB-70 evaluation, and explicit PartImageNet++ human supervision.
 - Node-local target caches and optional direct image reads from indexed archives.
 - Saved split/data/source identities and guarded deterministic resume.
 
-Independent evaluation modules will be added later. Legacy dataset-specific
-trainers, baseline implementations, and their evaluation scripts are not part
-of this training-only SG-CBM release. Their source is preserved in Git history.
+CUB-70 human-part evaluation lives in its own `cub70/` folder. Legacy dataset-specific
+trainers and baseline implementations are not part of this SG-CBM release.
+Their source is preserved in Git history.
 See [migration notes](docs/migration.md).
 
 ## Code Layout
 
-There are two command entry points, not separate scripts for each dataset:
+There are two shared training/classification entry points, not separate scripts for each dataset:
 `python -m spatial_cbm.training` and
 `python -m spatial_cbm.training.classifier`.
+Independent CUB-70 evaluation uses `python -m cub70`.
 
 The remaining files are internal modules with distinct responsibilities:
 
@@ -170,8 +172,9 @@ or mismatched calibration is an error, never an invitation to tune on test data.
 
 Ties choose the highest threshold. Scores are stored on the 0-to-1 scale, along
 with the grids, objectives, aggregation definitions, and selected thresholds.
-These metrics measure agreement with GDINO, not independent human annotations.
-Human-mask evaluation remains separate and must not tune on human test masks.
+By default these metrics measure agreement with GDINO, not independent human
+annotations. The explicit PartImageNet++ human mode instead uses human part
+labels/regions for training and validation. Neither mode tunes on test masks.
 
 Exact AP ranking/sorting adds validation compute; it may cost more than an F1
 grid search. Concept logits/labels are spooled to node-local scratch rather than
@@ -194,6 +197,77 @@ caching preserves sampler order and checks available memory. Use
 `cpu_preserve_sampler` or `none` if necessary. NEC selects the first path point
 reaching each sparsity, then keeps exactly `NEC * number_of_classes` weights.
 Unreached targets fail explicitly; selection does not use test accuracy.
+
+Evaluate the saved heads on the entire held-out test split in one feature pass:
+
+```bash
+python -m spatial_cbm.training classify --config configs/release/partimagenetpp.yaml \
+  --classifier-dir runs/partimagenetpp/seed42/nec --nec-values 5,10,15,20,25,30
+```
+
+`classification_test.json` contains percent accuracy at each NEC, `ACC_NEC5`,
+and `AVGACC` (the arithmetic mean over the listed NEC values). Classifier fitting
+saves `classifier_identity.json`; evaluation verifies those head hashes,
+training-only normalization, selected checkpoint, and feature provenance. It
+does not select/refit heads on test data. Class-only test images do not require
+concept annotations. Results are per fitted seed; multi-seed aggregation is
+separate. Older heads without an identity manifest are not silently trusted.
+
+## CUB-70
+
+Use CUB-trained models, the frozen concept-to-part mapping, and the saved CUB
+validation localization threshold. No human test-mask calibration is performed.
+
+```bash
+python -m cub70 --config configs/release/cub.yaml --mapping cub70/mapping.json \
+  --masks-root /data/CUB-70/masks --output results/cub70.json
+```
+
+See [CUB-70 data formats and protocol](cub70/README.md). This evaluator selects
+the highest-fused-score concept **among those mapped to each part**, not among
+the entire bank, and reports per-part and aggregate pixel AP/foreground IoU.
+
+## PartImageNet++ Human Supervision
+
+Use the same trainer with `data.supervision: human`; all other datasets remain
+GDINO-only. This is a **supervised ablation**, not a label-free result. The
+vocabulary must contain human part names, not unverified color/texture attributes.
+Keep the image roster, split IDs, backbone, and vocabulary fixed for a controlled
+GDINO-versus-human comparison.
+
+Human manifests use `human_parts` instead of `detections`:
+
+```json
+{"id":"bird.jpg","image":"bird.jpg","class_id":0,"human_parts":[{"concept":"head","coordinates":"pixel_xy","polygons":[[10,10,30,10,30,30,10,30]]}]}
+```
+
+All polygons for a concept are unioned in the original image, resized/cropped
+with nearest-neighbor interpolation, then average-pooled into soft grid targets.
+Part presence is defined on the full image. Explicit `human_parts: []` means no
+annotated concepts; missing labels are errors. Human box targets are also
+accepted with `box` and explicit `pixel_xyxy`/`normalized_xyxy` coordinates.
+Human labels ignore detector confidence and never fall back to GDINO.
+
+For COCO-style polygon annotations, use the existing manifest adapter with
+`--human-annotations annotations.json --category-map category_to_concept.json`.
+The category map is an explicit object such as `{"8":"head","9":null}`; null
+excludes a category. Every encountered category must be listed. Images join by
+exact `id == file_name`, or an explicit `annotation_image_id`, never row position.
+RLE masks require conversion to polygons before this adapter; they are rejected.
+
+```bash
+python -m spatial_cbm.training prepare --source manifests/pinpp-human-train.jsonl \
+  --test-source manifests/pinpp-human-test.jsonl --dataset partimagenetpp \
+  --supervision human --concepts concept_files/partimagenetpp_generic_parts.txt \
+  --split prepared/partimagenetpp/split.json --output prepared/partimagenetpp-human
+python -m spatial_cbm.training train --config configs/release/partimagenetpp_human.yaml
+```
+
+The human config uses a separate output directory. Release-format backbones may
+be shared across annotation modes only when their ordered image/class roster and
+internal split match exactly. Use the same `calibrate`, `evaluate`, `export`,
+classifier-fitting, and `classify` commands afterward. Output metadata identifies
+human supervision explicitly; do not mix these numbers with GDINO-only results.
 
 ## Migration Boundaries
 

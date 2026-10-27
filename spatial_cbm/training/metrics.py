@@ -103,7 +103,7 @@ class Metrics:
             spatial_ap=self.spatial_ap/self.spatial_count if self.spatial_count else None,
             spatial_pairs=self.spatial_count,
             concept_ap_definition='macro AP over concepts with positive labels; raw-logit ranking',
-            spatial_ap_definition='mean pixel AP over detected image-concept pairs; input-resolution box masks')
+            spatial_ap_definition='mean pixel AP over annotated image-concept pairs; input-resolution region masks')
         if self.concept_grid is not None:
             f1 = 2*self.concept_tp/np.maximum(self.concept_pred+self.positives,1)
             # Conservative deterministic tie break; no positives selects predict-none.
@@ -181,10 +181,13 @@ def assess(cfg, test=False):
         finally:
             metrics.close()
         if not test and (not values['concept']['positives'] or not values['spatial_pairs']):
-            raise ValueError('Calibration requires validation concept positives and visible box targets')
+            raise ValueError('Calibration requires validation concept positives and visible region targets')
         chosen = dict(concept=values['concept']['threshold'],spatial=values['localization']['threshold'])
         result = dict(identity=identity,cohort='test' if test else 'validation',
             checkpoint_epoch=selected['epoch'],metrics=values,thresholds=chosen,
-            supervision='GDINO pseudo-labels and boxes, not independent human annotations')
+            supervision=('human part-presence and region annotations; supervised ablation'
+                         if cfg.data.supervision=='human' else 'GDINO pseudo-labels and boxes, not independent human annotations'))
+        result['metrics']['spatial_ap_definition'] = ('mean pixel AP over annotated image-concept pairs; input-resolution human regions'
+            if cfg.data.supervision=='human' else values['spatial_ap_definition'])
         save_json(output_path,result)
         return result

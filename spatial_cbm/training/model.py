@@ -19,7 +19,13 @@ class Backbone(nn.Module):
             payload = torch.load(cfg.checkpoint, map_location='cpu', weights_only=False)
             if 'protocol' in payload:
                 previous = payload['protocol']
-                for key in ('samples.sqlite', 'split.json'):
+                keys = ['split.json']
+                if 'training_images_sha256' in previous['data'] and 'training_images_sha256' in protocol:
+                    if previous['data']['training_images_sha256'] != protocol['training_images_sha256']:
+                        raise ValueError('Backbone and concept head must use the same data and internal split')
+                else:
+                    keys.append('samples.sqlite')
+                for key in keys:
                     if previous['data']['files'][key] != protocol['files'][key]:
                         raise ValueError('Backbone and concept head must use the same data and internal split')
                 if previous['config']['training']['stage'] != 'backbone':
@@ -58,3 +64,33 @@ class ConceptHead(MultiScaleConceptLayer):
                 fused, size=features['conv3'].shape[-2:], mode='bilinear', align_corners=False)
             fused = F.relu(self.refine(F.relu(fused)), inplace=False)
         return self.spatial_layer(fused)
+
+
+def load_selected(cfg):
+    """Load the finished minimum-loss head with its frozen backbone and identity."""
+    import json
+    from pathlib import Path
+    from .data import verify, digest
+    from .engine import provenance, minimum_loss
+
+    root = Path(cfg.training.output)
+    if cfg.training.stage != 'concept' or not (root/'complete.json').exists():
+        raise ValueError('Finish concept training before evaluation')
+    data = verify(cfg.data.prepared)
+    selected = torch.load(root/'best.pt',map_location='cpu',weights_only=False)
+    current = provenance(cfg,data)
+    for key in ('config','data','source','backbone_sha256'):
+        if selected['protocol'][key] != current[key]:
+            raise ValueError(f'Evaluation provenance mismatch: {key}')
+    best = minimum_loss(json.loads((root/'history.json').read_text()))
+    if selected['epoch'] != best['epoch'] or selected['val_loss'] != best['val_loss']:
+        raise ValueError('Evaluation requires the minimum-validation-loss checkpoint')
+    bank = (Path(cfg.data.prepared)/'concepts.txt').read_text().splitlines()
+    backbone = Backbone(cfg.model,data['classes'],data).to(cfg.training.device).eval().requires_grad_(False)
+    head = ConceptHead(cfg.model,backbone.dims,len(bank)).to(cfg.training.device).eval().requires_grad_(False)
+    head.load_state_dict(selected['model'])
+    if cfg.training.channels_last:
+        backbone.to(memory_format=torch.channels_last); head.to(memory_format=torch.channels_last)
+    identity = dict(checkpoint_sha256=digest(root/'best.pt'),split_sha256=data['files']['split.json'],
+                    prepared_files=data['files'],source=current['source'])
+    return backbone,head,bank,data,identity

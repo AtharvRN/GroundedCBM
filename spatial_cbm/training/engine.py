@@ -163,6 +163,8 @@ def fit(cfg, resume=False):
     data = verify(cfg.data.prepared)
     if data['dataset'] != cfg.dataset:
         raise ValueError('Dataset configuration does not match prepared data')
+    if data.get('supervision','gdino') != cfg.data.supervision:
+        raise ValueError('Configured supervision differs from prepared annotations')
     if not data.get('test_disjoint_verified'):
         raise ValueError('Prepare an explicit disjoint held-out test manifest before training')
     output = Path(t.output); output.mkdir(parents=True, exist_ok=True)
