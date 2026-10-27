@@ -238,6 +238,8 @@ def fit(cfg, resume=False):
                 if metrics is not None: metrics.close()
             record = dict(epoch=epoch, train_loss=tr['loss'], val_loss=va['loss'],
                           lr=optimizer.param_groups[0]['lr'], train=tr, validation=va)
+            if head is not None and head.fusion == 'convex':
+                record['fusion_alpha'] = torch.as_tensor(head.mixing_alpha()).detach().item()
             history.append(record)
             best = minimum_loss(history)
             if best['epoch'] == epoch:
@@ -252,6 +254,8 @@ def fit(cfg, resume=False):
             print(json.dumps(record), flush=True)
         result = dict(complete=True, epochs=len(history), best_epoch=minimum_loss(history)['epoch'],
                       best_val_loss=minimum_loss(history)['val_loss'], stopped_early=len(history)<t.epochs)
+        if head is not None and head.fusion == 'convex':
+            result['best_alpha'] = minimum_loss(history)['fusion_alpha']
         save_json(output/'complete.json', result)
         return result
     finally:

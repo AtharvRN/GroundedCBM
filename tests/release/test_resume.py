@@ -8,12 +8,15 @@ import spatial_cbm.training.engine as engine
 from test_training import inputs, config
 
 
-@pytest.mark.parametrize('backbone_ema', [False, True])
-def test_interrupted_run_matches_uninterrupted_training(tmp_path,monkeypatch,backbone_ema):
+@pytest.mark.parametrize('mode', ['concept', 'learned_fusion', 'backbone_ema'])
+def test_interrupted_run_matches_uninterrupted_training(tmp_path,monkeypatch,mode):
+    backbone_ema = mode == 'backbone_ema'
     old_threads=torch.get_num_threads();torch.set_num_threads(1)
     try:
         prepared,_=inputs(tmp_path)
         cfg=config(tmp_path,prepared)
+        if mode == 'learned_fusion':
+            cfg.model.fusion='convex'; cfg.model.learn_alpha=True; cfg.model.alpha=.5
         if backbone_ema:
             cfg.training.stage='backbone'; cfg.model.checkpoint=''
             cfg.training.ema_decay=.9999

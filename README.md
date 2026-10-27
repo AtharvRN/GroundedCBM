@@ -126,6 +126,16 @@ JPEG bytes directly, including inside a nested tar.
 
 ## Train And Resume
 
+The default `model.fusion: residual` retains `global + alpha * spatial`.
+For fusion ablations, set `model.fusion: convex` to use
+`alpha * global + (1 - alpha) * spatial`, where spatial logits use normalized
+log-sum-exp pooling. Fixed alpha must lie in `[0, 1]`. Set
+`model.learn_alpha: true` and `model.alpha: 0.5` to learn one shared scalar via
+a sigmoid parameterization. History records its value after each epoch, and
+`complete.json` records `best_alpha` at the minimum-validation-loss checkpoint.
+The KL and spatial-BCE objectives are unchanged, including at alpha 0 and 1.
+Use fresh runs for these ablations, not altered evaluation of existing checkpoints.
+
 Edit the paths and hyperparameters in `configs/release/{dataset}.yaml`:
 
 ```bash

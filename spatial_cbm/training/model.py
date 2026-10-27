@@ -56,6 +56,19 @@ class ConceptHead(MultiScaleConceptLayer):
         if cfg.stages == 'conv345':
             self.conv3_proj = nn.Conv2d(dims[0], cfg.width, 1, bias=False)
             self.refine = nn.Conv2d(cfg.width, cfg.width, 3, padding=1, bias=False)
+        self.fusion = cfg.fusion
+        self.register_parameter('fusion_logit', nn.Parameter(torch.logit(torch.tensor(float(cfg.alpha))))
+                                if cfg.learn_alpha else None)
+
+    def mixing_alpha(self):
+        return self.residual_alpha if self.fusion_logit is None else self.fusion_logit.sigmoid()
+
+    def forward(self, features):
+        output = super().forward(features)
+        if self.fusion == 'convex':
+            alpha = self.mixing_alpha()
+            output['final_logits'] = alpha*output['global_logits'] + (1-alpha)*output['spatial_logits']
+        return output
 
     def forward_spatial(self, features):
         fused = self.fuse_spatial_features(features)

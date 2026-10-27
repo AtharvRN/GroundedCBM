@@ -25,6 +25,8 @@ class Model:
     stages: str = 'conv345'
     width: int = 2048
     alpha: float = .1
+    fusion: str = 'residual'
+    learn_alpha: bool = False
 
 
 @dataclass
@@ -75,6 +77,12 @@ class Config:
             raise ValueError('Human supervision is supported only for PartImageNet++')
         if m.backbone not in {'resnet18', 'resnet50', 'resnet101'} or m.stages not in {'conv45', 'conv345'}:
             raise ValueError('Unsupported backbone or spatial stages')
+        if m.fusion not in {'residual', 'convex'} or type(m.learn_alpha) is not bool:
+            raise ValueError('Unsupported concept fusion configuration')
+        if m.fusion == 'convex' and not 0 <= m.alpha <= 1:
+            raise ValueError('Convex fusion alpha must be in [0, 1]')
+        if m.learn_alpha and (m.fusion != 'convex' or not 0 < m.alpha < 1):
+            raise ValueError('Learned alpha requires convex fusion and initialization inside (0, 1)')
         if t.stage not in {'backbone', 'concept'} or t.optimizer not in {'adam', 'adamw', 'sgd'}:
             raise ValueError('Unsupported training stage or optimizer')
         if t.precision not in {'fp32', 'fp16', 'bf16'}:
