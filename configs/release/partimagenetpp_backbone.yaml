@@ -1,0 +1,38 @@
+# Same prepared pool/split as the concept-head configuration.
+# Historical augmentation/EMA settings; new internal validation-loss selection.
+dataset: partimagenetpp
+data:
+  prepared: prepared/partimagenetpp
+  cache: /tmp/sgcbm-target-cache/partimagenetpp
+  input_size: 224
+  resize_size: 256
+  workers: 12
+model:
+  backbone: resnet50
+  weights: none
+training:
+  stage: backbone
+  output: runs/partimagenetpp/backbone
+  seed: 42
+  device: cuda
+  epochs: 200
+  patience: 10
+  min_epochs: 10
+  batch_size: 1024
+  optimizer: sgd
+  lr: 0.4
+  weight_decay: 0.0005
+  schedule: cosine
+  warmup_epochs: 10
+  min_lr: 0.00001
+  precision: fp16
+  channels_last: true
+  label_smoothing: 0.1
+  randaugment_ops: 2
+  randaugment_magnitude: 14
+  random_erasing: 0.25
+  mixup_alpha: 0.2
+  cutmix_alpha: 1.0
+  mix_prob: 1.0
+  cutmix_switch_prob: 0.5
+  ema_decay: 0.9999

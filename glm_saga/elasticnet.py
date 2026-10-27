@@ -305,6 +305,7 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
         obj_history = []
         obj_best = None
         nni = 0
+        last_update_norm = None
         for t in tqdm(range(nepochs)): 
             total_loss = ch.zeros((), device=weight_device)
             criteria = None
@@ -419,6 +420,7 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
                     dw = (weight_new - weight).norm(p=2)
                     db = (bias_new - bias).norm(p=2)
                     criteria = ch.sqrt(dw**2 + db**2)
+                    last_update_norm = criteria
 
                 weight.data = weight_new
                 bias.data = bias_new
@@ -429,7 +431,10 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
                 return {
                     "a_table": a_table.cpu(), 
                     "w_grad_avg": w_grad_avg.cpu(), 
-                    "b_grad_avg": b_grad_avg.cpu()
+                    "b_grad_avg": b_grad_avg.cpu(),
+                    "solver": {"iterations": t + 1, "converged": True,
+                               "stop_reason": "update_tolerance", "update_norm": float(last_update_norm.item()) if last_update_norm is not None else None,
+                               "tolerance": float(tol)}
                 }
 
             # save amount of improvement
@@ -466,7 +471,10 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
                 return {
                     "a_table": a_table.cpu(), 
                     "w_grad_avg": w_grad_avg.cpu(), 
-                    "b_grad_avg": b_grad_avg.cpu()
+                    "b_grad_avg": b_grad_avg.cpu(),
+                    "solver": {"iterations": t + 1, "converged": True,
+                               "stop_reason": "objective_patience", "update_norm": float(last_update_norm.item()) if last_update_norm is not None else None,
+                               "tolerance": float(tol)}
                 }
 
 
@@ -474,7 +482,10 @@ def train_saga(linear, loader, lr, nepochs, lam, alpha, group=True, verbose=None
         return {
             "a_table": a_table.cpu(), 
             "w_grad_avg": w_grad_avg.cpu(), 
-            "b_grad_avg": b_grad_avg.cpu()
+            "b_grad_avg": b_grad_avg.cpu(),
+            "solver": {"iterations": int(nepochs), "converged": False,
+                       "stop_reason": "iteration_limit", "update_norm": float(last_update_norm.item()) if last_update_norm is not None else None,
+                       "tolerance": float(tol)}
         }
 
 # Calculate the smallest regularization parameter which results in a 
@@ -681,6 +692,7 @@ def glm_saga(linear, loader, max_lr, nepochs, alpha,
                 "bias": linear.bias.detach().cpu().clone()
 
             }
+            params["solver"] = state.get("solver", {})
             path.append(params)
             if eval_val and not math.isnan(loss_val) and loss_val < best_val_loss:
                 best_val_loss = loss_val

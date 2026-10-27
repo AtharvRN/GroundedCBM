@@ -1,0 +1,33 @@
+# Prospective unified-training recipe, not a historical-result reproduction.
+dataset: cub
+data:
+  prepared: prepared/cub
+  cache: /tmp/sgcbm-target-cache/cub
+  input_size: 224
+  resize_size: 256
+  confidence: 0.15
+  workers: 8
+model:
+  backbone: resnet18
+  checkpoint: /path/to/cub_backbone.pt
+  stages: conv345
+  width: 512
+  alpha: 0.1
+training:
+  stage: concept
+  output: runs/cub/seed42
+  seed: 42
+  device: cuda
+  epochs: 75
+  patience: 10
+  min_epochs: 10
+  batch_size: 32
+  optimizer: adam
+  lr: 0.0001
+  weight_decay: 0.00001
+  precision: fp16
+  channels_last: true
+  fused_bce: 1.0
+  kl: 0.25
+  spatial_bce: 0.25
+  positive_weight: 100.0
