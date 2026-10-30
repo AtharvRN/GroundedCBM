@@ -80,10 +80,14 @@ images, 10,000 internal-validation images, and 4,306 ordered concepts. The
 training cohort, not the complete 1,281,167-image official training pool.
 Additional vocabulary filters are disabled for both methods.
 
-VLG uses its released ImageNet `args.txt` settings: seven epochs, batch 64,
+VLG uses its released ImageNet `args.txt` optimizer settings: batch 64,
 SGD with momentum 0.9, LR 0.01, weight decay 1e-5, positive weight 8000,
 crop probability 0.5, confidence >0.15, and no hidden layers. This positive
-weight is intentionally different from the SpG-CBM value of 100.
+weight is intentionally different from the SpG-CBM value of 100. The initial
+seven-epoch launch was superseded before training on 2026-10-30: the current
+cap is 20 epochs with patience 5 and minimum epoch 1. Five consecutive epochs
+without a strictly lower validation loss trigger stopping; ties are not
+improvements. This longer cap differs from the released seven-epoch recipe.
 
 LF uses Adam, LR 0.001, zero weight decay, batch 50,000, literal ViT-B/16
 teacher scores, and frozen pooled ResNet-50 features. Its controlled cap is

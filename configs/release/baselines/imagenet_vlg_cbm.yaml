@@ -1,4 +1,4 @@
-# Released ImageNet optimizer/crops; shared fixed vocabulary/internal validation.
+# Released ImageNet optimizer/crops; extended cap and shared internal validation.
 dataset: imagenet
 data:
   prepared: /scratch/prepared
@@ -10,11 +10,11 @@ model:
   checkpoint: /scratch/resnet50-0676ba61.pth
   vlg_hidden: 0
 training:
-  output: /workspace/imagenet_baselines_20261030_r1/vlg_cbm/run
+  output: /workspace/imagenet_baselines_20261030_r2/vlg_cbm/run
   seed: 6885
-  epochs: 7
-  min_epochs: 7
-  patience: 10
+  epochs: 20
+  min_epochs: 1
+  patience: 5
   batch_size: 64
   evaluation_batch_size: 64
   optimizer: sgd
