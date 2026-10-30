@@ -546,7 +546,7 @@ def evaluate(cfg, classifier_dir, nec_values=(5,10,15,20,25,30)):
                 raise ValueError('Existing classification evaluation has different provenance')
             return previous
         dataset = Samples(cfg,'test',data,concepts=False)
-        loader = DataLoader(dataset,batch_size=cfg.training.batch_size,num_workers=cfg.data.workers,shuffle=False)
+        loader = DataLoader(dataset,batch_size=cfg.training.evaluation_batch_size or cfg.training.batch_size,num_workers=cfg.data.workers,shuffle=False)
         counts,total = {nec:0 for nec in nec_values},0
         with torch.inference_mode():
             for images,labels in loader:

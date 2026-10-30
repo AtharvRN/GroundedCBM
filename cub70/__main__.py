@@ -69,6 +69,8 @@ def evaluate(cfg, mapping_path, output_path, masks_root=None, manifest=None):
     output_path = Path(output_path)
     if output_path.exists(): raise FileExistsError('Use a new CUB-70 result path')
     backbone,head,bank,data,identity = load_selected(cfg)
+    if getattr(head,'map_kind','native')=='unavailable':
+        raise ValueError('This nonlinear global baseline has no native or linear-CAM maps')
     calibration_path = Path(cfg.training.output)/'calibration.json'
     calibration = json.loads(calibration_path.read_text())
     if calibration['cohort']!='validation' or calibration['identity']!=identity:
@@ -108,7 +110,7 @@ def evaluate(cfg, mapping_path, output_path, masks_root=None, manifest=None):
     if not roster: raise ValueError('No human-annotated held-out images')
     dataset = Samples(cfg,'test',data,concepts=False)
     loader = DataLoader(Subset(dataset,[row['position'] for row in roster]),
-        batch_size=cfg.training.batch_size,num_workers=cfg.data.workers,shuffle=False)
+        batch_size=cfg.training.evaluation_batch_size or cfg.training.batch_size,num_workers=cfg.data.workers,shuffle=False)
     stats = {part:dict(pairs=0,ap=0.,iou=0.,tp=0,fp=0,fn=0,tn=0,absent_after_crop=0) for part in GROUPS}
     selections,offset = [],0
     input_hash = hashlib.sha256()
@@ -158,6 +160,7 @@ def evaluate(cfg, mapping_path, output_path, masks_root=None, manifest=None):
     supported = [v for v in per_part.values() if v['pairs']]
     if not supported: raise ValueError('No visible human part masks')
     result = dict(model=identity,mapping_sha256=digest(mapping_path),calibration_sha256=digest(calibration_path),
+        map_kind=getattr(head,'map_kind','native'),
         evaluator_sha256=digest(__file__),inputs_sha256=input_hash.hexdigest(),threshold=threshold,
         threshold_source='CUB training-pool validation calibration; no human test tuning',
         selection='highest fused score among concepts mapped to each part; ties follow mapping order',

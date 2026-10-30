@@ -1,0 +1,35 @@
+# Controlled 75-epoch cap, not upstream's 1000 random projection updates.
+dataset: imagenet
+data:
+  prepared: /scratch/prepared
+  cache: /scratch/target-cache
+  workers: 2
+model:
+  method: lf_cbm
+  backbone: resnet50
+  checkpoint: /scratch/resnet50-0676ba61.pth
+teacher:
+  cache: /workspace/imagenet_baselines_20261030_r1/lf_cbm/teacher
+  model: ViT-B/16
+  checkpoint: /scratch/ViT-B-16.pt
+  batch_size: 128
+training:
+  output: /workspace/imagenet_baselines_20261030_r1/lf_cbm/run
+  seed: 6885
+  epochs: 75
+  min_epochs: 10
+  patience: 10
+  batch_size: 50000
+  evaluation_batch_size: 64
+  cache_regression_features: true
+  feature_batch_size: 128
+  optimizer: adam
+  lr: 0.001
+  weight_decay: 0.0
+  precision: fp32
+  channels_last: true
+  filter_concepts: false
+  lf_clip_cutoff: 0.28
+  lf_interpretability_cutoff: 0.45
+  kl: 0.0
+  spatial_bce: 0.0

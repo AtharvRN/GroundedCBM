@@ -7,9 +7,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from .data import Samples, collate, digest, save_json, verify
-from .engine import atomic_torch, provenance
-from .model import Backbone, ConceptHead
+from .data import Samples, digest, save_json
+from .engine import atomic_torch
+from .model import load_selected
 
 
 def export(cfg):
@@ -25,14 +25,7 @@ def _export(cfg):
     root = Path(cfg.training.output)
     if not (root/'complete.json').is_file():
         raise ValueError('Finish training before exporting the selected checkpoint')
-    data = verify(cfg.data.prepared)
-    selected = torch.load(root/'best.pt', map_location='cpu', weights_only=False)
-    if selected['protocol']['config'] != cfg.asdict() or selected['protocol']['data'] != data:
-        raise ValueError('Feature extraction protocol differs from selected checkpoint')
-    current = provenance(cfg, data)
-    for key in ('source', 'backbone_sha256'):
-        if selected['protocol'][key] != current[key]:
-            raise ValueError(f'Feature extraction provenance changed: {key}')
+    backbone,head,bank,data,_ = load_selected(cfg)
     identity = dict(checkpoint=digest(root/'best.pt'), data=data, precision='fp32')
     if (root/'features_complete.json').exists():
         previous = json.loads((root/'features_complete.json').read_text())
@@ -43,18 +36,13 @@ def _export(cfg):
                 raise ValueError('Feature cache changed')
         return previous
     device = cfg.training.device
-    backbone = Backbone(cfg.model, data['classes'], data).to(device).eval().requires_grad_(False)
-    concepts = (Path(cfg.data.prepared)/'concepts.txt').read_text()
-    count = len(concepts.splitlines())
-    head = ConceptHead(cfg.model, backbone.dims, count).to(device).eval()
-    head.load_state_dict(selected['model'])
-    if cfg.training.channels_last:
-        backbone.to(memory_format=torch.channels_last); head.to(memory_format=torch.channels_last)
+    concepts = '\n'.join(bank)+'\n'
+    count = len(bank)
     folder = root/'features'; folder.mkdir(exist_ok=True)
     for split, prefix in [('train','train'), ('validation','val')]:
-        dataset = Samples(cfg, split, data)
-        loader = DataLoader(dataset, batch_size=cfg.training.batch_size, shuffle=False,
-                            num_workers=cfg.data.workers, collate_fn=collate)
+        dataset = Samples(cfg, split, data,concepts=False)
+        loader = DataLoader(dataset, batch_size=cfg.training.evaluation_batch_size or cfg.training.batch_size, shuffle=False,
+                            num_workers=cfg.data.workers)
         features = np.lib.format.open_memmap(folder/f'{prefix}_features.npy', mode='w+', dtype='float32', shape=(len(dataset),count))
         targets = np.lib.format.open_memmap(folder/f'{prefix}_targets.npy', mode='w+', dtype='int64', shape=(len(dataset),))
         total, squares, offset = np.zeros(count), np.zeros(count), 0

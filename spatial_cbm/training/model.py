@@ -1,4 +1,4 @@
-"""Shared ResNet features and the established SG-CBM spatial head."""
+"""Shared ResNet features, method-specific head construction, and checkpoint loading."""
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -47,7 +47,7 @@ class Backbone(nn.Module):
         return self.network(images)
 
 
-class ConceptHead(MultiScaleConceptLayer):
+class SpatialConceptHead(MultiScaleConceptLayer):
     def __init__(self, cfg, dims, concepts):
         super().__init__(nn.Linear(dims[2], concepts), nn.Conv2d(cfg.width, concepts, 1, bias=False),
             conv4_dim=dims[1], conv5_dim=dims[2], fusion_dim=cfg.width,
@@ -80,6 +80,14 @@ class ConceptHead(MultiScaleConceptLayer):
         return self.spatial_layer(fused)
 
 
+def ConceptHead(cfg, dims, concepts, indices=None):
+    if cfg.method == 'sg_cbm':
+        if indices is not None: raise ValueError('SG-CBM does not use baseline concept filtering')
+        return SpatialConceptHead(cfg,dims,concepts)
+    from .baselines import BaselineHead
+    return BaselineHead(cfg,dims,concepts,indices)
+
+
 def load_selected(cfg):
     """Load the finished minimum-loss head with its frozen backbone and identity."""
     import json
@@ -93,18 +101,21 @@ def load_selected(cfg):
     data = verify(cfg.data.prepared)
     selected = torch.load(root/'best.pt',map_location='cpu',weights_only=False)
     current = provenance(cfg,data)
-    for key in ('config','data','source','backbone_sha256'):
-        if selected['protocol'][key] != current[key]:
-            raise ValueError(f'Evaluation provenance mismatch: {key}')
+    for key in ('config','data','source','backbone_sha256','teacher'):
+        if selected['protocol'].get(key) != current.get(key):
+            raise ValueError(f'Evaluation provenance changed: {key}')
     best = minimum_loss(json.loads((root/'history.json').read_text()))
     if selected['epoch'] != best['epoch'] or selected['val_loss'] != best['val_loss']:
         raise ValueError('Evaluation requires the minimum-validation-loss checkpoint')
     bank = (Path(cfg.data.prepared)/'concepts.txt').read_text().splitlines()
     backbone = Backbone(cfg.model,data['classes'],data).to(cfg.training.device).eval().requires_grad_(False)
-    head = ConceptHead(cfg.model,backbone.dims,len(bank)).to(cfg.training.device).eval().requires_grad_(False)
+    indices = selected['model'].get('concept_indices')
+    head = ConceptHead(cfg.model,backbone.dims,len(bank),indices).to(cfg.training.device).eval().requires_grad_(False)
     head.load_state_dict(selected['model'])
+    if indices is not None: bank = [bank[i] for i in indices.tolist()]
     if cfg.training.channels_last:
         backbone.to(memory_format=torch.channels_last); head.to(memory_format=torch.channels_last)
     identity = dict(checkpoint_sha256=digest(root/'best.pt'),split_sha256=data['files']['split.json'],
                     prepared_files=data['files'],source=current['source'])
+    if current.get('teacher') is not None: identity['teacher'] = current['teacher']
     return backbone,head,bank,data,identity

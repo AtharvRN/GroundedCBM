@@ -1,0 +1,32 @@
+# Epochwise internal-val selection differs from upstream stepwise training.
+dataset: cub
+data:
+  prepared: prepared/cub
+  cache: /tmp/spatial-cbm/lf-cub
+model:
+  method: lf_cbm
+  backbone: resnet18
+  checkpoint: /path/to/cub_backbone.pt
+teacher:
+  cache: /path/to/teacher-cache/lf-cub
+  model: ViT-B/16
+  checkpoint: /path/to/ViT-B-16.pt
+  batch_size: 512
+training:
+  output: runs/cub/lf_cbm/seed42
+  seed: 42
+  epochs: 1000
+  patience: 50
+  min_epochs: 1
+  batch_size: 50000
+  cache_regression_features: true
+  feature_batch_size: 128
+  evaluation_batch_size: 128
+  optimizer: adam
+  lr: 0.001
+  weight_decay: 0.0
+  precision: fp32
+  lf_clip_cutoff: 0.26
+  lf_interpretability_cutoff: 0.45
+  kl: 0.0
+  spatial_bce: 0.0

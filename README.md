@@ -1,4 +1,4 @@
-# SG-CBM: Unified Training Release
+# Spatial CBM: Unified Training Release
 
 One training pipeline for **CUB, ImageNet, Places365, and PartImageNet++**.
 Dataset differences belong in preparation/configuration, not in the model,
@@ -11,8 +11,9 @@ verified before replacing existing experiment pipelines.
 ## Scope
 
 - ResNet-18/50/101 backbone training or explicit pretrained checkpoints.
-- Frozen-backbone concept training with conv4+5 or conv3+4+5 spatial maps.
-- Existing normalized fused BCE and vectorized spatial KL/soft BCE losses.
+- SG-CBM frozen-backbone training with conv4+5 or conv3+4+5 spatial maps.
+- LF-CBM, VLG-CBM, and a paper-based SALF-CBM reconstruction in the same pipeline.
+- Standard mean BCEWithLogitsLoss and vectorized spatial KL/soft BCE losses for SG-CBM.
 - FP16/BF16 training, FP32 validation/loss accumulation, channels-last.
 - Minimum validation loss selects `best.pt`; early-stopping patience defaults to 10.
 - Validation concept/pixel AP each epoch; saved validation-only thresholds for final metrics.
@@ -22,8 +23,7 @@ verified before replacing existing experiment pipelines.
 - Saved split/data/source identities and guarded deterministic resume.
 
 CUB-70 human-part evaluation lives in its own `cub70/` folder. Legacy dataset-specific
-trainers and baseline implementations are not part of this SG-CBM release.
-Their source is preserved in Git history.
+trainers are preserved in Git history; the new baseline heads use shared orchestration.
 See [migration notes](docs/migration.md).
 
 ## Code Layout
@@ -38,6 +38,7 @@ The remaining files are internal modules with distinct responsibilities:
 - `layers.py`, `losses.py`, `targets.py`: model layers, objectives, and target caching/batching.
 - `training/config.py`, `manifest.py`, `data.py`: configuration and dataset preparation/loading.
 - `training/model.py`, `engine.py`, `backbone_recipe.py`: backbone/head construction and training.
+- `training/baselines.py`, `teacher.py`: baseline heads/objectives and cached CLIP targets.
 - `training/export.py`, `classifier.py`, `classifier_cache.py`: feature export and sparse classifier fitting.
 - `training/metrics.py`: shared AP monitoring, calibration, and frozen-threshold evaluation.
 
@@ -55,6 +56,55 @@ python -m spatial_cbm.training --help
 Choose a compatible PyTorch/torchvision CUDA installation. No datasets,
 checkpoints, credentials, or cluster endpoints are embedded in this interface.
 
+## Baselines
+
+Choose `model.method: sg_cbm`, `vlg_cbm`, `lf_cbm`, or `salf_cbm`.
+The three baseline templates are in `configs/release/baselines/`. Edit their data,
+backbone, output, and teacher paths; use a separate run directory per method.
+All use the same dataset preparation, trainer, minimum-validation-loss selection,
+feature export, calibration, and NEC classifier. No new training scripts are needed.
+
+LF-CBM and SALF-CBM require the optional official OpenAI CLIP package and an explicit
+local ViT-B/16 checkpoint. Prepare their teacher cache once before training:
+
+```bash
+pip install git+https://github.com/openai/CLIP.git
+python -m spatial_cbm.training teacher --config configs/release/baselines/lf_cbm.yaml
+python -m spatial_cbm.training train --config configs/release/baselines/lf_cbm.yaml
+python -m spatial_cbm.training calibrate --config configs/release/baselines/lf_cbm.yaml
+python -m spatial_cbm.training evaluate --config configs/release/baselines/lf_cbm.yaml
+python -m spatial_cbm.training export --config configs/release/baselines/lf_cbm.yaml
+```
+
+VLG-CBM uses detector labels and training-only box crops; it needs no teacher cache.
+LF/SALF regress CLIP scores without detector labels. AP/calibration against GDINO or
+human annotations still requires those annotations explicitly; teacher scores are
+never substituted for evaluation ground truth. Regression validation is centered
+over the full validation cohort, not separately over minibatches. Training batches
+must contain at least three images; one/two-image tails merge into the previous batch.
+
+For LF's upstream full-training-set projection updates, enable
+`training.cache_regression_features: true` with FP32 training. Frozen features
+are cached once and identity-checked; this option also supports SALF but rejects
+VLG's random-crop training. `feature_batch_size` controls cache extraction and
+`evaluation_batch_size` separately limits validation/export/test image batches.
+The CUB LF template uses a 50,000-image cap (one update per epoch on CUB),
+1,000 maximum epochs and patience 50. Validation runs every epoch, unlike
+upstream's every-50-step checkpoint checks; this is not identical stopping behavior.
+The ImageNet controlled recipes and their separate settings are documented in
+[the baseline audit](docs/baselines.md#imagenet-controlled-launch-2026-10-30).
+
+LF/VLG linear heads expose **post-hoc linear CAMs**, not native spatial explanations.
+A nonlinear VLG head (`model.vlg_hidden > 0`) reports localization as unavailable.
+SALF uses native spatial maps. LF's two vocabulary filters are saved with the selected
+checkpoint; exported concepts, metrics, and classifiers use the retained order.
+
+These are method implementations under our shared protocol, **not exact published-result
+reproductions**. In particular, full SALF training code was not released; its training
+path is a documented paper-based reconstruction. Supported student backbones remain
+torchvision ResNets, not CLIP-RN50 or arbitrary Hugging Face checkpoints. See the
+[pinned upstream audit, objectives, and limitations](docs/baselines.md).
+
 ## Data Contract
 
 Prepare a JSONL manifest containing the **training pool only**, never the
@@ -65,7 +115,8 @@ official test split. Each row has an exact image identity and zero-based class:
 ```
 
 Paths are relative to the source manifest. Class ids must be contiguous;
-concept names must match the vocabulary exactly. Explicit `detections: []`
+concept names must match the vocabulary exactly (VLG additionally applies upstream
+lowercase/punctuation/article normalization and rejects duplicate normalized names). Explicit `detections: []`
 means a verified negative image. Missing annotations cannot silently become
 negative labels. Box coordinates are explicitly `normalized_xyxy` or
 `pixel_xyxy`, never inferred from their numerical range.
@@ -155,7 +206,7 @@ python -m spatial_cbm.training train --config configs/release/partimagenetpp.yam
 ```
 
 Use exactly the same commands with `cub.yaml`, `imagenet.yaml`, or
-`places365.yaml`. Concept prediction uses PyTorch's mean `BCEWithLogitsLoss`
+`places365.yaml`. SG-CBM concept prediction uses PyTorch's mean `BCEWithLogitsLoss`
 (via its functional equivalent), with `positive_weight: 1.0` in all default
 recipes: no positive-class reweighting or automatic class balancing. Optional
 positive weights use PyTorch's element-count normalization, not division by
@@ -166,7 +217,8 @@ Validation runs after **every epoch**, using the same combined training
 objective and native target resolution. Strict improvements reset
 patience; ties retain the earlier checkpoint. F1/AP and test accuracy never
 select the training checkpoint. The test set is not loaded by training.
-The same validation forward pass also logs exact concept AP and spatial AP.
+The same validation forward pass also logs exact concept AP and spatial AP when
+annotation labels and spatial maps are available.
 F1 and threshold searches are omitted from the epoch loop.
 
 Outputs: `protocol.json`, `history.json`, `best.pt`, `last.pt`, `complete.json`.
@@ -191,7 +243,7 @@ or mismatched calibration is an error, never an invitation to tune on test data.
 - Concept AP: exact rank-based macro AP over concepts with positive labels;
   supported/total concept counts are recorded. This is not pooled micro AP.
 - Concept Precision, Recall, F1: micro-averaged over image-concept pairs, using
-  `sigmoid(fused_logit) >= threshold`. One global threshold maximizes validation
+  `sigmoid(concept_score) >= threshold` (SG-CBM uses its fused logit). One global threshold maximizes validation
   micro F1 on the fixed grid 0, 0.001, ..., 1 (plus a predict-none candidate).
   This is a grid maximum, not an exact optimum over every observed score.
 - Spatial AP: exact pixel AP averaged over visible detected image-concept pairs,

@@ -5,7 +5,7 @@ from .config import load
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Shared SG-CBM release training')
+    parser = argparse.ArgumentParser(description='Shared spatial-CBM and baseline training')
     commands = parser.add_subparsers(dest='command', required=True)
     manifest = commands.add_parser('manifest')
     manifest.add_argument('--layout', choices=['cub','imagefolder','places365','manifest'], required=True)
@@ -27,7 +27,7 @@ def main():
     prepare.add_argument('--supervision',choices=['gdino','human'],default='gdino')
     prepare.add_argument('--fraction', type=float)
     prepare.add_argument('--seed', type=int, default=6885)
-    for name in ['check','train','export','calibrate','evaluate','classify']:
+    for name in ['check','train','export','calibrate','evaluate','classify','teacher']:
         command = commands.add_parser(name)
         command.add_argument('--config', required=True)
         if name == 'train':
@@ -59,8 +59,16 @@ def main():
                 raise FileNotFoundError(cfg.model.checkpoint)
             if cfg.training.stage == 'concept':
                 prepared = result['prepared']
-                if prepared['annotated_images'] != prepared['images'] or not (Path(cfg.data.prepared)/'concepts.txt').read_text().strip():
+                if not (Path(cfg.data.prepared)/'concepts.txt').read_text().strip():
+                    raise ValueError('Concept training requires a vocabulary')
+                if cfg.model.method in {'sg_cbm','vlg_cbm'} and prepared['annotated_images'] != prepared['images']:
                     raise ValueError('Concept training requires a vocabulary and annotations for every image')
+                if cfg.model.method in {'lf_cbm','salf_cbm'}:
+                    from .teacher import verify_teacher
+                    result['teacher'] = verify_teacher(cfg,prepared)
+        elif args.command == 'teacher':
+            from .teacher import prepare_teacher
+            result = prepare_teacher(cfg)
         elif args.command == 'train':
             from .engine import fit
             result = fit(cfg,args.resume)

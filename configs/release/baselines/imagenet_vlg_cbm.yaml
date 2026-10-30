@@ -1,0 +1,29 @@
+# Released ImageNet optimizer/crops; shared fixed vocabulary/internal validation.
+dataset: imagenet
+data:
+  prepared: /scratch/prepared
+  cache: /scratch/target-cache
+  workers: 4
+model:
+  method: vlg_cbm
+  backbone: resnet50
+  checkpoint: /scratch/resnet50-0676ba61.pth
+  vlg_hidden: 0
+training:
+  output: /workspace/imagenet_baselines_20261030_r1/vlg_cbm/run
+  seed: 6885
+  epochs: 7
+  min_epochs: 7
+  patience: 10
+  batch_size: 64
+  evaluation_batch_size: 64
+  optimizer: sgd
+  lr: 0.01
+  weight_decay: 0.00001
+  precision: fp32
+  channels_last: true
+  positive_weight: 8000.0
+  vlg_crop_probability: 0.5
+  filter_concepts: false
+  kl: 0.0
+  spatial_bce: 0.0

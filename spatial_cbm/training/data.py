@@ -271,15 +271,19 @@ def target_mask(item, size, resize, crop, grid):
 
 
 class Samples(Dataset):
-    def __init__(self, cfg, split, protocol, concepts=True, metrics=False):
+    def __init__(self, cfg, split, protocol, concepts=True, metrics=False, augment=False, image_augmentation=None):
         if protocol.get('supervision','gdino') != cfg.data.supervision:
             raise ValueError('Configured supervision differs from prepared annotations')
         self.cfg, self.root, self.concepts = cfg, Path(cfg.data.prepared), concepts
+        self.augment = augment
         self.database = 'test.sqlite' if split == 'test' else 'samples.sqlite'
         self.indices = (np.arange(protocol['test_images']) if split == 'test'
                         else np.load(self.root/'indices.npz')[split])
         self.bank = (self.root/'concepts.txt').read_text().splitlines()
         self.lookup = {c:i for i,c in enumerate(self.bank)}
+        if cfg.model.method=='vlg_cbm':
+            from .baselines import concept_lookup
+            self.lookup = concept_lookup(self.bank)
         count_key = 'test_images' if split == 'test' else 'images'
         annotation_key = 'test_annotated_images' if split == 'test' else 'annotated_images'
         if concepts and (not self.bank or protocol[annotation_key] != protocol[count_key]):
@@ -288,27 +292,38 @@ class Samples(Dataset):
         self.cache = None if not concepts else SpatialTargetCache(cfg.data.cache, dict(
             version=1, database=protocol['files'][self.database], vocabulary=self.bank,
             resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=self.grid,
-            confidence=cfg.data.confidence, supervision=cfg.data.supervision,presence='full_image', union='maximum_occupancy'))
+            confidence=cfg.data.confidence, supervision=cfg.data.supervision,presence='full_image', union='maximum_occupancy',
+            concept_normalization='vlg' if cfg.model.method=='vlg_cbm' else 'literal'))
         self.metric_cache = None if not metrics else SpatialTargetCache(cfg.data.cache, dict(
             version=1, database=protocol['files'][self.database], vocabulary=self.bank,
             resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=cfg.data.input_size,
-            confidence=cfg.data.confidence, supervision=cfg.data.supervision,presence='full_image', union='maximum_occupancy'))
+            confidence=cfg.data.confidence, supervision=cfg.data.supervision,presence='full_image', union='maximum_occupancy',
+            concept_normalization='vlg' if cfg.model.method=='vlg_cbm' else 'literal'))
         self.db, self.pid, self.fds = None, None, {}
         interpolation = (transforms.InterpolationMode.BILINEAR if concepts or cfg.training.stage=='concept'
                          else transforms.InterpolationMode.BICUBIC)
+        if image_augmentation is None:
+            image_augmentation = not concepts and cfg.training.stage=='backbone'
+        image_augmentation = image_augmentation and split=='train'
         spatial = ([transforms.RandomResizedCrop(cfg.data.input_size, interpolation=interpolation), transforms.RandomHorizontalFlip()]
-                   if not concepts and split == 'train' else
+                   if image_augmentation else
                    [transforms.Resize(cfg.data.resize_size, interpolation=interpolation), transforms.CenterCrop(cfg.data.input_size)])
-        if not concepts and split == 'train' and cfg.training.randaugment_ops:
+        if image_augmentation and cfg.training.randaugment_ops:
             spatial.append(transforms.RandAugment(num_ops=cfg.training.randaugment_ops,
                                                  magnitude=cfg.training.randaugment_magnitude))
         self.transform = transforms.Compose(spatial + [transforms.ToTensor(),
             transforms.Normalize((.485,.456,.406),(.229,.224,.225))])
-        if not concepts and split == 'train' and cfg.training.random_erasing:
+        if image_augmentation and cfg.training.random_erasing:
             self.transform.transforms.append(transforms.RandomErasing(p=cfg.training.random_erasing))
 
     def __len__(self):
         return len(self.indices)
+
+    def concept_id(self, name):
+        if self.cfg.model.method=='vlg_cbm':
+            from .baselines import concept_key
+            name = concept_key(name)
+        return self.lookup.get(name)
 
     def __getstate__(self):
         return {**self.__dict__, 'db':None, 'pid':None, 'fds':{}}
@@ -337,11 +352,17 @@ class Samples(Dataset):
             source = io.BytesIO(data)
         with Image.open(source) as image:
             if self.concepts:
+                if self.cfg.model.method=='vlg_cbm' and self.augment:
+                    from .baselines import vlg_crop
+                    cropped,labels = vlg_crop(image.convert('RGB'),json.loads(annotations),self.lookup,
+                        self.cfg.data.confidence,self.cfg.training.vlg_crop_probability)
+                    return (self.transform(cropped),labels,torch.empty(0,dtype=torch.long),
+                            torch.empty((0,self.grid,self.grid)),category)
                 targets = self.cache.get(position)
                 if targets is None:
                     labels, masks = np.zeros(len(self.bank), dtype=np.float32), {}
                     for item in json.loads(annotations):
-                        c = self.lookup.get(item['concept'])
+                        c = self.concept_id(item['concept'])
                         if c is None or (self.cfg.data.supervision=='gdino' and item['confidence'] <= self.cfg.data.confidence):
                             continue
                         labels[c] = 1.
@@ -361,7 +382,7 @@ class Samples(Dataset):
                     if evaluation is None:
                         masks = {}
                         for item in json.loads(annotations):
-                            c = self.lookup.get(item['concept'])
+                            c = self.concept_id(item['concept'])
                             if c is None or (self.cfg.data.supervision=='gdino' and item['confidence'] <= self.cfg.data.confidence):
                                 continue
                             if item['box'] is None and 'polygons' not in item: continue

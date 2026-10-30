@@ -44,7 +44,7 @@ class Metrics:
         self.concept_grid = (np.r_[np.linspace(0,1,1001),1.000001] if calibrate else
                              np.array([thresholds['concept']]) if thresholds is not None else None)
         self.spatial_grid = (np.linspace(0,1,51) if calibrate else
-                             np.array([thresholds['spatial']]) if thresholds is not None else None)
+                             np.array([thresholds['spatial']]) if thresholds is not None and thresholds['spatial'] is not None else None)
         self.concept_pred = np.zeros(len(self.concept_grid),dtype=np.int64) if self.concept_grid is not None else None
         self.concept_tp = np.zeros_like(self.concept_pred) if self.concept_pred is not None else None
         self.positives = 0
@@ -64,6 +64,8 @@ class Metrics:
             self.concept_pred += total.flip(0).cumsum(0).flip(0)[1:].cpu().numpy()
             self.concept_tp += positive.flip(0).cumsum(0).flip(0)[1:].cpu().numpy()
             self.positives += int(labels.sum())
+        if output.get('spatial_maps') is None:
+            return
         pairs = batch[4].nonzero()
         # Bound the temporary pixel-sort workspace independently of batch size.
         for chunk in pairs.split(16):
@@ -109,11 +111,11 @@ class Metrics:
             # Conservative deterministic tie break; no positives selects predict-none.
             i = int(np.flatnonzero(f1==f1.max())[-1]) if self.calibrate else 0
             result['concept'] = dict(precision_recall_f1(self.concept_tp[i],self.concept_pred[i],self.positives),
-                threshold=float(self.concept_grid[i]),score='sigmoid(fused_logit)',comparison='>=',averaging='micro')
-            mean_iou = self.iou/max(self.spatial_count,1)
-            k = int(np.flatnonzero(mean_iou==mean_iou.max())[-1]) if self.calibrate else 0
+                threshold=float(self.concept_grid[i]),score='sigmoid(concept_score)',comparison='>=',averaging='micro')
+            mean_iou = self.iou/max(self.spatial_count,1) if self.iou is not None else None
+            k = int(np.flatnonzero(mean_iou==mean_iou.max())[-1]) if self.calibrate and self.spatial_count else 0
             result['localization'] = dict(foreground_iou=float(mean_iou[k]) if self.spatial_count else None,
-                threshold=float(self.spatial_grid[k]),score='per-map min-max normalized upsampled logit',
+                threshold=float(self.spatial_grid[k]) if self.spatial_count else None,score='per-map min-max normalized upsampled logit',
                 comparison='>=',averaging='mean over detected image-concept pairs')
             if self.calibrate:
                 result['search'] = dict(concept_thresholds=self.concept_grid.tolist(),
@@ -131,28 +133,17 @@ def assess(cfg, test=False):
     import fcntl
     import json
     from torch.utils.data import DataLoader
-    from .data import Samples, collate, digest, save_json, verify
-    from .engine import provenance, run_epoch, minimum_loss
-    from .model import Backbone, ConceptHead
+    from .data import Samples, collate, save_json
+    from .engine import run_epoch, minimum_loss
+    from .model import load_selected
 
     root = Path(cfg.training.output)
     with (root/'assessment.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
         if cfg.training.stage != 'concept' or not (root/'complete.json').exists():
             raise ValueError('Finish concept training before calibration/evaluation')
-        data = verify(cfg.data.prepared)
-        if not data.get('test_disjoint_verified'):
-            raise ValueError('Prepare and audit the held-out test manifest first')
-        selected = torch.load(root/'best.pt',map_location='cpu',weights_only=False)
-        current = provenance(cfg,data)
-        for key in ('config','data','source','backbone_sha256'):
-            if selected['protocol'][key] != current[key]:
-                raise ValueError(f'Assessment provenance mismatch: {key}')
+        backbone,head,bank,data,identity = load_selected(cfg)
         best = minimum_loss(json.loads((root/'history.json').read_text()))
-        if selected['epoch'] != best['epoch'] or selected['val_loss'] != best['val_loss']:
-            raise ValueError('Calibration requires the minimum-validation-loss checkpoint')
-        identity = dict(checkpoint_sha256=digest(root/'best.pt'),split_sha256=data['files']['split.json'],
-                        prepared_files=data['files'],source=current['source'])
         thresholds = None
         if test:
             calibrated = json.loads((root/'calibration.json').read_text())
@@ -166,28 +157,25 @@ def assess(cfg, test=False):
             if prior['identity'] != identity: raise ValueError('Existing assessment belongs to another checkpoint')
             if test and prior['thresholds'] != thresholds: raise ValueError('Frozen thresholds changed')
             return prior
-        backbone = Backbone(cfg.model,data['classes'],data).to(cfg.training.device).eval().requires_grad_(False)
-        count = len((Path(cfg.data.prepared)/'concepts.txt').read_text().splitlines())
-        head = ConceptHead(cfg.model,backbone.dims,count).to(cfg.training.device).eval()
-        head.load_state_dict(selected['model'])
-        if cfg.training.channels_last:
-            backbone.to(memory_format=torch.channels_last); head.to(memory_format=torch.channels_last)
+        count = len(bank)
         dataset = Samples(cfg,'test' if test else 'validation',data,metrics=True)
-        loader = DataLoader(dataset,batch_size=cfg.training.batch_size,num_workers=cfg.data.workers,
+        loader = DataLoader(dataset,batch_size=cfg.training.evaluation_batch_size or cfg.training.batch_size,num_workers=cfg.data.workers,
                             shuffle=False,collate_fn=collate)
         metrics = Metrics(len(dataset),count,cfg.data.cache,calibrate=not test,thresholds=thresholds)
         try:
             values = run_epoch(backbone,head,loader,cfg,metrics=metrics)
         finally:
             metrics.close()
-        if not test and (not values['concept']['positives'] or not values['spatial_pairs']):
+        if not test and (not values['concept']['positives'] or
+                         (not values['spatial_pairs'] and getattr(head,'map_kind','native')!='unavailable')):
             raise ValueError('Calibration requires validation concept positives and visible region targets')
         chosen = dict(concept=values['concept']['threshold'],spatial=values['localization']['threshold'])
         result = dict(identity=identity,cohort='test' if test else 'validation',
-            checkpoint_epoch=selected['epoch'],metrics=values,thresholds=chosen,
+            checkpoint_epoch=best['epoch'],metrics=values,thresholds=chosen,
             supervision=('human part-presence and region annotations; supervised ablation'
                          if cfg.data.supervision=='human' else 'GDINO pseudo-labels and boxes, not independent human annotations'))
         result['metrics']['spatial_ap_definition'] = ('mean pixel AP over annotated image-concept pairs; input-resolution human regions'
             if cfg.data.supervision=='human' else values['spatial_ap_definition'])
+        result['map_kind'] = getattr(head,'map_kind','native')
         save_json(output_path,result)
         return result

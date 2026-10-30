@@ -3,6 +3,8 @@
 `spatial_cbm/training/config.py` defines one strict YAML schema. `manifest.py` contains
 native-layout adapters; `data.py` creates identity-keyed SQLite annotations and
 one reusable split. `model.py` reuses the shared multiscale concept layer.
+`baselines.py` supplies LF/VLG/SALF heads and objectives; `teacher.py` prepares
+factorized, identity-checked CLIP targets. See [baseline fidelity](baselines.md).
 `engine.py` owns the only release epoch loop, precision policy, validation-loss
 selection, checkpointing, and early stopping. `export.py` creates selected-head
 features and training-only normalization. `classifier.py` runs shared GLM-SAGA
@@ -15,7 +17,8 @@ not a second training pipeline.
 
 There is no dataset-name dispatch in the training engine, model, or objective.
 ImageNet's useful archive reading is a generic optional image backend, not
-another model or trainer. All datasets use the vectorized spatial losses.
+another model or trainer. All SG-CBM datasets use the vectorized spatial losses;
+baseline objectives likewise do not dispatch on dataset names.
 Legacy executable paths and their unused dependencies have been removed from
 the release tree; see [migration notes](migration.md) for archived source.
 
@@ -42,7 +45,8 @@ ResNet-50, and ResNet-101.
    parity, cached targets, archive reads, native adapters, split/identity checks,
    resume determinism, feature export, cached SAGA, and exact NEC truncation.
 2. Repeat these tests in the pinned NRP training container. Completed for this
-   candidate; see [validation record](release-validation.md).
+   earlier SG-CBM candidate; see [validation record](release-validation.md).
+   The new baseline integration still needs container/GPU validation.
 3. Before large jobs, run real-data GPU/mixed-precision smoke tests, compare
    targets/model outputs against pinned historical inputs, and benchmark I/O.
 4. Before backbone retraining, verify the ported strong augmentation and EMA
@@ -52,7 +56,8 @@ ResNet-50, and ResNet-101.
    uses the configured label smoothing, without mixup or CutMix.
 5. Check the CUB-70 mapping against the actual checkpoint vocabulary and audit
    mask coverage before reporting benchmark results. Other independent
-   evaluations and baseline adapters remain outside this release.
+   evaluations remain outside this release. Baseline training is now shared,
+   with explicit upstream/reconstruction differences documented separately.
 
 All datasets now require a saved, test-disjoint internal partition before
 training. The VLG permutation/truncated-count rule replaces the initial
@@ -64,3 +69,28 @@ selected thresholds are recorded. See the README for precise AP definitions.
 Synthetic test success is not a claim of reproduced paper accuracy or measured
 GPU throughput. Existing results stay attributed to their original code and
 configuration until the release parity checks are complete.
+
+## Recovery and Aggregation
+
+Epoch checkpoint publication first atomically saves `epoch.pending.pt`, containing
+the resumable state and any newly selected best checkpoint. Under the run writer
+lock, resume replays this journal into `best.pt`, `last.pt`, and `history.json`
+before continuing or marking completion. An interruption before the journal is
+published leaves the previous epoch authoritative. Stale history is rebuilt from
+`last.pt`; legacy best/last disagreements without a journal still fail closed.
+Source-provenance checks remain strict: these fixes do not silently migrate runs
+created with older code.
+
+SG-CBM epoch loss aggregates concept BCE over image-concept elements and spatial
+KL/BCE over images with valid region slots, then combines those cohort means with
+the configured coefficients. Empty valid targets retain their existing denominator
+slots; images with no valid slots do not enter the spatial denominator. Component
+means and denominators are recorded. Minibatch optimization is unchanged; validation
+selection no longer depends on the partitioning of annotation-sparse images.
+
+Frozen regression feature caches use a blocking, identity-specific file lock.
+Builders write a private sibling directory and atomically rename it into place
+only after writing the completion manifest and content hashes. Waiting consumers
+recheck and verify that published cache. A killed builder releases the lock; its
+unpublished staging directory cannot be mistaken for a usable cache. Nonempty
+partial caches from the older implementation require a fresh cache directory.

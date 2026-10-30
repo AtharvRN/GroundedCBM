@@ -1,6 +1,6 @@
 # Legacy Code And Release Scope
 
-The release tree contains one SG-CBM training pipeline, shared by CUB, ImageNet,
+The release tree contains one training pipeline for SG/LF/VLG/SALF-CBM, shared by CUB, ImageNet,
 Places365, and PartImageNet++. The initial release candidate left old executable
 paths alongside it; those paths have now been removed rather than renamed.
 
@@ -18,7 +18,8 @@ modified by this cleanup.
 | `gcbm/imagenet_final_layers.py`, `gcbm/imagenet_glm_path.py`, `scripts/train_sparse_nec.py` | Shared `export` and `python -m spatial_cbm.training.classifier` |
 | Held-out NEC classification | `python -m spatial_cbm.training classify` with identity-checked saved heads |
 | CUB-70 human-mask evaluation | `python -m cub70`, for release CUB checkpoints only |
-| Other legacy evaluations and baseline trainers | Deferred, not silently redirected or supported by this release |
+| Legacy LF/VLG/SALF trainers | Shared `train` command with `model.method`; see [upstream audit and differences](baselines.md) |
+| Other legacy evaluations | Deferred, not silently redirected or supported by this release |
 
 Dataset-specific vocabulary files and YAML configuration are intentional.
 Native CUB/Places365 layouts still need small manifest adapters; they do not
@@ -33,7 +34,8 @@ The Python package is now `spatial_cbm`, not `gcbm`; update imports and commands
 accordingly. The old namespace is not kept as a duplicate compatibility layer.
 Losses are in `spatial_cbm/losses.py`, target caching/batching in `targets.py`,
 and validation-loss selection in `training/engine.py`. The memory-mapped feature
-dataset lives alongside classifier caching. Numerical algorithms are unchanged.
+dataset lives alongside classifier caching. The namespace rename itself preserved
+the numerical algorithms; subsequent baseline corrections are documented separately.
 
 Source hashes intentionally prevent resuming an old run across this refactor.
 Use its original pinned commit to resume it; this rename does not migrate or
