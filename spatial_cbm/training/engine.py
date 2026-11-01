@@ -82,7 +82,12 @@ def objective_terms(output, batch, cfg):
     bce = weighted_concept_bce(output['final_logits'].float(), labels, cfg.positive_weight)
     kl, patch, images = spatial_loss_terms(output['spatial_maps'].float(), ids, masks, valid)
     sums = torch.stack((bce*labels.numel(), kl, patch))
-    counts = torch.stack((images.new_tensor(labels.numel()), images, images)).to(sums)
+    denominator = labels.new_tensor(labels.numel())
+    if cfg.concept_bce_reduction == 'weight_sum':
+        if not bool(((labels == 0) | (labels == 1)).all()):
+            raise ValueError('Legacy weight-sum BCE requires binary labels')
+        denominator = (1 + (cfg.positive_weight-1)*labels).sum()
+    counts = torch.stack((denominator, images, images)).to(sums)
     return sums, counts
 
 
@@ -110,7 +115,9 @@ def loaders(cfg, protocol, epoch=0, teacher_manifest=None, cached_features=None)
     return tuple(DataLoader(Samples(cfg, split, protocol, concepts=concept,metrics=concept and split=='validation',
         augment=concept and split=='train' and cfg.model.method=='vlg_cbm'),
         shuffle=split=='train', generator=generator if split=='train' else
-        torch.Generator().manual_seed(cfg.training.seed), **kwargs) for split in ('train','validation'))
+        torch.Generator().manual_seed(cfg.training.seed), **dict(kwargs, batch_size=(
+            cfg.training.evaluation_batch_size or cfg.training.batch_size) if split=='validation'
+            else cfg.training.batch_size)) for split in ('train','validation'))
 
 
 def seed_all(seed):
@@ -222,6 +229,8 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
         result['loss_components'] = dict(zip(('concept_bce','spatial_kl','spatial_bce'),averages.tolist()))
         result['loss_denominators'] = dict(zip(('concept_bce','spatial_kl','spatial_bce'),loss_counts.tolist()))
         result['loss_definition'] = 'cohort concept-element mean BCE plus eligible-image mean spatial KL/BCE'
+        if t.concept_bce_reduction == 'weight_sum':
+            result['loss_definition'] = 'cohort weight-sum normalized BCE plus eligible-image mean spatial KL/BCE'
     if regression_meter is not None:
         try: result['loss'] = -float(regression_meter.similarities().mean())
         finally:

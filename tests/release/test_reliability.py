@@ -88,12 +88,14 @@ class IdentityHead(nn.Module):
 
 
 @pytest.mark.parametrize('positive_weight', [1., 100.])
+@pytest.mark.parametrize('reduction', ['mean', 'weight_sum'])
 @pytest.mark.parametrize('empty', [False, 'no_slots', 'no_valid'])
-def test_validation_loss_is_independent_of_batch_partition(positive_weight, empty):
+def test_validation_loss_is_independent_of_batch_partition(positive_weight, reduction, empty):
     cfg = Config()
     cfg.training.device = 'cpu'
     cfg.training.channels_last = False
     cfg.training.positive_weight = positive_weight
+    cfg.training.concept_bce_reduction = reduction
     torch.manual_seed(6)
     images = torch.randn(5, 2, 3, 3)
     labels = torch.randint(0, 2, (5, 2)).float()
@@ -113,7 +115,8 @@ def test_validation_loss_is_independent_of_batch_partition(positive_weight, empt
         cfg.training.batch_size = size
         result = engine.run_epoch(nn.Identity(), head, DataLoader(dataset, batch_size=size), cfg)
         assert result['loss'] == pytest.approx(expected, rel=1e-6, abs=1e-7)
-        assert result['loss_denominators']['concept_bce'] == 10
+        expected_count = 10 if reduction == 'mean' else float((1+(positive_weight-1)*labels).sum())
+        assert result['loss_denominators']['concept_bce'] == expected_count
         assert result['loss_denominators']['spatial_bce'] == (0 if empty else 3)
 
 

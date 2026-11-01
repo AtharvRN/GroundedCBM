@@ -53,6 +53,7 @@ class Training:
     kl: float = .25
     spatial_bce: float = .25
     positive_weight: float = 1.
+    concept_bce_reduction: str = 'mean'
     label_smoothing: float = .1
     schedule: str = 'constant'
     warmup_epochs: int = 0
@@ -106,6 +107,10 @@ class Config:
             raise ValueError('Frozen regression feature caching requires LF/SALF concept training in FP32')
         if m.method not in {'sg_cbm','vlg_cbm','lf_cbm','salf_cbm'}:
             raise ValueError('Unknown concept bottleneck method')
+        if t.concept_bce_reduction not in {'mean', 'weight_sum'}:
+            raise ValueError('Unknown concept BCE reduction')
+        if t.concept_bce_reduction != 'mean' and (m.method != 'sg_cbm' or t.stage != 'concept'):
+            raise ValueError('Weight-sum BCE is an explicit SG-CBM concept-training ablation')
         if type(m.salf_grid) is not int or m.salf_grid < 1 or type(m.vlg_hidden) is not int or m.vlg_hidden < 0:
             raise ValueError('Invalid baseline head dimensions')
         if m.method != 'sg_cbm' and (m.fusion != 'residual' or m.learn_alpha or m.spatial_pooling != 'lse'):

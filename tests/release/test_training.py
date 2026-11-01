@@ -9,7 +9,7 @@ from torchvision.models import resnet18
 
 from spatial_cbm.training.config import Config, Data, Model, Training, load
 from spatial_cbm.training.data import prepare, verify, Samples, occupancy
-from spatial_cbm.training.engine import fit, objective
+from spatial_cbm.training.engine import fit, objective, loaders
 from spatial_cbm.training.export import export
 from spatial_cbm.training.model import Backbone, ConceptHead
 from spatial_cbm.training.engine import minimum_loss, stop_for_loss
@@ -196,6 +196,35 @@ def test_concept_bce_matches_pytorch_values_gradients_and_batch_aggregation(weig
     torch.testing.assert_close(actual,partitioned)
     if weight==1.:
         torch.testing.assert_close(actual,F.binary_cross_entropy_with_logits(logits,targets))
+
+
+def test_legacy_weight_sum_bce_matches_values_and_gradients():
+    logits=torch.tensor([[2.,-1.],[.2,3.],[-2.,1.]],requires_grad=True)
+    labels=torch.tensor([[1.,1.],[0.,0.],[1.,0.]])
+    maps=torch.zeros(3,2,2,2,requires_grad=True)
+    batch=[None,labels,torch.empty(3,0,dtype=torch.long),torch.empty(3,0,2,2),
+           torch.empty(3,0,dtype=torch.bool)]
+    cfg=Training(positive_weight=100.,concept_bce_reduction='weight_sum',kl=0.,spatial_bce=0.)
+    actual=objective(dict(final_logits=logits,spatial_maps=maps),batch,cfg)
+    weights=torch.where(labels>.5,100.,1.)
+    expected=(F.binary_cross_entropy_with_logits(logits,labels,reduction='none')*weights).sum()/weights.sum()
+    torch.testing.assert_close(actual,expected)
+    a=torch.autograd.grad(actual,logits,retain_graph=True)[0]
+    b=torch.autograd.grad(expected,logits)[0]
+    torch.testing.assert_close(a,b)
+    batch[1]=torch.full_like(labels,.5)
+    with pytest.raises(ValueError,match='binary labels'):
+        objective(dict(final_logits=logits,spatial_maps=maps),batch,cfg)
+
+
+def test_sg_validation_batch_can_be_smaller(tmp_path):
+    prepared, _ = inputs(tmp_path)
+    cfg=config(tmp_path,prepared)
+    cfg.training.batch_size=4
+    cfg.training.evaluation_batch_size=1
+    train,val=loaders(cfg,verify(prepared))
+    assert train.batch_size==4
+    assert val.batch_size==1
 
 
 def test_targets_cache_crop_and_confidence(tmp_path,monkeypatch):
