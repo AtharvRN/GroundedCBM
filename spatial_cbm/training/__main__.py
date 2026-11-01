@@ -30,7 +30,7 @@ def main():
     for name in ['check','train','export','calibrate','evaluate','classify','teacher']:
         command = commands.add_parser(name)
         command.add_argument('--config', required=True)
-        if name == 'train':
+        if name in ('train','teacher'):
             command.add_argument('--resume', action='store_true')
         if name == 'classify':
             command.add_argument('--classifier-dir',required=True)
@@ -68,7 +68,7 @@ def main():
                     result['teacher'] = verify_teacher(cfg,prepared)
         elif args.command == 'teacher':
             from .teacher import prepare_teacher
-            result = prepare_teacher(cfg)
+            result = prepare_teacher(cfg,resume=args.resume)
         elif args.command == 'train':
             from .engine import fit
             result = fit(cfg,args.resume)

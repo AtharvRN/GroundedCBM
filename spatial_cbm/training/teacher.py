@@ -6,6 +6,7 @@ training implementation. Verification hashes source image bytes as well as all
 cache artifacts; it is deliberately strict and can be I/O intensive.
 """
 import hashlib
+import fcntl
 import importlib
 import io
 import json
@@ -26,6 +27,7 @@ from . import data
 _ARTIFACTS = ('text.npy', 'images.npy', 'positions.npy', 'roster.jsonl')
 _MEAN = (.48145466, .4578275, .40821073)
 _STD = (.26862954, .26130258, .27577711)
+_CHECKPOINT_ROWS = 4096
 
 
 def _settings_identity(cfg, protocol):
@@ -250,15 +252,108 @@ def verify_teacher(cfg, protocol=None):
     """Verify an existing cache without importing CLIP or generating any targets."""
     marker = Path(cfg.teacher.cache) / 'complete.json'
     if not marker.is_file():
-        raise ValueError('Teacher cache missing or partial; prepare in a new/empty directory')
+        raise ValueError('Teacher cache missing or partial; prepare or explicitly resume before use')
     identity, bank = _identity(cfg, protocol)
     manifest = json.loads(marker.read_text())
     _verify_cache(cfg, identity, bank, manifest)
     return _VerifiedManifest(manifest, cfg)
 
 
-def prepare_teacher(cfg):
-    """Encode the exact prepared pool. Failed/partial caches must be rebuilt.
+def _range_digest(path, start, end):
+    result = hashlib.sha256()
+    with path.open('rb') as stream:
+        stream.seek(start)
+        remaining = end-start
+        while remaining:
+            block = stream.read(min(8 << 20, remaining))
+            if not block:
+                raise ValueError('Truncated teacher checkpoint segment')
+            result.update(block)
+            remaining -= len(block)
+    return result.hexdigest()
+
+
+def _checkpoint(cache, identity, arrays, roster, rows, segments):
+    """Commit only complete images at encoder-batch boundaries; hash new bytes."""
+    for array in arrays:
+        array.flush()
+    roster.flush()
+    for name in _ARTIFACTS:
+        with (cache/name).open('rb') as stream:
+            os.fsync(stream.fileno())
+    text, images, positions = arrays
+    ends = dict(zip(('images.npy','positions.npy','roster.jsonl'),
+        (images.offset+rows*images[0].nbytes, positions.offset+rows*positions.dtype.itemsize,
+         roster.tell())))
+    previous = segments[-1]['files'] if segments else {}
+    files = {}
+    for name, end in ends.items():
+        start = previous[name]['end'] if previous else 0
+        files[name] = dict(start=start, end=end, sha256=_range_digest(cache/name,start,end))
+    segment = dict(rows=rows, files=files)
+    state = dict(version=1, identity=identity, embedding_dim=text.shape[1], rows_written=rows,
+                 text_sha256=data.digest(cache/'text.npy'), segments=[*segments,segment])
+    data.save_json(cache/'progress.json', state)
+    segments.append(segment)
+    print(json.dumps(dict(stage='teacher', rows_written=rows, total=images.shape[0],
+                          prompted_views=rows*images.shape[1])), flush=True)
+
+
+def _restore(cache, identity, bank):
+    marker = cache/'progress.json'
+    if not marker.is_file():
+        raise ValueError('No resumable teacher checkpoint; use a new/empty cache')
+    state = json.loads(marker.read_text())
+    if state.get('version') != 1 or state.get('identity') != identity:
+        raise ValueError('Teacher resume identity/settings mismatch')
+    n, g = identity['protocol']['images'], identity['geometry']['grid']
+    d, rows = state.get('embedding_dim'), state.get('rows_written')
+    if type(d) is not int or d < 1 or type(rows) is not int or not 0 <= rows <= n:
+        raise ValueError('Invalid teacher resume dimensions/coverage')
+    if data.digest(cache/'text.npy') != state['text_sha256']:
+        raise ValueError('Teacher resume text cache changed')
+    text = _check_array(cache/'text.npy', (len(bank), d), 'float32', True)
+    images = _check_array(cache/'images.npy', (n, g*g, d), 'float32')
+    positions = _check_array(cache/'positions.npy', (n,), 'int64')
+    ends, last = {name:0 for name in ('images.npy','positions.npy','roster.jsonl')}, -1
+    segments = state.get('segments', [])
+    if not segments:
+        raise ValueError('Missing teacher resume segments')
+    for segment in segments:
+        count = segment['rows']
+        if type(count) is not int or not last < count <= rows or set(segment['files']) != set(ends):
+            raise ValueError('Invalid teacher resume segment coverage')
+        expected = {'images.npy':images.offset+count*images[0].nbytes,
+                    'positions.npy':positions.offset+count*positions.dtype.itemsize}
+        for name, record in segment['files'].items():
+            start, end = record['start'], record['end']
+            if (type(start) is not int or type(end) is not int or start != ends[name] or end < start
+                    or (name in expected and end != expected[name])):
+                raise ValueError('Invalid teacher resume byte range')
+            if _range_digest(cache/name,start,end) != record['sha256']:
+                raise ValueError('Teacher resume committed cache changed: '+name)
+            ends[name] = end
+        last = count
+    if last != rows:
+        raise ValueError('Teacher resume row count mismatch')
+    # Uncommitted tail writes are discarded; the validated prefix is immutable.
+    with (cache/'roster.jsonl').open('r+b') as stream:
+        stream.truncate(ends['roster.jsonl'])
+    return state, [np.load(cache/name,mmap_mode='r+',allow_pickle=False)
+                   for name in ('text.npy','images.npy','positions.npy')]
+
+
+def prepare_teacher(cfg, resume=False):
+    """Prepare or explicitly resume a teacher under an exclusive writer lock."""
+    cache = Path(cfg.teacher.cache).resolve()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    with cache.with_name(cache.name+'.writer.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return _prepare_teacher(cfg, resume)
+
+
+def _prepare_teacher(cfg, resume=False):
+    """Encode the exact prepared pool, optionally recovering a committed prefix.
 
     The supplied checkpoint is hashed, never downloaded or selected by model
     name. Install official OpenAI CLIP separately; tests can monkeypatch its
@@ -269,9 +364,10 @@ def prepare_teacher(cfg):
     cache = Path(cfg.teacher.cache)
     if (cache / 'complete.json').exists():
         return verify_teacher(cfg)
-    if cache.exists() and any(cache.iterdir()):
-        raise ValueError('Teacher cache is partial; use a new/empty directory')
+    if not resume and cache.exists() and any(cache.iterdir()):
+        raise ValueError('Teacher cache is partial; use --resume or a new/empty directory')
     identity, bank = _identity(cfg)
+    restored = _restore(cache,identity,bank) if resume else None
     try:
         clip = importlib.import_module('clip')
     except ImportError as exc:
@@ -284,12 +380,13 @@ def prepare_teacher(cfg):
         raise ValueError('Corrected SALF requires a CLIP checkpoint with input_resolution=224')
     cache.mkdir(parents=True, exist_ok=True)
     # Exclusive creation prevents competing preparations from sharing output files.
-    with (cache / 'preparing').open('x') as lock:
-        lock.write('Incomplete until complete.json is atomically installed.\n')
+    if not resume:
+        with (cache / 'preparing').open('x') as lock:
+            lock.write('Incomplete until complete.json is atomically installed.\n')
     batch_size, device = cfg.teacher.batch_size, cfg.training.device
     n, dimension = identity['protocol']['images'], None
     with _fp32_encoding(device):
-        for start in range(0, len(bank), batch_size):
+        for start in range(0, len(bank) if not resume else 0, batch_size):
             words = bank[start:start+batch_size]
             embeddings = _normalized(model.encode_text(clip.tokenize(words).to(device)), len(words))
             if dimension is None:
@@ -299,10 +396,17 @@ def prepare_teacher(cfg):
             if embeddings.shape[1] != dimension:
                 raise ValueError('CLIP text dimension changed')
             text[start:start+len(words)] = embeddings
-        images = np.lib.format.open_memmap(cache / 'images.npy', mode='w+', dtype='float32',
-                                           shape=(n, grid*grid, dimension))
-        positions = np.lib.format.open_memmap(cache / 'positions.npy', mode='w+', dtype='int64', shape=(n,))
-        flat, pending, written, rows_written = images.reshape(-1, dimension), [], 0, 0
+        if restored is None:
+            images = np.lib.format.open_memmap(cache / 'images.npy', mode='w+', dtype='float32',
+                                               shape=(n, grid*grid, dimension))
+            positions = np.lib.format.open_memmap(cache / 'positions.npy', mode='w+', dtype='int64', shape=(n,))
+            rows_written, segments = 0, []
+        else:
+            state, (text,images,positions) = restored
+            dimension, rows_written = state['embedding_dim'], state['rows_written']
+            segments = state['segments']
+        first = rows_written
+        flat, pending, written = images.reshape(-1, dimension), [], rows_written*grid*grid
         normalize = transforms.Compose([transforms.ToTensor(), transforms.Normalize(_MEAN, _STD)])
 
         def flush():
@@ -316,11 +420,17 @@ def prepare_teacher(cfg):
             written += len(pending)
             pending.clear()
 
-        with (cache / 'roster.jsonl').open('w') as roster:
+        with (cache / 'roster.jsonl').open('r+' if resume else 'w', encoding='utf-8') as roster:
+            if not resume:
+                _checkpoint(cache,identity,(text,images,positions),roster,0,segments)
             for index, row in enumerate(_rows(Path(cfg.data.prepared), identity['protocol'])):
                 if index >= n:
                     raise ValueError('Teacher cohort exceeds prepared count')
                 payload = _image_bytes(row['image'])
+                if index < first:
+                    if positions[index] != row['position'] or roster.readline() != _record(row,payload):
+                        raise ValueError('Teacher resume source image/cohort roster changed')
+                    continue
                 with Image.open(io.BytesIO(payload)) as original:
                     rgb = original.convert('RGB')
                 views = ([preprocess(rgb)] if cfg.model.method == 'lf_cbm' else
@@ -333,7 +443,11 @@ def prepare_teacher(cfg):
                 positions[index] = row['position']
                 roster.write(_record(row, payload))
                 rows_written += 1
+                if not pending and rows_written-segments[-1]['rows'] >= _CHECKPOINT_ROWS:
+                    _checkpoint(cache,identity,(text,images,positions),roster,rows_written,segments)
             flush()
+            if rows_written > segments[-1]['rows']:
+                _checkpoint(cache,identity,(text,images,positions),roster,rows_written,segments)
         if rows_written != n or written != n * grid * grid:
             raise ValueError('Teacher cache has incomplete written coverage')
         for array in (text, images, positions):

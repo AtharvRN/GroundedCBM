@@ -565,3 +565,143 @@ def test_cache_without_compute_precision_provenance_is_rejected(setup):
     data.save_json(teacher.Path(cfg.teacher.cache) / 'complete.json', manifest)
     with pytest.raises(ValueError, match='identity/settings mismatch'):
         teacher.verify_teacher(cfg)
+
+
+@pytest.mark.parametrize('method', ['lf_cbm','salf_cbm'])
+def test_interrupted_teacher_resume_matches_uninterrupted(setup, monkeypatch, method):
+    cfg, protocol, calls, encoder, _ = setup
+    cfg.model.method = method
+    cfg.teacher.batch_size = 2
+    monkeypatch.setattr(teacher, '_CHECKPOINT_ROWS', 1)
+    reference = teacher.prepare_teacher(cfg)
+    original = teacher.Path(cfg.teacher.cache)
+    expected = {name:(original/name).read_bytes() for name in teacher._ARTIFACTS}
+    cfg.teacher.cache += '-resume'
+    encode = encoder.encode_image
+    limit = (49 if method=='salf_cbm' else 1)
+    seen = 0
+
+    def interrupted(pixels):
+        nonlocal seen
+        if seen >= 2*limit:
+            raise RuntimeError('simulated preemption')
+        seen += len(pixels)
+        return encode(pixels)
+
+    monkeypatch.setattr(encoder, 'encode_image', interrupted)
+    with pytest.raises(RuntimeError, match='preemption'):
+        teacher.prepare_teacher(cfg)
+    cache = teacher.Path(cfg.teacher.cache)
+    assert json.loads((cache/'progress.json').read_text())['rows_written'] == 2
+    with pytest.raises(ValueError, match='partial'):
+        teacher.prepare_teacher(cfg)
+    # Simulate writes after the last commit; only that uncommitted tail is replaced.
+    values = np.load(cache/'images.npy', mmap_mode='r+')
+    values[2] = 123
+    values.flush()
+    with (cache/'roster.jsonl').open('a') as stream:
+        stream.write('uncommitted partial row\n')
+    monkeypatch.setattr(encoder, 'encode_image', encode)
+    calls.images.clear()
+    actual = teacher.prepare_teacher(cfg, resume=True)
+    assert sum(len(x) for x in calls.images) == limit
+    assert actual['files'] == reference['files']
+    for name in teacher._ARTIFACTS:
+        assert (cache/name).read_bytes() == expected[name]
+    assert teacher.verify_teacher(cfg, protocol)['rows_written'] == 3
+
+
+@pytest.mark.parametrize('change', ['image','checkpoint','settings','committed','roster','state'])
+def test_teacher_resume_rejects_changed_prefix_or_identity(setup, monkeypatch, change):
+    cfg, _, _, encoder, rows = setup
+    cfg.teacher.batch_size = 1
+    monkeypatch.setattr(teacher, '_CHECKPOINT_ROWS', 1)
+    encode = encoder.encode_image
+    seen = 0
+    def interrupted(pixels):
+        nonlocal seen
+        seen += 1
+        if seen > 1: raise RuntimeError('interrupt')
+        return encode(pixels)
+    monkeypatch.setattr(encoder, 'encode_image', interrupted)
+    with pytest.raises(RuntimeError, match='interrupt'): teacher.prepare_teacher(cfg)
+    cache = teacher.Path(cfg.teacher.cache)
+    if change == 'image':
+        Image.new('RGB',(83,311)).save(rows[0]['image'])
+    elif change == 'checkpoint':
+        teacher.Path(cfg.teacher.checkpoint).write_bytes(b'changed')
+    elif change == 'settings':
+        cfg.teacher.batch_size = 2
+    elif change == 'committed':
+        values = np.load(cache/'images.npy',mmap_mode='r+')
+        values[0] *= -1  # Still unit norm: the content hash must catch this.
+        values.flush()
+    elif change == 'roster':
+        with (cache/'roster.jsonl').open('r+b') as stream: stream.write(b'x')
+    else:
+        state = json.loads((cache/'progress.json').read_text())
+        state['rows_written'] += 1
+        data.save_json(cache/'progress.json',state)
+    monkeypatch.setattr(encoder, 'encode_image', lambda _: pytest.fail('Must reject before new encoding'))
+    with pytest.raises(ValueError): teacher.prepare_teacher(cfg,resume=True)
+    assert not (cache/'complete.json').exists()
+
+
+def test_teacher_resume_requires_checkpoint_and_exclusive_writer(setup):
+    import fcntl
+    cfg, _, _, _, _ = setup
+    with pytest.raises(ValueError, match='No resumable'):
+        teacher.prepare_teacher(cfg,resume=True)
+    cache = teacher.Path(cfg.teacher.cache)
+    with cache.with_name(cache.name+'.writer.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError): teacher.prepare_teacher(cfg)
+
+
+def test_resume_after_final_checkpoint_before_completion_publication(setup, monkeypatch):
+    cfg, _, _, encoder, _ = setup
+    save = data.save_json
+    def interrupted(path, value):
+        if path.name == 'complete.json': raise RuntimeError('final publication interrupted')
+        save(path,value)
+    monkeypatch.setattr(data,'save_json',interrupted)
+    with pytest.raises(RuntimeError,match='publication'): teacher.prepare_teacher(cfg)
+    monkeypatch.setattr(data,'save_json',save)
+    monkeypatch.setattr(encoder,'encode_image',lambda _:pytest.fail('No re-encoding after final checkpoint'))
+    assert teacher.prepare_teacher(cfg,resume=True)['rows_written'] == 3
+
+
+def test_teacher_cli_forwards_explicit_resume(monkeypatch):
+    import sys
+    from spatial_cbm.training import __main__ as cli
+    cfg, calls = object(), []
+    monkeypatch.setattr(cli,'load',lambda _:cfg)
+    monkeypatch.setattr(teacher,'prepare_teacher',lambda config,resume=False:
+                        calls.append((config,resume)) or dict(complete=True))
+    monkeypatch.setattr(sys,'argv',['training','teacher','--config','imagenet.yaml','--resume'])
+    cli.main()
+    assert calls == [(cfg,True)]
+
+
+def test_imagenet_salf_archive_cache_excludes_test(setup, tmp_path):
+    cfg, _, _, _, rows = setup
+    archive, payload = tmp_path/'imagenet.tar', b'header'
+    for row in rows:
+        image = teacher.Path(row['image']).read_bytes()
+        row['image'] = dict(archive=str(archive),offset=len(payload),size=len(image))
+        payload += image
+    archive.write_bytes(payload)
+    source = tmp_path/'imagenet.jsonl'
+    source.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+    root = tmp_path/'imagenet-prepared'
+    protocol = data.prepare(source,root,'imagenet',tmp_path/'concepts.txt',
+                            split=tmp_path/'split.json',heldout_source=tmp_path/'heldout.jsonl')
+    cfg.data.prepared = str(root)
+    cfg.model.method = 'salf_cbm'
+    cfg.teacher.prompt_grid = 'edge'
+    manifest = teacher.prepare_teacher(cfg)
+    assert manifest['identity']['protocol']['dataset'] == 'imagenet'
+    assert manifest['rows_written'] == 3
+    targets = teacher.TeacherTargets(cfg,protocol)
+    assert targets.get(0).shape == (2,7,7)
+    assert teacher.verify_teacher(cfg)['identity']['geometry']['centers'] == [0,37,74,111,148,185,222]

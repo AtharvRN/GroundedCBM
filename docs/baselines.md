@@ -78,7 +78,7 @@ The `imagenet_*` recipes reuse the saved SpG-CBM cohort: 1,153,050 fitting
 images, 10,000 internal-validation images, and 4,306 ordered concepts. The
 50,000-image evaluation split is separate. This is the existing reduced
 training cohort, not the complete 1,281,167-image official training pool.
-Additional vocabulary filters are disabled for both methods.
+Additional vocabulary filters are disabled for the controlled baseline recipes.
 
 VLG uses its released ImageNet `args.txt` optimizer settings: batch 64,
 SGD with momentum 0.9, LR 0.01, weight decay 1e-5, positive weight 8000,
@@ -103,6 +103,52 @@ ImageNet baseline execution is not yet validated: launch-time tests and
 real-image/GPU-memory probes must pass before full optimization. The saved
 prepared input has no held-out GDINO annotations; training/calibration and
 feature export do not constitute held-out concept/localization evaluation.
+
+### ImageNet SALF Support (2026-11-01)
+
+`configs/release/baselines/imagenet_salf_cbm.yaml` adds the missing ImageNet
+recipe to the existing shared SALF head, teacher, trainer and evaluations.
+Reuse the exact saved cohort and 4,306 ordered concepts above, frozen
+torchvision ResNet-50 V1, and explicit local CLIP ViT-B/16 weights. The
+reconstruction follows the current fixed-vocabulary CUB SALF run: bias-free
+1x1 head, 7x7 edge-origin prompt lattice, radius 32, literal text, centered-cubic
+cosine loss, SGD with momentum 0.9, LR 0.001, weight decay 1e-5, batch 128,
+FP32, cap 75, minimum 10 and patience 8. It selects minimum internal-validation
+loss. These optimizer/budget choices are a controlled reconstruction, not
+recovered author ImageNet hyperparameters. Teacher batches are 128 prompted
+views; validation/export/test batches are 16 images to bound inference memory.
+
+Teacher preparation now supports explicit `teacher --resume` for both LF and
+SALF. A per-cache advisory writer lock excludes concurrent builders. A progress
+journal commits full images only when no encoder batch is pending, normally
+every 4,096 images, plus the final tail. Commit flushes and syncs array/roster
+writes and hashes only newly committed byte ranges. Resume checks exact
+settings, checkpoint/vocabulary/split identity, array shapes, committed cache
+hashes, and the committed source-image roster before encoding new rows. It
+discards only uncommitted tail writes and preserves the original encoder
+batch boundaries. A completed cache still undergoes the existing full audit;
+there is no weaker verification mode or automatic adoption of legacy partial
+caches. Process-interruption recovery is tested, not a guarantee against
+arbitrary storage loss or corruption.
+
+For 1,163,050 train-plus-validation images, a 7x7 grid and 512-dimensional
+FP32 CLIP embeddings require 56,989,450 prompted views and approximately
+108.7 GiB for `images.npy`, plus text, positions and roster. Targets remain
+factorized: do not materialize the roughly 914 GiB image/concept/grid tensor.
+The recipe disables optional frozen spatial student caching, which would add
+about 434.8 GiB. Full-cohort validation predictions/targets occupy about
+15.7 GiB of temporary disk; the existing meter processes bounded concept chunks.
+These are storage estimates, not measured runtime or GPU-memory guarantees.
+
+Tests cover archive-backed ImageNet SALF teacher preparation excluding held-out
+images, the 4,306-concept ResNet-50 head and gradients, exact resumed/uninterrupted
+cache parity, mutation rejection, concurrent-writer exclusion, final-publication
+recovery, and CLI forwarding. Resume byte-parity tests use a deterministic mock
+CLIP encoder; they do not promise bitwise parity across GPU types or library
+versions. Existing synthetic end-to-end baseline tests cover
+training/resume, calibration, export and NEC classification. No full ImageNet
+SALF training, real CLIP throughput benchmark or paper-accuracy reproduction
+is implied by these tests.
 
 Release students are torchvision-compatible ResNet-18/50/101 with explicit weights or compatible checkpoints; frozen during concept fitting. Upstream CLIP student backbones, ViTs, pytorchcv CUB checkpoints, and Hugging Face SALF checkpoints are not automatically supported or equivalent. CLIP as a teacher does not imply CLIP student support.
 

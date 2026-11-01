@@ -1,0 +1,40 @@
+# Fixed-vocabulary reconstruction, not the released 4741-concept checkpoint.
+# Reuse the exact SpG/LF/VLG prepared cohort and its ordered 4306 concepts.
+dataset: imagenet
+data:
+  prepared: /scratch/prepared
+  cache: /scratch/target-cache
+  workers: 4
+  input_size: 224
+  resize_size: 256
+model:
+  method: salf_cbm
+  backbone: resnet50
+  weights: none
+  checkpoint: /scratch/resnet50-0676ba61.pth
+  salf_grid: 7
+teacher:
+  cache: /workspace/imagenet_salf/teacher
+  model: ViT-B/16
+  checkpoint: /scratch/ViT-B-16.pt
+  batch_size: 128
+  prompt_radius: 32
+  prompt_grid: edge
+training:
+  output: /workspace/imagenet_salf/seed6885/run
+  seed: 6885
+  epochs: 75
+  min_epochs: 10
+  patience: 8
+  batch_size: 128
+  evaluation_batch_size: 16
+  optimizer: sgd
+  lr: 0.001
+  weight_decay: 0.00001
+  precision: fp32
+  channels_last: false
+  filter_concepts: false
+  # Full spatial backbone features would require roughly 435 GiB on this cohort.
+  cache_regression_features: false
+  kl: 0.0
+  spatial_bce: 0.0

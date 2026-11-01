@@ -94,6 +94,29 @@ upstream's every-50-step checkpoint checks; this is not identical stopping behav
 The ImageNet controlled recipes and their separate settings are documented in
 [the baseline audit](docs/baselines.md#imagenet-controlled-launch-2026-10-30).
 
+ImageNet SALF-CBM uses `configs/release/baselines/imagenet_salf_cbm.yaml` with
+the same prepared cohort and ordered vocabulary as SpG/LF/VLG. It retains the
+corrected CUB reconstruction's 7x7 edge-origin prompts, radius 32, bias-free
+head, and SGD settings. This is not the released 4,741-concept SALF checkpoint.
+After setting the local image/archive, backbone, CLIP and cache paths:
+
+```bash
+python -m spatial_cbm.training teacher --config configs/release/baselines/imagenet_salf_cbm.yaml
+# After an interrupted teacher preparation, reuse the same paths/settings:
+python -m spatial_cbm.training teacher --config configs/release/baselines/imagenet_salf_cbm.yaml --resume
+python -m spatial_cbm.training train --config configs/release/baselines/imagenet_salf_cbm.yaml
+```
+
+Teacher progress is saved in its cache's `progress.json`; only `complete.json`
+makes the cache eligible for training. Resume verifies committed embeddings,
+source image bytes and settings before encoding the remaining images. Legacy
+partial caches without a progress journal still require a new cache directory.
+At the controlled ImageNet cohort size, SALF generates about 57 million CLIP
+views and stores about 109 GiB of factorized image embeddings. This preparation
+is substantial; it can be shared by seeds using the same teacher settings.
+The recipe leaves full spatial backbone caching off (about 435 GiB additional).
+Use the existing export, NEC classifier and classification commands afterward.
+
 LF/VLG linear heads expose **post-hoc linear CAMs**, not native spatial explanations.
 A nonlinear VLG head (`model.vlg_hidden > 0`) reports localization as unavailable.
 SALF uses native spatial maps. LF's two vocabulary filters are saved with the selected

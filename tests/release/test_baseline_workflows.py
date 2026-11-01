@@ -256,3 +256,24 @@ def test_cached_full_batch_projection_and_separate_inference_batch(tmp_path,monk
     with open(paths['train'][0],'ab') as stream: stream.write(b'changed')
     with pytest.raises(ValueError,match='cache content changed'):
         baselines.prepare_regression_features(cfg,backbone,protocol)
+
+
+def test_imagenet_salf_recipe_and_full_width_head():
+    root = Path(__file__).resolve().parents[2]
+    cfg = load(root/'configs/release/baselines/imagenet_salf_cbm.yaml')
+    assert cfg.dataset == 'imagenet' and cfg.model.method == 'salf_cbm'
+    assert cfg.teacher.model == 'ViT-B/16'
+    assert cfg.teacher.prompt_grid == 'edge' and cfg.teacher.prompt_radius == 32
+    assert cfg.training.optimizer == 'sgd' and cfg.training.batch_size == 128
+    assert cfg.training.epochs == 75 and cfg.training.patience == 8
+    assert not cfg.training.filter_concepts and not cfg.training.cache_regression_features
+    head = baselines.BaselineHead(cfg.model,(512,1024,2048),4306)
+    assert head.projection.bias is None
+    features = torch.randn(3,2048,7,7)
+    output = head({'conv5':features})
+    assert output['spatial_maps'].shape == (3,4306,7,7)
+    assert output['final_logits'].shape == (3,4306)
+    target = torch.randn_like(output['spatial_maps'])
+    loss = -baselines.cubic_similarity(output['spatial_maps'],target).mean()
+    loss.backward()
+    assert torch.isfinite(loss) and torch.isfinite(head.projection.weight.grad).all()
