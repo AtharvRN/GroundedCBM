@@ -13,14 +13,13 @@ in `spatial_cbm.training`.
 ## CUB-70
 
 ```bash
-python -m evals.cub70 --config configs/release/cub.yaml \
-  --mapping cub70/mapping.json --masks-root /data/CUB-70/masks \
+python -m evals.cub70 --config configs/cub.yaml \
+  --mapping evals/cub70_assets/mapping.json --masks-root /data/CUB-70/masks \
   --output results/cub70.json
 ```
 
-The implementation was moved without changing the evaluation protocol. The old
-`python -m cub70` command still works, and mapping assets stay at their original
-paths. See [mask formats, mapping and aggregation](../cub70/README.md).
+The evaluator is `python -m evals.cub70`, with mapping assets under
+`evals/cub70_assets/`. See [mask formats, mapping and aggregation](cub70_assets/README.md).
 Selection uses the highest fused score among concepts mapped to each part,
 not oracle overlap. Thresholds come from saved CUB training-pool validation
 calibration, never the CUB-70 human test masks. Missing masks are unknown, not
@@ -32,7 +31,7 @@ part, then supported parts equally; retain coverage when reporting them.
 After feature export and NEC fitting:
 
 ```bash
-python -m evals.deletion --config configs/release/cub.yaml \
+python -m evals.deletion --config configs/cub.yaml \
   --head-dir runs/cub/nec --nec 5 --output results/deletion/cub \
   --patch-size 32 --repeats 3 --batch-size 16 --seed 0
 ```
@@ -92,11 +91,11 @@ SpG-CBM and SALF-CBM adaptations. It does not load the official authors' SALF
 checkpoint; see the external-export contract below.
 
 ```bash
-python -m evals.vlm export --config configs/release/cub.yaml \
+python -m evals.vlm export --config configs/cub.yaml \
   --head-dir runs/cub/nec --nec 5 --split validation --count 200 \
   --seed 0 --output output/vlm/cub/calibration
 
-python -m evals.vlm export --config configs/release/cub.yaml \
+python -m evals.vlm export --config configs/cub.yaml \
   --head-dir runs/cub/nec --nec 5 --split test --count 1000 \
   --seed 0 --output output/vlm/cub/test
 ```
