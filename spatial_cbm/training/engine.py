@@ -93,7 +93,12 @@ def objective_terms(output, batch, cfg):
 
 def objective(output, batch, cfg):
     sums, counts = objective_terms(output, batch, cfg)
-    return (sums/counts.clamp_min(1)*sums.new_tensor([cfg.fused_bce,cfg.kl,cfg.spatial_bce])).sum()
+    return (loss_averages(sums, counts)*sums.new_tensor([cfg.fused_bce,cfg.kl,cfg.spatial_bce])).sum()
+
+
+def loss_averages(sums, counts):
+    # Weight-sum BCE can have a positive denominator smaller than one.
+    return sums / torch.where(counts == 0, torch.ones_like(counts), counts)
 
 
 def loaders(cfg, protocol, epoch=0, teacher_manifest=None, cached_features=None):
@@ -185,7 +190,7 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
                 loss = weighted_concept_bce(output['final_logits'].float(),batch[1],t.positive_weight)
             elif spatial_objective:
                 sums, counts = objective_terms(output, batch, t)
-                loss = (sums/counts.clamp_min(1)*sums.new_tensor([t.fused_bce,t.kl,t.spatial_bce])).sum()
+                loss = (loss_averages(sums, counts)*sums.new_tensor([t.fused_bce,t.kl,t.spatial_bce])).sum()
                 loss_sums += sums.detach().double()
                 loss_counts += counts.detach().double()
             else:
@@ -216,7 +221,7 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
                     total=len(loader.dataset), loss=total/seen, seconds=time.monotonic()-began,
                     images_per_second=seen/(time.monotonic()-began))
                 if spatial_objective:
-                    progress['loss'] = float((loss_sums/loss_counts.clamp_min(1)*
+                    progress['loss'] = float((loss_averages(loss_sums, loss_counts)*
                         loss_sums.new_tensor([t.fused_bce,t.kl,t.spatial_bce])).sum())
                 save_json(progress_path, progress)
                 print(json.dumps(progress), flush=True)
@@ -224,7 +229,7 @@ def run_epoch(backbone, head, loader, cfg, optimizer=None, scaler=None, progress
         raise ValueError('Incomplete epoch')
     result = dict(loss=total/seen, images=seen, seconds=time.monotonic()-began, amp_skipped_steps=skipped)
     if spatial_objective:
-        averages = loss_sums/loss_counts.clamp_min(1)
+        averages = loss_averages(loss_sums, loss_counts)
         result['loss'] = float((averages*averages.new_tensor([t.fused_bce,t.kl,t.spatial_bce])).sum())
         result['loss_components'] = dict(zip(('concept_bce','spatial_kl','spatial_bce'),averages.tolist()))
         result['loss_denominators'] = dict(zip(('concept_bce','spatial_kl','spatial_bce'),loss_counts.tolist()))

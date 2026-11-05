@@ -11,6 +11,16 @@ import torch
 from .vlm import digest, file_digest, read, save
 
 
+def backbone_identity(model):
+    weights = None
+    if model.weights != 'none':
+        from torchvision.models import get_model_weights
+        preset = get_model_weights(model.backbone)[model.weights]
+        weights = dict(name=f'{type(preset).__name__}.{preset.name}', url=preset.url)
+    return dict(backbone=model.backbone, weights=weights,
+                backbone_sha256=file_digest(model.checkpoint) if model.checkpoint else None)
+
+
 def cohort(records, count, seed):
     if count < 1 or count > len(records): raise ValueError('Requested image count exceeds the split')
     groups = {}
@@ -57,7 +67,7 @@ def export(args):
     chosen = cohort(records,args.count,args.seed)
     args.output.mkdir(parents=True,exist_ok=False)
     protocol = dict(dataset=cfg.dataset,method=cfg.model.method,checkpoint_sha256=identity['checkpoint_sha256'],
-        backbone_sha256=file_digest(cfg.model.checkpoint),normalization_sha256=file_digest(normalization),
+        **backbone_identity(cfg.model),normalization_sha256=file_digest(normalization),
         classifier_files={name:file_digest(args.head_dir/name) for name in names},nec=args.nec,
         concept_bank_sha256=digest(json.dumps(bank).encode()),top_k=args.top_k,
         concept_selection='Top positive standardized-activation times predicted-class weight; no activation-sign or correctness filter',

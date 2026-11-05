@@ -87,6 +87,8 @@ def threshold_mask(native, threshold, size):
     value = torch.as_tensor(native).float()
     if value.ndim != 2 or not value.numel() or not torch.isfinite(value).all():
         raise ValueError('Expected finite nonempty 2D native map')
+    # Resizing can introduce roundoff that min-max scaling would amplify.
+    if value.max() == value.min(): return np.zeros(size, dtype=bool)
     value = torch.nn.functional.interpolate(value[None,None], size=size, mode='bilinear', align_corners=False)[0,0]
     if value.max() == value.min(): return np.zeros(size, dtype=bool)
     return (((value-value.min())/(value.max()-value.min())) >= threshold).numpy()
