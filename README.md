@@ -22,7 +22,7 @@ verified before replacing existing experiment pipelines.
 - Node-local target caches and optional direct image reads from indexed archives.
 - Saved split/data/source identities and guarded deterministic resume.
 
-CUB-70 human-part evaluation lives in its own `cub70/` folder. Legacy dataset-specific
+CUB-70, deletion, and VLM-as-a-judge evaluations live under `evals/`. Legacy dataset-specific
 trainers are preserved in Git history; the new baseline heads use shared orchestration.
 See [migration notes](docs/migration.md).
 
@@ -31,9 +31,10 @@ See [migration notes](docs/migration.md).
 There are two shared training/classification entry points, not separate scripts for each dataset:
 `python -m spatial_cbm.training` and
 `python -m spatial_cbm.training.classifier`.
-Independent CUB-70 evaluation uses `python -m cub70`.
-VLM-as-a-judge export, calibration, evaluation and repeat analysis live in
-[`evals/`](evals/README.md), with entry point `python -m evals.vlm`.
+Independent evaluations use `python -m evals.cub70`, `python -m evals.deletion`,
+and `python -m evals.vlm`; see [`evals/`](evals/README.md).
+The old `python -m cub70` command remains a compatibility alias; `cub70/`
+retains the mapping assets and detailed data-format documentation.
 
 The remaining files are internal modules with distinct responsibilities:
 
@@ -328,7 +329,7 @@ Use CUB-trained models, the frozen concept-to-part mapping, and the saved CUB
 validation localization threshold. No human test-mask calibration is performed.
 
 ```bash
-python -m cub70 --config configs/release/cub.yaml --mapping cub70/mapping.json \
+python -m evals.cub70 --config configs/release/cub.yaml --mapping cub70/mapping.json \
   --masks-root /data/CUB-70/masks --output results/cub70.json
 ```
 

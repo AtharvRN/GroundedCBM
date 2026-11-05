@@ -2,10 +2,12 @@
 
 This is a separate evaluator, not another trainer. It accepts only CUB-trained
 release checkpoints and image IDs from their saved held-out test database.
+Implementation: `evals/cub70.py`. This folder retains the mapping assets and
+the backward-compatible `python -m cub70` command.
 
 ```bash
 python -m spatial_cbm.training calibrate --config configs/release/cub.yaml
-python -m cub70 --config configs/release/cub.yaml --mapping cub70/mapping.json \
+python -m evals.cub70 --config configs/release/cub.yaml --mapping cub70/mapping.json \
   --masks-root /data/CUB-70/masks --output results/cub70.json
 ```
 

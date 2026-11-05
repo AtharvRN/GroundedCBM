@@ -135,6 +135,7 @@ def test_imagefolder_rejects_invalid_class_maps(tmp_path,mapping):
 
 
 def test_cli_help_and_classifier_import():
-    for module in ['spatial_cbm.training','spatial_cbm.training.classifier','cub70']:
+    for module in ['spatial_cbm.training','spatial_cbm.training.classifier','cub70',
+                   'evals.cub70','evals.deletion','evals.vlm']:
         run=subprocess.run([sys.executable,'-m',module,'--help'],capture_output=True,text=True)
         assert run.returncode==0,run.stderr
