@@ -1,4 +1,4 @@
-# CUB recipe under shared internal-validation selection; see docs/baselines.md.
+# CUB recipe under shared internal-validation selection; see spatial_cbm/README.md.
 dataset: cub
 data:
   prepared: prepared/cub

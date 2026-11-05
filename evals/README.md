@@ -1,7 +1,7 @@
 # Evaluations
 
 Run from the repository root. Replace the example config and data paths with
-your own. Deletion and VLM evaluation require completed feature export and NEC fitting.
+your own. Deletion and VLM evaluation require [feature export and NEC fitting](../spatial_cbm/README.md#classification-accnec5-and-avgacc).
 
 ## CUB-70
 
@@ -18,7 +18,7 @@ python -m evals.cub70 --config configs/release/cub.yaml \
 
 ```bash
 python -m evals.deletion --config configs/release/cub.yaml \
-  --head-dir runs/cub/nec --output results/deletion/cub
+  --head-dir runs/cub/seed42/nec --output results/deletion/cub
 ```
 
 Defaults: NEC=5, 32x32 patches, three random controls, full test split.
@@ -30,9 +30,9 @@ Export validation and test examples (release-trained SpG-CBM or SALF-CBM):
 
 ```bash
 python -m evals.vlm export --config configs/release/cub.yaml \
-  --head-dir runs/cub/nec --split validation --count 200 --output results/vlm/val
+  --head-dir runs/cub/seed42/nec --split validation --count 200 --output results/vlm/val
 python -m evals.vlm export --config configs/release/cub.yaml \
-  --head-dir runs/cub/nec --split test --count 100 --output results/vlm/test
+  --head-dir runs/cub/seed42/nec --split test --count 100 --output results/vlm/test
 ```
 
 Set `VLM_API_KEY`, `VLM_BASE_URL` (HTTPS API base URL), `JUDGE_MODEL`, and
