@@ -32,6 +32,8 @@ There are two shared training/classification entry points, not separate scripts 
 `python -m spatial_cbm.training` and
 `python -m spatial_cbm.training.classifier`.
 Independent CUB-70 evaluation uses `python -m cub70`.
+VLM-as-a-judge export, calibration, evaluation and repeat analysis live in
+[`evals/`](evals/README.md), with entry point `python -m evals.vlm`.
 
 The remaining files are internal modules with distinct responsibilities:
 
