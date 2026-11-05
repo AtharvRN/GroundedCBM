@@ -21,9 +21,3 @@ pip install -r requirements-release.txt
 
 The configs are starting templates, not exact historical paper recipes.
 SALF-CBM training is a documented paper-based reconstruction.
-
-## Tests
-
-```bash
-python -m pytest -q tests/release
-```

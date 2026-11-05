@@ -20,9 +20,7 @@ RELEASE_MANIFEST.md
 
 # Local-only release/deployment scaffolding
 k8s/
-tests/*
-!tests/release/
-!tests/release/**
+/tests/
 artifacts/
 results/
 saved_models/
