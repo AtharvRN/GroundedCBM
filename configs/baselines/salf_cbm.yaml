@@ -1,0 +1,29 @@
+# Paper-based reconstruction: full original training code was not released.
+dataset: cub
+data:
+  prepared: prepared/cub
+  cache: /tmp/spatial-cbm/salf-cub
+model:
+  method: salf_cbm
+  backbone: resnet18
+  checkpoint: /path/to/cub_backbone.pt
+  salf_grid: 7
+teacher:
+  cache: /path/to/teacher-cache/salf-cub
+  model: ViT-B/16
+  checkpoint: /path/to/ViT-B-16.pt
+  batch_size: 64
+  prompt_radius: 32
+training:
+  output: runs/cub/salf_cbm/seed42
+  seed: 42
+  epochs: 75
+  patience: 10
+  min_epochs: 10
+  batch_size: 128
+  optimizer: adam
+  lr: 0.001
+  weight_decay: 0.0
+  precision: fp32
+  kl: 0.0
+  spatial_bce: 0.0

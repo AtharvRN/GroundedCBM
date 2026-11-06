@@ -1,0 +1,2798 @@
+{
+  "mappings": [
+    {
+      "id": 0,
+      "concept": "all black body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the body."
+    },
+    {
+      "id": 1,
+      "concept": "all dark plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). General plumage color is treated as the body appearance."
+    },
+    {
+      "id": 2,
+      "concept": "beak and legs are black",
+      "parts": [
+        "beak",
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase names the beak and legs."
+    },
+    {
+      "id": 3,
+      "concept": "beak is curved and pointed",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the beak."
+    },
+    {
+      "id": 4,
+      "concept": "black and orange plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). General plumage color is treated as the body appearance."
+    },
+    {
+      "id": 5,
+      "concept": "black and white barred tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the tail."
+    },
+    {
+      "id": 6,
+      "concept": "black and white body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the body."
+    },
+    {
+      "id": 7,
+      "concept": "black and white color scheme",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes overall coloring without naming a specific bird part."
+    },
+    {
+      "id": 8,
+      "concept": "black and white coloring",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes overall coloring without naming a specific bird part."
+    },
+    {
+      "id": 9,
+      "concept": "black and white head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the head."
+    },
+    {
+      "id": 10,
+      "concept": "black and white plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Plumage generally refers to feathers covering the bird's body."
+    },
+    {
+      "id": 11,
+      "concept": "black and white striped back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 12,
+      "concept": "black and white tail feathers",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes tail feathers."
+    },
+    {
+      "id": 13,
+      "concept": "black back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 14,
+      "concept": "black back and tail",
+      "parts": [
+        "body",
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes both the back, a body region, and the tail."
+    },
+    {
+      "id": 15,
+      "concept": "black band across its eyes",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The band describes a marking on the head/face near the eyes rather than the eyes themselves."
+    },
+    {
+      "id": 16,
+      "concept": "black band across the belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The belly is part of the bird's body."
+    },
+    {
+      "id": 17,
+      "concept": "black band across the chest",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The chest is part of the bird's body."
+    },
+    {
+      "id": 18,
+      "concept": "black beak",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the beak."
+    },
+    {
+      "id": 19,
+      "concept": "black bib with white border",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). A bib is a feathered marking on the breast/underside, which is part of the body."
+    },
+    {
+      "id": 20,
+      "concept": "black bib with white stripes",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). A bib describes a front breast or body patch, not a separate allowed part."
+    },
+    {
+      "id": 21,
+      "concept": "black bill with a yellow tip",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill is a synonym for beak."
+    },
+    {
+      "id": 22,
+      "concept": "black body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the body."
+    },
+    {
+      "id": 23,
+      "concept": "black breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is part of the bird's body region."
+    },
+    {
+      "id": 24,
+      "concept": "black cap and back",
+      "parts": [
+        "body",
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap is on the head and the back is a body region."
+    },
+    {
+      "id": 25,
+      "concept": "black cap and bib",
+      "parts": [
+        "body",
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap is on the head and a bib is a body patch."
+    },
+    {
+      "id": 26,
+      "concept": "black cap on its head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The cap is located on the head."
+    },
+    {
+      "id": 27,
+      "concept": "black cap on the female",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap refers to a marked region on the head."
+    },
+    {
+      "id": 28,
+      "concept": "black cheek patch",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The cheek is part of the head."
+    },
+    {
+      "id": 29,
+      "concept": "black collar",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). A bird collar refers to a band around the neck."
+    },
+    {
+      "id": 30,
+      "concept": "black crest on the head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The crest is described as being on the head."
+    },
+    {
+      "id": 31,
+      "concept": "black eye stripe",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). An eye stripe is surrounding feather patterning, not the eye itself."
+    },
+    {
+      "id": 32,
+      "concept": "black eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the eyes."
+    },
+    {
+      "id": 33,
+      "concept": "black face",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The face is part of the head."
+    },
+    {
+      "id": 34,
+      "concept": "black feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase names feathers without specifying a particular bird part."
+    },
+    {
+      "id": 35,
+      "concept": "black feet",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Feet are part of the leg region in the allowed mapping choices."
+    },
+    {
+      "id": 36,
+      "concept": "black head and upperparts",
+      "parts": [
+        "body",
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the head and general upper body regions."
+    },
+    {
+      "id": 37,
+      "concept": "black head neck and back",
+      "parts": [
+        "body",
+        "head",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase names the head, neck, and back, with back mapped to body."
+    },
+    {
+      "id": 38,
+      "concept": "black head with a white beak",
+      "parts": [
+        "head",
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes both the head and the beak."
+    },
+    {
+      "id": 39,
+      "concept": "black hood and back",
+      "parts": [
+        "body",
+        "head"
+      ],
+      "reason": "Exact part-set majority (2/3). A hood refers to the head region, and back is a body region."
+    },
+    {
+      "id": 40,
+      "concept": "black mask",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A black mask describes a dark marking on the head rather than the eye itself."
+    },
+    {
+      "id": 41,
+      "concept": "black mask over its eyes",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes feathers around the eyes, not the eye itself."
+    },
+    {
+      "id": 42,
+      "concept": "black or dark grey plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Plumage color refers generally to the bird's body covering."
+    },
+    {
+      "id": 43,
+      "concept": "black patch on the back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 44,
+      "concept": "black ring around the bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The bill refers to the beak, so the marking is associated with that part."
+    },
+    {
+      "id": 45,
+      "concept": "black streak on the breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a region of the body."
+    },
+    {
+      "id": 46,
+      "concept": "black streaks on the sides",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The sides refer to the body of the bird."
+    },
+    {
+      "id": 47,
+      "concept": "black streaks on the wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the wings."
+    },
+    {
+      "id": 48,
+      "concept": "black stripe on the head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the head."
+    },
+    {
+      "id": 49,
+      "concept": "black tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the tail."
+    },
+    {
+      "id": 50,
+      "concept": "black tail with white bars",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the tail."
+    },
+    {
+      "id": 51,
+      "concept": "black throat",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat corresponds to the neck region."
+    },
+    {
+      "id": 52,
+      "concept": "black throat and upper chest",
+      "parts": [
+        "body",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat maps to the neck and the upper chest maps to the body."
+    },
+    {
+      "id": 53,
+      "concept": "black v on the back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the body."
+    },
+    {
+      "id": 54,
+      "concept": "black wings and tail",
+      "parts": [
+        "tail",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes both wings and tail."
+    },
+    {
+      "id": 55,
+      "concept": "black wings with orange bars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the wings."
+    },
+    {
+      "id": 56,
+      "concept": "black wings with white bars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the wings."
+    },
+    {
+      "id": 57,
+      "concept": "black wings with white spots",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the wings."
+    },
+    {
+      "id": 58,
+      "concept": "black wingtip",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). A wingtip is part of a wing."
+    },
+    {
+      "id": 59,
+      "concept": "blue eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase refers to the eyes themselves."
+    },
+    {
+      "id": 60,
+      "concept": "blue gray body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the body."
+    },
+    {
+      "id": 61,
+      "concept": "blue head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the head."
+    },
+    {
+      "id": 62,
+      "concept": "blue plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Plumage refers to the bird's feathered body covering."
+    },
+    {
+      "id": 63,
+      "concept": "blue sheen on the wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the wings."
+    },
+    {
+      "id": 64,
+      "concept": "blue upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Upperparts refer to the dorsal body region of the bird."
+    },
+    {
+      "id": 65,
+      "concept": "blue wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the wings."
+    },
+    {
+      "id": 66,
+      "concept": "blue wings with white bars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the wings."
+    },
+    {
+      "id": 67,
+      "concept": "bright golden yellow plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Plumage refers to the bird's feathered body covering."
+    },
+    {
+      "id": 68,
+      "concept": "bright orange breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the body."
+    },
+    {
+      "id": 69,
+      "concept": "brown and white color scheme",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes general coloration but does not specify a bird part."
+    },
+    {
+      "id": 70,
+      "concept": "brown back and white belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Both back and belly refer to the bird's body."
+    },
+    {
+      "id": 71,
+      "concept": "brown back and wings",
+      "parts": [
+        "body",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the body, and wings are a separate body part."
+    },
+    {
+      "id": 72,
+      "concept": "brown cap and white eyebrows",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The cap and eyebrows are markings on the bird's head."
+    },
+    {
+      "id": 73,
+      "concept": "brown cap with a white cheek",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). Both the cap and cheek are parts of the bird's head."
+    },
+    {
+      "id": 74,
+      "concept": "brown or gray back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 75,
+      "concept": "brown or grayish body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The concept directly describes the body."
+    },
+    {
+      "id": 76,
+      "concept": "brown or reddish cap",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The cap refers to the top of the bird's head."
+    },
+    {
+      "id": 77,
+      "concept": "brown streak down its back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 78,
+      "concept": "brown streaks on the chest",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The chest is part of the bird's body."
+    },
+    {
+      "id": 79,
+      "concept": "brownish back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 80,
+      "concept": "brownish cap",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap is a colored feathered region on the head."
+    },
+    {
+      "id": 81,
+      "concept": "brownish olive upper body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the upper body region."
+    },
+    {
+      "id": 82,
+      "concept": "brownish plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Plumage generally refers to feathers covering the body."
+    },
+    {
+      "id": 83,
+      "concept": "brownish wings with white bars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the wings."
+    },
+    {
+      "id": 84,
+      "concept": "buffy breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the body."
+    },
+    {
+      "id": 85,
+      "concept": "built in keyboard",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It does not describe a bird part."
+    },
+    {
+      "id": 86,
+      "concept": "dark blue black upper body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the upper body region."
+    },
+    {
+      "id": 87,
+      "concept": "dark blue gray upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Upperparts is treated here as referring to the dorsal body region."
+    },
+    {
+      "id": 88,
+      "concept": "dark blue or black back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is a region of the body."
+    },
+    {
+      "id": 89,
+      "concept": "dark brown or black color",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It names a color but not a specific bird part."
+    },
+    {
+      "id": 90,
+      "concept": "dark brown stripes on the back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 91,
+      "concept": "dark coloration",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase does not specify a location on the bird."
+    },
+    {
+      "id": 92,
+      "concept": "dark glossy bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the beak."
+    },
+    {
+      "id": 93,
+      "concept": "dark gray or black upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Upperparts refers broadly to the dorsal body area."
+    },
+    {
+      "id": 94,
+      "concept": "dark wingtips",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). Wingtips are part of the wing."
+    },
+    {
+      "id": 95,
+      "concept": "duck like bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Duck-like bird is a general description, not a part."
+    },
+    {
+      "id": 96,
+      "concept": "fast erratic flight patterns",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Flight pattern is behavior, not a bird part."
+    },
+    {
+      "id": 97,
+      "concept": "glossy black wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the wings."
+    },
+    {
+      "id": 98,
+      "concept": "glossy sheen to its feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Feathers are mentioned generally without a specific bird part."
+    },
+    {
+      "id": 99,
+      "concept": "gray back with black streaks",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is part of the bird's body."
+    },
+    {
+      "id": 100,
+      "concept": "gray body with black spots",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's body."
+    },
+    {
+      "id": 101,
+      "concept": "gray breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the body."
+    },
+    {
+      "id": 102,
+      "concept": "gray crown",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The crown is part of the head."
+    },
+    {
+      "id": 103,
+      "concept": "gray feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (2/3). The phrase describes generic plumage without identifying a specific bird part."
+    },
+    {
+      "id": 104,
+      "concept": "gray head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's head."
+    },
+    {
+      "id": 105,
+      "concept": "gray upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The upperparts are a body region rather than a separate allowed part."
+    },
+    {
+      "id": 106,
+      "concept": "gray wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's wings."
+    },
+    {
+      "id": 107,
+      "concept": "grayish brown head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's head."
+    },
+    {
+      "id": 108,
+      "concept": "grayish white body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's body."
+    },
+    {
+      "id": 109,
+      "concept": "grayish white underparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The underparts are a body region rather than a separate allowed part."
+    },
+    {
+      "id": 110,
+      "concept": "grayish wings and tail",
+      "parts": [
+        "tail",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the wings and tail."
+    },
+    {
+      "id": 111,
+      "concept": "green head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the head."
+    },
+    {
+      "id": 112,
+      "concept": "green plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Plumage generally refers to the bird's feathered body covering."
+    },
+    {
+      "id": 113,
+      "concept": "green tail with a white edge",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes coloration on the tail."
+    },
+    {
+      "id": 114,
+      "concept": "green wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the wings."
+    },
+    {
+      "id": 115,
+      "concept": "greenish back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is a region of the bird's body."
+    },
+    {
+      "id": 116,
+      "concept": "greenish upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Upperparts refer to the dorsal region of the bird's body."
+    },
+    {
+      "id": 117,
+      "concept": "greenish yellow back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is a region of the bird's body."
+    },
+    {
+      "id": 118,
+      "concept": "greenish yellow back and wings",
+      "parts": [
+        "body",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the back, mapped to body, and the wings."
+    },
+    {
+      "id": 119,
+      "concept": "greenish yellow body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the body."
+    },
+    {
+      "id": 120,
+      "concept": "grey back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is a region of the bird's body."
+    },
+    {
+      "id": 121,
+      "concept": "grey legs and feet",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the legs, and feet are part of the leg region among the allowed labels."
+    },
+    {
+      "id": 122,
+      "concept": "grey sides",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The sides refer to the bird's body."
+    },
+    {
+      "id": 123,
+      "concept": "hairy body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the body."
+    },
+    {
+      "id": 124,
+      "concept": "hard crystalline structure",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase does not clearly describe a bird part."
+    },
+    {
+      "id": 125,
+      "concept": "high dispersion",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes an optical property, not a bird part."
+    },
+    {
+      "id": 126,
+      "concept": "high refractive index",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes an optical property, not a bird part."
+    },
+    {
+      "id": 127,
+      "concept": "hooked beak",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the beak."
+    },
+    {
+      "id": 128,
+      "concept": "iridescent blue green back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is a region of the bird's body."
+    },
+    {
+      "id": 129,
+      "concept": "iridescent feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase does not specify which part has the feathers."
+    },
+    {
+      "id": 130,
+      "concept": "large bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). A bill is another word for the beak."
+    },
+    {
+      "id": 131,
+      "concept": "large black bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes the whole bird, not a specific allowed part."
+    },
+    {
+      "id": 132,
+      "concept": "large black spider",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). A spider is not a bird part."
+    },
+    {
+      "id": 133,
+      "concept": "large blue grey bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes the whole bird, not a specific allowed part."
+    },
+    {
+      "id": 134,
+      "concept": "large body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly mentions the body."
+    },
+    {
+      "id": 135,
+      "concept": "large cone shaped bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). A bill refers to the beak."
+    },
+    {
+      "id": 136,
+      "concept": "large eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly mentions eyes."
+    },
+    {
+      "id": 137,
+      "concept": "large feet",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Feet are part of the lower limb and map most closely to leg."
+    },
+    {
+      "id": 138,
+      "concept": "large gray body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly mentions the body."
+    },
+    {
+      "id": 139,
+      "concept": "large green head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly mentions the head."
+    },
+    {
+      "id": 140,
+      "concept": "large hawk like body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 141,
+      "concept": "large hooked bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the beak."
+    },
+    {
+      "id": 142,
+      "concept": "large orange bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the beak."
+    },
+    {
+      "id": 143,
+      "concept": "large size",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Size describes an overall property, not a specific bird part."
+    },
+    {
+      "id": 144,
+      "concept": "large stocky bird",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). The stocky descriptor refers to the bird's body build."
+    },
+    {
+      "id": 145,
+      "concept": "large webbed feet",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Feet correspond to the leg part among the allowed labels."
+    },
+    {
+      "id": 146,
+      "concept": "large white body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the body."
+    },
+    {
+      "id": 147,
+      "concept": "light colored belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The belly is a region of the body."
+    },
+    {
+      "id": 148,
+      "concept": "light gray or white chest",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The chest is a region of the body."
+    },
+    {
+      "id": 149,
+      "concept": "long black ear tufts",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). Ear tufts are feather structures on the head."
+    },
+    {
+      "id": 150,
+      "concept": "long black tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's tail."
+    },
+    {
+      "id": 151,
+      "concept": "long black wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's wings."
+    },
+    {
+      "id": 152,
+      "concept": "long blue gray wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's wings."
+    },
+    {
+      "id": 153,
+      "concept": "long hind legs for jumping",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's legs."
+    },
+    {
+      "id": 154,
+      "concept": "long orange red beak",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's beak."
+    },
+    {
+      "id": 155,
+      "concept": "long pointed wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's wings."
+    },
+    {
+      "id": 156,
+      "concept": "long powerful wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's wings."
+    },
+    {
+      "id": 157,
+      "concept": "long tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's tail."
+    },
+    {
+      "id": 158,
+      "concept": "long tail feathers",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes feathers belonging to the tail."
+    },
+    {
+      "id": 159,
+      "concept": "long tail with a white tip",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the tail and its white tip."
+    },
+    {
+      "id": 160,
+      "concept": "long tail with white bars",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's tail."
+    },
+    {
+      "id": 161,
+      "concept": "long tail with white stripes",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's tail."
+    },
+    {
+      "id": 162,
+      "concept": "long tapered tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's tail."
+    },
+    {
+      "id": 163,
+      "concept": "long tapered wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the bird's wings."
+    },
+    {
+      "id": 164,
+      "concept": "long thick bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). A bill is a bird's beak."
+    },
+    {
+      "id": 165,
+      "concept": "long thin antennae",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Antennae are not a listed bird body part."
+    },
+    {
+      "id": 166,
+      "concept": "long thin beak",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's beak."
+    },
+    {
+      "id": 167,
+      "concept": "long thin body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 168,
+      "concept": "long thin legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the bird's legs."
+    },
+    {
+      "id": 169,
+      "concept": "long thin neck",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's neck."
+    },
+    {
+      "id": 170,
+      "concept": "long thin tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the tail."
+    },
+    {
+      "id": 171,
+      "concept": "long white legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the legs."
+    },
+    {
+      "id": 172,
+      "concept": "long wingspan",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). A wingspan is measured across the wings."
+    },
+    {
+      "id": 173,
+      "concept": "loud caw",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes a sound rather than a visible bird part."
+    },
+    {
+      "id": 174,
+      "concept": "loud cawing sound",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes a sound rather than a visible bird part."
+    },
+    {
+      "id": 175,
+      "concept": "loud harsh cry",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes a sound rather than a visible bird part."
+    },
+    {
+      "id": 176,
+      "concept": "loud high pitched song",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes a sound rather than a visible bird part."
+    },
+    {
+      "id": 177,
+      "concept": "loud rasping voice",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes a sound rather than a visible bird part."
+    },
+    {
+      "id": 178,
+      "concept": "medium sized duck",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes the whole bird's size rather than a specific bird part."
+    },
+    {
+      "id": 179,
+      "concept": "mohs hardness of 10",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase does not describe a bird part."
+    },
+    {
+      "id": 180,
+      "concept": "mottled grey and white plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Overall feather pattern refers most closely to the body as a general plumage region."
+    },
+    {
+      "id": 181,
+      "concept": "olive green back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back is a dorsal region of the bird's body."
+    },
+    {
+      "id": 182,
+      "concept": "olive upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Upperparts refer to the dorsal body plumage."
+    },
+    {
+      "id": 183,
+      "concept": "orange and black wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the wings."
+    },
+    {
+      "id": 184,
+      "concept": "orange eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the eyes."
+    },
+    {
+      "id": 185,
+      "concept": "orange feet",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Feet are lower limb structures and map to the allowed leg part."
+    },
+    {
+      "id": 186,
+      "concept": "orange legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the legs."
+    },
+    {
+      "id": 187,
+      "concept": "orange or yellow eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the eyes."
+    },
+    {
+      "id": 188,
+      "concept": "orange throat",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat is the front part of the neck region."
+    },
+    {
+      "id": 189,
+      "concept": "orange yellow legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the legs."
+    },
+    {
+      "id": 190,
+      "concept": "pale belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Belly refers to a region of the bird's body."
+    },
+    {
+      "id": 191,
+      "concept": "pale brown upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Upperparts describes the dorsal region of the bird's body."
+    },
+    {
+      "id": 192,
+      "concept": "pale gray or white color",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). This phrase describes a color but does not identify a bird part."
+    },
+    {
+      "id": 193,
+      "concept": "pale grayish white underbody",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Underbody refers to the lower region of the bird's body."
+    },
+    {
+      "id": 194,
+      "concept": "pale orange or brown breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Breast refers to a smaller region of the bird's body."
+    },
+    {
+      "id": 195,
+      "concept": "pale pink legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Legs directly refer to the bird's legs."
+    },
+    {
+      "id": 196,
+      "concept": "pink bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the bird's beak."
+    },
+    {
+      "id": 197,
+      "concept": "pinkish breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Breast refers to a smaller region of the bird's body."
+    },
+    {
+      "id": 198,
+      "concept": "pointed bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the bird's beak."
+    },
+    {
+      "id": 199,
+      "concept": "pointy crest on the head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A crest on the head describes a feature of the bird's head."
+    },
+    {
+      "id": 200,
+      "concept": "purple red head and breast",
+      "parts": [
+        "body",
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase names head and breast, with breast being a region of the body."
+    },
+    {
+      "id": 201,
+      "concept": "raucous call",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). This describes a vocalization, not a visible bird part."
+    },
+    {
+      "id": 202,
+      "concept": "raucous voice",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). This describes a vocal quality, not a bird part."
+    },
+    {
+      "id": 203,
+      "concept": "rectangular shape",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). This describes a shape without identifying a bird part."
+    },
+    {
+      "id": 204,
+      "concept": "red and yellow wingtips",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). Wingtips are part of the wing."
+    },
+    {
+      "id": 205,
+      "concept": "red belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The belly is a region of the body."
+    },
+    {
+      "id": 206,
+      "concept": "red breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the body."
+    },
+    {
+      "id": 207,
+      "concept": "red cap on the head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap on the head describes the head region."
+    },
+    {
+      "id": 208,
+      "concept": "red cap on the male",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap generally refers to a marking on the head."
+    },
+    {
+      "id": 209,
+      "concept": "red crest on the head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The crest is explicitly located on the head."
+    },
+    {
+      "id": 210,
+      "concept": "red eye",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase names the eye directly."
+    },
+    {
+      "id": 211,
+      "concept": "red eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). Both eyes are described by the eye part."
+    },
+    {
+      "id": 212,
+      "concept": "red face",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The face belongs to the head region."
+    },
+    {
+      "id": 213,
+      "concept": "red feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (2/3). Feathers alone do not identify a specific bird part."
+    },
+    {
+      "id": 214,
+      "concept": "red head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase names the head directly."
+    },
+    {
+      "id": 215,
+      "concept": "red legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Legs correspond to the leg part."
+    },
+    {
+      "id": 216,
+      "concept": "red ring around the eye",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The red ring surrounds the eye, so it maps to the head region rather than the eye itself."
+    },
+    {
+      "id": 217,
+      "concept": "red shoulders",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (2/3). Shoulders are treated as an upper-body region."
+    },
+    {
+      "id": 218,
+      "concept": "red skin around the face",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). Skin around the face is part of the head region."
+    },
+    {
+      "id": 219,
+      "concept": "red spot on the beak",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The spot is explicitly on the beak."
+    },
+    {
+      "id": 220,
+      "concept": "red throat",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat is part of the neck region."
+    },
+    {
+      "id": 221,
+      "concept": "red throat pouch",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). A throat pouch is located in the throat/neck area."
+    },
+    {
+      "id": 222,
+      "concept": "reddish brown back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back corresponds to the bird's body."
+    },
+    {
+      "id": 223,
+      "concept": "reddish brown body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly mentions the body."
+    },
+    {
+      "id": 224,
+      "concept": "reddish brown color",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase names a color but not a specific bird part."
+    },
+    {
+      "id": 225,
+      "concept": "relatively long wings and tail",
+      "parts": [
+        "tail",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions wings and tail."
+    },
+    {
+      "id": 226,
+      "concept": "rosy breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a region of the body."
+    },
+    {
+      "id": 227,
+      "concept": "rufous red brown color",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase names a color but not a specific bird part."
+    },
+    {
+      "id": 228,
+      "concept": "rust colored cap and nape",
+      "parts": [
+        "head",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap is on the head and a nape is on the back of the neck."
+    },
+    {
+      "id": 229,
+      "concept": "rusty brown back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The back corresponds to the bird's body."
+    },
+    {
+      "id": 230,
+      "concept": "rusty brown breast band",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). A breast band describes a band on the breast, which is part of the body."
+    },
+    {
+      "id": 231,
+      "concept": "rusty brown color",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase specifies only a color and does not identify a bird part."
+    },
+    {
+      "id": 232,
+      "concept": "rusty brown feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes feather color generally but does not identify a specific bird part."
+    },
+    {
+      "id": 233,
+      "concept": "rusty cap",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A cap refers to the top coloring or feathers on the head."
+    },
+    {
+      "id": 234,
+      "concept": "rusty red throat and breast",
+      "parts": [
+        "body",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat maps to the neck and the breast maps to the body."
+    },
+    {
+      "id": 235,
+      "concept": "scarlet red body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's body."
+    },
+    {
+      "id": 236,
+      "concept": "shaggy appearance",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes overall appearance without identifying a bird part."
+    },
+    {
+      "id": 237,
+      "concept": "shaggy feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes feather texture generally but does not identify a specific bird part."
+    },
+    {
+      "id": 238,
+      "concept": "short black legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's legs."
+    },
+    {
+      "id": 239,
+      "concept": "short pointed tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the bird's tail."
+    },
+    {
+      "id": 240,
+      "concept": "short stout bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The term 'bill' refers to the beak."
+    },
+    {
+      "id": 241,
+      "concept": "short wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The word 'wings' refers directly to the wing part."
+    },
+    {
+      "id": 242,
+      "concept": "shy and secretive behavior",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). This describes behavior rather than a visible bird part."
+    },
+    {
+      "id": 243,
+      "concept": "silky brown feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Feathers could occur on many parts, so no specific allowed part is given."
+    },
+    {
+      "id": 244,
+      "concept": "size",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). Size alone does not specify which bird part is being described."
+    },
+    {
+      "id": 245,
+      "concept": "slender white body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the body."
+    },
+    {
+      "id": 246,
+      "concept": "slimmer body than most crows",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to the body."
+    },
+    {
+      "id": 247,
+      "concept": "small black bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes the whole bird rather than a specific part."
+    },
+    {
+      "id": 248,
+      "concept": "small black head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions the head."
+    },
+    {
+      "id": 249,
+      "concept": "small blue bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes the whole bird rather than a specific part."
+    },
+    {
+      "id": 250,
+      "concept": "small blue body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 251,
+      "concept": "small brown bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the beak."
+    },
+    {
+      "id": 252,
+      "concept": "small brown bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes the whole bird, not a specific allowed part."
+    },
+    {
+      "id": 253,
+      "concept": "small brown body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 254,
+      "concept": "small conical bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the beak."
+    },
+    {
+      "id": 255,
+      "concept": "small dark body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 256,
+      "concept": "small forked tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's tail."
+    },
+    {
+      "id": 257,
+      "concept": "small green body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 258,
+      "concept": "small greenish gray bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes the whole bird, not a specific allowed part."
+    },
+    {
+      "id": 259,
+      "concept": "small mouth",
+      "parts": [],
+      "reason": "Exact part-set majority (2/3). Mouth is not an allowed part and does not clearly map to a listed bird part."
+    },
+    {
+      "id": 260,
+      "concept": "small rounded body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the body shape."
+    },
+    {
+      "id": 261,
+      "concept": "small slim bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes the whole bird rather than a specific allowed part."
+    },
+    {
+      "id": 262,
+      "concept": "small slim body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the body shape."
+    },
+    {
+      "id": 263,
+      "concept": "small songbird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It names a bird type rather than a visible part."
+    },
+    {
+      "id": 264,
+      "concept": "small sparrow like body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the body's size and shape."
+    },
+    {
+      "id": 265,
+      "concept": "small thrush like bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes a bird type rather than a specific part."
+    },
+    {
+      "id": 266,
+      "concept": "small to medium size",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It gives overall size without identifying a specific part."
+    },
+    {
+      "id": 267,
+      "concept": "small white bird",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes the whole bird's size and color without naming a part."
+    },
+    {
+      "id": 268,
+      "concept": "spotted feathers",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes feathers generally without locating them on an allowed part."
+    },
+    {
+      "id": 269,
+      "concept": "spotted plumage",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). It describes overall plumage without specifying an allowed bird part."
+    },
+    {
+      "id": 270,
+      "concept": "stocky body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's body."
+    },
+    {
+      "id": 271,
+      "concept": "stout body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's body."
+    },
+    {
+      "id": 272,
+      "concept": "stout conical bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the bird's beak."
+    },
+    {
+      "id": 273,
+      "concept": "streaked back",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Back is part of the bird's body."
+    },
+    {
+      "id": 274,
+      "concept": "streaked breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Breast is a region of the bird's body."
+    },
+    {
+      "id": 275,
+      "concept": "streaked chest",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Chest is a region of the bird's body."
+    },
+    {
+      "id": 276,
+      "concept": "streaked head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the bird's head."
+    },
+    {
+      "id": 277,
+      "concept": "streaked upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Upperparts broadly refer to the dorsal body plumage."
+    },
+    {
+      "id": 278,
+      "concept": "streaks of white on its wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes markings on the bird's wings."
+    },
+    {
+      "id": 279,
+      "concept": "swift acrobatic flight",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). The phrase describes flight behavior rather than a bird part."
+    },
+    {
+      "id": 280,
+      "concept": "tail with a distinct v shape",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the tail."
+    },
+    {
+      "id": 281,
+      "concept": "thin black bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). A bill is the bird's beak."
+    },
+    {
+      "id": 282,
+      "concept": "thin curved bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). A bill is the bird's beak."
+    },
+    {
+      "id": 283,
+      "concept": "thin pointy bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). A bill is the bird's beak."
+    },
+    {
+      "id": 284,
+      "concept": "three toes on each foot",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Toes and feet are part of the leg among the allowed categories."
+    },
+    {
+      "id": 285,
+      "concept": "trackpad or mouse",
+      "parts": [],
+      "reason": "Exact part-set majority (3/3). This phrase does not describe a bird part."
+    },
+    {
+      "id": 286,
+      "concept": "two white bars on wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes features on the wings."
+    },
+    {
+      "id": 287,
+      "concept": "violet ear patch",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). An ear patch is a feature on the head, not the eye itself."
+    },
+    {
+      "id": 288,
+      "concept": "webbed toes",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Toes are part of the leg among the allowed categories."
+    },
+    {
+      "id": 289,
+      "concept": "white bar on the wing",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes a feature on the wing."
+    },
+    {
+      "id": 290,
+      "concept": "white belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The belly is a region of the bird's body."
+    },
+    {
+      "id": 291,
+      "concept": "white belly and undertail",
+      "parts": [
+        "body",
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The belly is body, and the undertail is part of the tail."
+    },
+    {
+      "id": 292,
+      "concept": "white body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly describes the bird's body."
+    },
+    {
+      "id": 293,
+      "concept": "white body with gray wings",
+      "parts": [
+        "body",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the body and wings."
+    },
+    {
+      "id": 294,
+      "concept": "white breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the bird's body."
+    },
+    {
+      "id": 295,
+      "concept": "white breast with brown spots",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the bird's body."
+    },
+    {
+      "id": 296,
+      "concept": "white chest",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The chest is a region of the bird's body."
+    },
+    {
+      "id": 297,
+      "concept": "white chest and belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Both the chest and belly are regions of the bird's body."
+    },
+    {
+      "id": 298,
+      "concept": "white chin and throat",
+      "parts": [
+        "head",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The chin is on the head, and the throat is associated with the neck."
+    },
+    {
+      "id": 299,
+      "concept": "white collar around the neck",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The collar is described as being around the neck."
+    },
+    {
+      "id": 300,
+      "concept": "white coloration on the body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly refers to coloration on the bird's body."
+    },
+    {
+      "id": 301,
+      "concept": "white eye ring",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). An eye ring is a marking on the head around the eye, not the eye itself."
+    },
+    {
+      "id": 302,
+      "concept": "white eyebrow",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). An eyebrow is a marking on the head above the eye."
+    },
+    {
+      "id": 303,
+      "concept": "white face and underparts",
+      "parts": [
+        "body",
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The face is part of the head, and underparts are part of the body."
+    },
+    {
+      "id": 304,
+      "concept": "white front",
+      "parts": [],
+      "reason": "Excluded: no exact part set received at least two of three votes."
+    },
+    {
+      "id": 305,
+      "concept": "white head and neck",
+      "parts": [
+        "head",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly names the head and neck."
+    },
+    {
+      "id": 306,
+      "concept": "white patch on neck",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The patch is explicitly located on the neck."
+    },
+    {
+      "id": 307,
+      "concept": "white plumage",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). General white plumage is treated as overall body coloration rather than a specific smaller part."
+    },
+    {
+      "id": 308,
+      "concept": "white ring around the neck",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The ring is explicitly around the neck."
+    },
+    {
+      "id": 309,
+      "concept": "white rump",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The rump is part of the rear body region above the tail, not the tail itself."
+    },
+    {
+      "id": 310,
+      "concept": "white sides",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Sides refer to the lateral region of the bird's body."
+    },
+    {
+      "id": 311,
+      "concept": "white stripe above the eye",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). A stripe above the eye is a head marking, not the eye itself."
+    },
+    {
+      "id": 312,
+      "concept": "white stripe on the tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The stripe is explicitly on the tail."
+    },
+    {
+      "id": 313,
+      "concept": "white stripe on the wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The stripe is explicitly on the wings."
+    },
+    {
+      "id": 314,
+      "concept": "white stripes above the eyes",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). Stripes above the eyes are head markings, not the eyes themselves."
+    },
+    {
+      "id": 315,
+      "concept": "white stripes on the wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The stripes are explicitly on the wings."
+    },
+    {
+      "id": 316,
+      "concept": "white tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the tail."
+    },
+    {
+      "id": 317,
+      "concept": "white tail with a black tip",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). Both the tail and its tip are parts of the tail."
+    },
+    {
+      "id": 318,
+      "concept": "white throat and belly",
+      "parts": [
+        "body",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat corresponds to the neck region and the belly to the body."
+    },
+    {
+      "id": 319,
+      "concept": "white throat and breast",
+      "parts": [
+        "body",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat corresponds to the neck region and the breast to the body."
+    },
+    {
+      "id": 320,
+      "concept": "white underbelly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The underbelly refers to the lower belly area of the body."
+    },
+    {
+      "id": 321,
+      "concept": "white underparts with streaks",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Underparts generally describe the belly or breast region of the body."
+    },
+    {
+      "id": 322,
+      "concept": "white underside",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The underside refers to the lower surface of the bird's body."
+    },
+    {
+      "id": 323,
+      "concept": "white undersides",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Undersides refers to the lower surfaces of the bird's body."
+    },
+    {
+      "id": 324,
+      "concept": "white undertail coverts",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). Undertail coverts are feathers associated with the underside of the tail."
+    },
+    {
+      "id": 325,
+      "concept": "white undertail feathers",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). Undertail feathers are part of the tail region."
+    },
+    {
+      "id": 326,
+      "concept": "white underwings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). Underwings refers to the lower surface of the wings."
+    },
+    {
+      "id": 327,
+      "concept": "white wingbar",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). A wingbar is a marking on the wing."
+    },
+    {
+      "id": 328,
+      "concept": "white wingbars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). Wingbars are markings located on the wing."
+    },
+    {
+      "id": 329,
+      "concept": "white wingtips",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). Wingtips are the terminal parts of the wing."
+    },
+    {
+      "id": 330,
+      "concept": "whitish throat",
+      "parts": [
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). The throat is part of the neck region."
+    },
+    {
+      "id": 331,
+      "concept": "wing bars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). Wing bars are markings on the wing."
+    },
+    {
+      "id": 332,
+      "concept": "wingspan of about 3 feet",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (2/3). Wingspan describes the extent of the wings."
+    },
+    {
+      "id": 333,
+      "concept": "yellow bar on wing",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The yellow bar is on the wing."
+    },
+    {
+      "id": 334,
+      "concept": "yellow beak",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Beak is directly named."
+    },
+    {
+      "id": 335,
+      "concept": "yellow bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill is another name for the beak."
+    },
+    {
+      "id": 336,
+      "concept": "yellow bill with a red spot",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). The bill is another name for the beak."
+    },
+    {
+      "id": 337,
+      "concept": "yellow body",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Body is directly named."
+    },
+    {
+      "id": 338,
+      "concept": "yellow body with black wings",
+      "parts": [
+        "body",
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes both the body and wings."
+    },
+    {
+      "id": 339,
+      "concept": "yellow cap on the head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The cap is located on the head."
+    },
+    {
+      "id": 340,
+      "concept": "yellow crown",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The crown is a region on the top of the bird's head."
+    },
+    {
+      "id": 341,
+      "concept": "yellow eye",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the eye."
+    },
+    {
+      "id": 342,
+      "concept": "yellow feet",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). Feet are part of the leg region in the allowed categories."
+    },
+    {
+      "id": 343,
+      "concept": "yellow head",
+      "parts": [
+        "head"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the head."
+    },
+    {
+      "id": 344,
+      "concept": "yellow head and throat",
+      "parts": [
+        "head",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). Head maps to the head and throat maps to the neck."
+    },
+    {
+      "id": 345,
+      "concept": "yellow or orange plumage",
+      "parts": [],
+      "reason": "Exact part-set majority (2/3). Plumage is general feathers and does not identify a specific allowed bird part."
+    },
+    {
+      "id": 346,
+      "concept": "yellow throat and breast",
+      "parts": [
+        "body",
+        "neck"
+      ],
+      "reason": "Exact part-set majority (3/3). Throat maps to the neck and breast maps to the body."
+    },
+    {
+      "id": 347,
+      "concept": "yellow tipped tail",
+      "parts": [
+        "tail"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the tail tips."
+    },
+    {
+      "id": 348,
+      "concept": "yellow tips on the wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes wing tips."
+    },
+    {
+      "id": 349,
+      "concept": "yellow wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase directly describes the wings."
+    },
+    {
+      "id": 350,
+      "concept": "yellow wings with black bars",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions wings, with bars as a wing pattern."
+    },
+    {
+      "id": 351,
+      "concept": "yellowish belly",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The belly is a lower region of the bird's body."
+    },
+    {
+      "id": 352,
+      "concept": "yellowish bill",
+      "parts": [
+        "beak"
+      ],
+      "reason": "Exact part-set majority (3/3). Bill refers to the beak."
+    },
+    {
+      "id": 353,
+      "concept": "yellowish breast",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). The breast is a smaller region of the bird's body."
+    },
+    {
+      "id": 354,
+      "concept": "yellowish brown wings",
+      "parts": [
+        "wing"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions wings."
+    },
+    {
+      "id": 355,
+      "concept": "yellowish eyes",
+      "parts": [
+        "eye"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase describes the eyes themselves."
+    },
+    {
+      "id": 356,
+      "concept": "yellowish legs",
+      "parts": [
+        "leg"
+      ],
+      "reason": "Exact part-set majority (3/3). The phrase explicitly mentions legs."
+    },
+    {
+      "id": 357,
+      "concept": "yellowish sides and flanks",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Sides and flanks refer to the body."
+    },
+    {
+      "id": 358,
+      "concept": "yellowish underparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Underparts refer to the lower side of the body."
+    },
+    {
+      "id": 359,
+      "concept": "yellowish upperparts",
+      "parts": [
+        "body"
+      ],
+      "reason": "Exact part-set majority (3/3). Upperparts refer to the upper side of the body."
+    }
+  ]
+}

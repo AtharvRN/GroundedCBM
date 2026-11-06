@@ -1,155 +1,113 @@
-# SG-CBM
+# SpG-CBM
 
-Spatially Grounded Concept Bottleneck Models for CUB and ImageNet.
+Spatially Grounded Concept Bottleneck Models.
 
-This repository contains the release code for training concept layers, fitting
-sparse GLM heads, and evaluating accuracy, concept prediction, and localization.
+A shared training and evaluation pipeline for **CUB, ImageNet, Places365, and
+PartImageNet++**, with LF-CBM, VLG-CBM, and SALF-CBM baselines.
 
-## Install
+## Setup
 
-```bash
-pip install -r requirements.txt
-```
-
-## Scripts
-
-```text
-train_cbm.py                         Train SG-CBM/SALF/VLG/LF concept layers.
-scripts/precompute_imagenet_targets.py Precompute ImageNet GDINO targets.
-scripts/train_sparse_nec.py          Fit sparse GLM heads for NEC sweeps.
-scripts/eval_nec.py                  Evaluate classification accuracy at NEC levels.
-scripts/eval_concept_accuracy.py     Evaluate concept prediction against GDINO/CUB labels.
-scripts/eval_gdino_localization.py   Evaluate GDINO-box localization for CUB/ImageNet.
-evaluations/cub_part_localization.py Evaluate CUB part-point localization.
-```
-
-## Data
-
-CUB should be in ImageFolder form:
-
-```text
-datasets/CUB/train/<class_name>/*.jpg
-datasets/CUB/test/<class_name>/*.jpg
-```
-
-Create that split from CUB-200-2011:
+Use a CUDA-compatible PyTorch/torchvision installation. Run all commands from
+the repository root; the example below uses CUB.
 
 ```bash
-mkdir -p datasets && curl -L "https://data.caltech.edu/records/65de6-vp158/files/CUB_200_2011.tgz?download=1" -o datasets/CUB_200_2011.tgz && tar -xzf datasets/CUB_200_2011.tgz -C datasets && python datasets/split_cub_dataset.py --cub_root datasets/CUB_200_2011 --output_root datasets/CUB
+pip install -r requirements-release.txt
+CONFIG=configs/cub.yaml
+RUN=runs/cub/seed42
 ```
 
-ImageNet training expects either an ImageFolder train root or a JSONL manifest
-with `path`, `class_id`, and `sample_index`. ImageNet validation can be an
-extracted directory or the official validation tar where supported by the eval
-script.
+[Prepare your data](spatial_cbm/README.md#prepare-data), then edit the config's
+data, backbone checkpoint, cache, and output paths. `RUN` must match
+`training.output`. Choose another [config](configs/) for a different dataset.
 
-GDINO annotations are expected as JSON files:
-
-```text
-annotations/cub_train/0.json
-annotations/cub_val/0.json
-annotations/imagenet_val/0.json
-```
-
-The annotation archives are distributed separately from this code repository.
-For CUB, the original VLG-CBM release also links the compatible annotation
-archive: https://github.com/Trustworthy-ML-Lab/VLG-CBM. For ImageNet, use the
-SG-CBM annotation archive released with this project and extract it so that
-`annotations/imagenet_val/*.json` exists.
-
-For ImageNet validation, use a filename-to-annotation mapping JSON when the
-annotation filenames are not in `ILSVRC2012_val_00000001.JPEG -> 0.json` order.
-The concept accuracy and localization scripts expose `--annotation_mapping_json`
-for this case.
-
-## Train Concept Layers
-
-The main entry point is `train_cbm.py`.
+## Train SpG-CBM
 
 ```bash
-python train_cbm.py --config configs/cub_gcbm.json
-python train_cbm.py --config configs/cub_salf.json
-python train_cbm.py --config configs/cub_gcbm.json --model_name vlg_cbm
-python train_cbm.py --config configs/cub_gcbm.json --model_name lf_cbm
-python train_cbm.py --config configs/imagenet_gcbm.yaml
-python train_cbm.py --config configs/imagenet_vlg.yaml
+python -m spatial_cbm.training check --config "$CONFIG"
+python -m spatial_cbm.training train --config "$CONFIG"
 ```
 
-For ImageNet SG-CBM, set these paths in `configs/imagenet_gcbm.yaml`:
+Add `--resume` to the training command after an interruption. The checkpoint
+with minimum validation loss is saved as `$RUN/best.pt`.
 
-```text
-train_root: /path/to/imagenet/train
-annotation_dir: /path/to/imagenet_annotations
-precomputed_target_dir: /path/to/precomputed_targets
-```
+## Concept and Localization Evaluation
 
-The ImageNet SG-CBM config uses the verified ResNet-50 `IMAGENET1K_V1` setup:
-deterministic resize/center-crop, 14x14 masks, `conv4+conv5`, soft-box targets,
-and soft-align KL loss. `configs/imagenet_vlg.yaml` uses the same backbone with
-`branch_arch=global_only`, so it skips spatial branch compute.
-
-Precompute ImageNet GDINO targets:
+Calibrate thresholds on internal validation data, then evaluate held-out test data:
 
 ```bash
-python scripts/precompute_imagenet_targets.py --image_root /path/to/imagenet/train --annotation_dir /path/to/imagenet_annotations --concept_file concept_files/imagenet_filtered.txt --output_dir /path/to/precomputed_targets --split train
+python -m spatial_cbm.training calibrate --config "$CONFIG"
+python -m spatial_cbm.training evaluate --config "$CONFIG"
 ```
 
-## Train Sparse NEC Heads
+Results: `$RUN/test_metrics.json`. Test data is never used for calibration.
+
+## Classification: ACC@NEC5 and AVGACC
+
+Export features, fit sparse classifiers, and evaluate them:
 
 ```bash
-python scripts/train_sparse_nec.py --dataset cub --load_path /path/to/cub_run
-python scripts/train_sparse_nec.py --dataset imagenet --artifact_dir /path/to/imagenet_run --output_dir /path/to/sparse_sweep --lam_max 0.0007 --table_device cuda
+python -m spatial_cbm.training export --config "$CONFIG"
+python -m spatial_cbm.training.classifier --artifact_dir "$RUN" \
+  --output_dir "$RUN/nec" --device cuda --seed 42 --saga_workers 0 \
+  --table_device cuda --cache_features_device cuda_preserve_sampler \
+  --n_iters 1000 --max_glm_steps 150 --lam_max 0.1 --epsilon 0.00001 --skip_train_eval
+python -m spatial_cbm.training classify --config "$CONFIG" --classifier-dir "$RUN/nec"
 ```
 
-For ImageNet, `W_g@NEC=<k>.pt` is saved after VLG-CBM-style global threshold
-truncation, so `NEC=5` keeps roughly `5 * 1000` nonzero final-layer weights.
+Results: `$RUN/nec/classification_test.json`, including accuracy at NEC
+5, 10, 15, 20, 25, and 30 and their average (AVGACC).
 
-## Evaluate NEC Accuracy
+## CUB-70 Test
+
+Use a CUB-trained model, its validation calibration, and human part masks:
 
 ```bash
-python scripts/eval_nec.py --dataset cub --load_path /path/to/cub_run --output_json results/cub_nec.json
-python scripts/eval_nec.py --dataset imagenet --artifact_dir /path/to/imagenet_run_or_sparse_sweep --val_root /path/to/imagenet_val --devkit_dir /path/to/ILSVRC2012_devkit_t12 --output_json results/imagenet_nec.json
+python -m evals.cub70 --config "$CONFIG" \
+  --mapping evals/cub70_assets/mapping.json --masks-root /data/CUB-70/masks \
+  --output results/cub70.json
 ```
 
-## Evaluate Concept Accuracy
+See the [mask format](evals/cub70_assets/README.md#inputs) for dataset layout.
 
-Concept accuracy compares concept scores to binary concept-presence labels and
-reports AUROC, AP, Macro AP, P@5, threshold metrics, and best-F1.
+## Deletion Test
+
+After classifier fitting, compare targeted patch deletion with random controls:
 
 ```bash
-python scripts/eval_concept_accuracy.py --dataset cub --gt_source gdino --load_paths /path/to/cub_sgcbm_run /path/to/cub_vlg_run --model_names savlg_cbm vlg_cbm --names SG-CBM VLG-CBM --annotation_dir /path/to/cub_gdino_annotations --normalization sigmoid --output results/cub_concept_accuracy.json
-python scripts/eval_concept_accuracy.py --dataset imagenet --gt_source gdino --load_paths /path/to/imagenet_sgcbm_run --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --normalization sigmoid --output results/imagenet_concept_accuracy.json
-python scripts/eval_concept_accuracy.py --dataset imagenet --gt_source gdino --load_paths /path/to/salf_imagenet_checkpoint --model_names salf_cbm --names SALF-CBM --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --normalization concept_zscore_minmax --output results/imagenet_salf_concept_accuracy.json
+python -m evals.deletion --config "$CONFIG" \
+  --head-dir "$RUN/nec" --count 100 --output results/deletion/cub
 ```
 
-ImageNet concept accuracy supports SG-CBM/VLG-style release checkpoints and
-SALF checkpoints with `W_c.pt`, `proj_mean.pt`, and `proj_std.pt`.
+This runs a 100-image check using NEC=5, 32x32 patches, and three random controls.
+Remove `--count 100` for the full test split. Results: `results/deletion/cub/results.json`.
 
-## Evaluate GDINO Localization
+## VLM as a Judge
 
-Localization uses the concept-layer checkpoint, not sparse GLM weights.
+Export validation examples for calibration and 100 test images for a pilot:
 
 ```bash
-python scripts/eval_gdino_localization.py --dataset cub --gcbm_path /path/to/cub_sgcbm_run --annotation_dir /path/to/cub_gdino_annotations --output results/cub_gdino_localization.json --map_normalization concept_zscore_minmax
-python scripts/eval_gdino_localization.py --dataset imagenet --gcbm_path /path/to/imagenet_sgcbm_run --annotation_dir /path/to/imagenet_gdino_annotations --annotation_mapping_json /path/to/imagenet_val_filename_to_annotation.json --val_root /path/to/imagenet_val --output results/imagenet_gdino_localization.json --map_normalization concept_zscore_minmax
+python -m evals.vlm export --config "$CONFIG" --head-dir "$RUN/nec" \
+  --split validation --count 200 --output results/vlm/val
+python -m evals.vlm export --config "$CONFIG" --head-dir "$RUN/nec" \
+  --split test --count 100 --output results/vlm/test
 ```
 
-The output includes RMA-style `mass_in_gt`, pointing accuracy, mean IoU, and
-LocAcc at requested IoU thresholds.
-
-## Evaluate CUB Part Localization
+Set `VLM_API_KEY`, `VLM_BASE_URL` (HTTPS API base URL), `JUDGE_MODEL`, and
+`JUDGE_BACKEND` (the exact model ID returned by your provider), then run:
 
 ```bash
-python evaluations/cub_part_localization.py --load_path /path/to/cub_sgcbm_run --annotation_dir annotations --cub_root /path/to/CUB_200_2011 --mapping_json data/cub_concept_part_mapping_gpt54.json --output results/cub_part_localization.json --map_normalization concept_zscore_minmax
-python evaluations/cub_part_localization.py --load_path /path/to/cub_sgcbm_run --annotation_dir annotations --cub_root /path/to/CUB_200_2011 --mapping_json data/cub_concept_part_mapping_gpt54.json --output results/cub_part_localization_oracle.json --map_normalization concept_zscore_minmax --compute_concept_oracle
+python -m evals.vlm calibrate --export results/vlm/val \
+  --base-url "$VLM_BASE_URL" --model "$JUDGE_MODEL" --expected-model "$JUDGE_BACKEND" \
+  --output results/vlm/calibration
+python -m evals.vlm evaluate --export results/vlm/test \
+  --calibration results/vlm/calibration/frozen_threshold.json \
+  --base-url "$VLM_BASE_URL" --model "$JUDGE_MODEL" --expected-model "$JUDGE_BACKEND" \
+  --output results/vlm/evaluation
 ```
 
-`--compute_concept_oracle` evaluates all concept maps for each part target and
-selects the best concept per metric.
+Results are saved under `results/vlm/evaluation/`. Use distinct output paths
+for different models or datasets. More options: [evaluation guide](evals/README.md).
 
-## Notes
-
-- Public model name: SG-CBM.
-- Some internal names still use `savlg` or `gcbm` for checkpoint compatibility.
-- SG-CBM training/localization uses GDINO annotations.
-- NEC and classification evaluation use sparse GLM heads; localization does not.
+For LF-CBM, VLG-CBM, and SALF-CBM, see [baseline setup](spatial_cbm/README.md#baselines).
+Configs are starting templates, not exact historical paper recipes; SALF-CBM
+training is a paper-based reconstruction.

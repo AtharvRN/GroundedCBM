@@ -1,0 +1,785 @@
+a large rope
+aid
+air filter
+aircraft
+alp
+analog stick
+antenna
+anthocaulus
+apple
+apron
+arch
+arm
+armrest
+armset
+arrow
+artichoke
+audio
+axletree
+back
+back of screen
+back side
+backrest
+bag
+bag body
+bagel
+bakery
+bakeware
+balanced drag
+ball
+bannister
+bar
+barbershop
+barrel
+base
+baseball
+basin
+basket
+basketball
+bass button
+bead
+beak
+beam
+bed frame
+bedside
+beehive
+bell
+bell case
+bellow
+bellpipe
+belt
+bend
+big logo
+blade
+blow-off pipe
+boa
+board
+boat
+boat body
+boat tail
+bodice
+body
+body of the cart
+body part
+bodywork
+boiler
+bold handle
+bolt
+book
+bookshelf
+bookshop
+boom
+boot binding
+border
+bottle
+bottle body
+bottle cap
+bottled red wine
+bottleneck
+bottom
+bottom part
+bow
+bowl
+bowsprit
+box
+brace
+bracket
+branch
+brand label
+brass
+bread rack
+bread roll
+breakwater
+bridge
+brim
+brim of hat
+bristles
+broccoli
+bubble
+bucket
+buckeye
+buffer layer
+building
+bulge
+bullet barrel
+bun
+button
+buttons
+cab
+cabbage
+cabin
+cabinet
+cabinet door
+caliper
+camail
+candlestick
+cap
+capital
+capitulum
+car
+car body
+car frame
+car number
+carbonara
+card reader
+cargo box
+cargo landing gear
+carpet
+carpopodium
+carriage
+cart frame
+carton
+case
+cassette
+center
+chain
+chair back
+chair leg
+chalaza
+chassis
+cheese
+chest
+chest piece
+chimney
+china
+chinstrap
+chord
+chuck
+clamp
+clasp
+clay
+cliff
+clip
+cloak
+closure
+cloth
+clutch
+coat
+cockpit
+coil
+coin slot
+collar
+column
+comb
+conch
+condenser
+confectionery
+consomme
+container
+control
+control button
+control buttons
+control panel
+control surfaces
+controller
+coral
+cord
+corn cob
+corsage
+cover
+cradle
+crane
+crate
+cream
+crossbeam
+crown
+crucifix
+crust
+cucumber
+cue light
+cuirass
+cup
+cupped red wine
+current collector
+curtain
+cushion
+cylinder
+data input
+deck
+defensive wall
+desktop
+dial
+dial plate
+diaper
+disc
+dish
+dishrag
+disk
+disk reader
+display
+diving cylinder
+diving fin
+dog
+dome
+door
+doorframe
+doorleaf
+doormat
+dough
+drainage hole
+drawer
+dress
+drill wick
+driver cabin
+driving cabin
+drum
+drum brake
+drum head
+drumstick
+ear
+earphone
+eartip
+eartube
+edge
+eggnog
+elevator mechanism
+embouchure hole
+end
+end pin
+engine
+envelope
+equipment
+eraser
+espresso
+exit slot
+exoperidium
+external data input
+external tank
+eye
+face
+face mask
+facilities
+fallopian tube
+fan
+faucet
+feet
+fence
+filter lid
+filter screen
+filter wall
+fin
+finger
+fingerboard
+fire
+flag
+flame
+flange
+flash
+flashing light
+flat bottom
+flatted bottom
+flatworm
+floor brush
+flower
+flower field
+flower head
+focus mode switch
+food
+food on the plate
+foot
+foothold
+footrest
+frame
+framework
+front
+front side
+fruit
+fruit navel
+fuel bunker
+fuel chamber
+fungus
+fur
+furnace box
+fuselage
+garbage collector
+gas container
+geyser
+glass
+glass lens
+goggle
+gondola
+gown
+granular material
+grid
+grille
+grip
+ground
+guacamole
+gun barrel
+hand
+handkerchief
+handle
+handlebar
+hard tube
+hat
+hat body
+hatband
+hay
+head
+headstock
+heel
+hive
+holder
+hole
+honeycomb
+hood
+hook
+hook tip part
+hoopskirt
+horizontal bar base
+horizontal part
+horn
+horn body
+horncastle
+horse
+hose
+host
+housing
+hub
+hull
+hump
+ice block
+ice tray
+icon
+ignition mechanism
+impeller
+inductor
+ingredient
+ink cartridge
+inner part
+inside
+inside layer
+insole
+iron frame
+iron plate
+jacket
+jean
+jet
+joint
+keep
+key
+keyboard
+knob
+knot
+label
+lace
+lakeside
+lamella
+lamellae
+lamppost
+lampshade
+lampstand
+landing gear
+landing stage
+lanyard
+lattice
+leaf
+leather
+left barrel
+left click
+left part
+left side
+left sleef
+leg
+leg part
+leg pivot
+legs
+lemon
+len
+lens
+lens cap
+lid
+light
+light box
+limb
+liner
+lip
+lipstick on lip
+liquid inside
+living cabin
+load fork
+loaf
+locker
+loft
+logo
+long tube
+loudspeaker
+lower part
+lower part of ampoule
+lumbar support
+lumbermill
+magazine
+mail
+mailbox body
+maillot
+main body
+main-body
+mallet
+mask
+mask strap attachment
+mast
+mattress
+maypole
+maze
+meat
+megalith
+menu
+metal
+meter
+metope
+microphone
+miniskirt
+moldboard
+monastery
+monitor
+motar body
+motar pole
+mountain
+mountain valley
+mouse
+mouth
+mouthpiece
+neck
+neck of tube
+neckband
+necklace
+necktie
+needle
+nematode
+net
+nib
+niblet
+nipple
+non-slip mat
+nose
+nozzle
+number mouth
+obelisk
+obi
+objects in the basket
+objects inside the box
+oboe
+ocarina
+ocs
+ogive
+on/off trigger
+orange
+orbiter
+organ
+others
+outside
+oval spider silk
+oven
+ox
+pad
+paddle
+paddlewheel
+pajama
+palace
+panel
+pants
+paper
+paper box
+paper packaging
+paper roll
+paperboard core
+papper support
+parallel pole
+parts
+pastry
+patio
+patten
+pattern
+patty
+pavement
+paw
+pedal
+pedestal
+pedicel
+peel
+pen body
+pen cap
+pen grip
+pendant
+people
+persistent calyx
+petal
+pick
+pick-up port
+picture frame
+pier
+pileus
+pill
+pillar
+pillow
+pinnacle
+pipe
+pipeline
+piston
+pivot
+plane iron
+planetarium
+plastic packaging
+plate
+platform
+plow blade
+plowshare
+plunger
+pocket
+pointer
+pole
+police label
+poncho
+pond
+post
+pot
+pot cover
+potato
+powder
+powerplant
+pretzel
+prick
+printer
+prison
+promontory
+propeller
+puck
+pump head
+purse
+push-buttons
+puzzle
+quilt
+rack
+radial spider silk
+radiator
+ray flower
+rear and front sight
+rear wing
+rearview mirror
+rebreather
+receiver
+receptacle
+reef
+reel
+refrigerator door
+regulator
+residential housing
+resonator
+restaurant
+ribbon
+right barrel
+right click
+right part
+right side
+right sleef
+ring
+rocker
+rod
+roller
+roof
+root
+rope
+rotary dial
+rotary knob
+rotary valve
+rotor
+round disc
+rouphead
+rubber tube
+rug
+rule
+sail
+salt
+sandbar
+sarcocarp
+sarong
+sauce
+sausage
+saw chain
+scabbard
+screen
+screen(or other meter)
+screen-body
+screw
+seashore
+seat
+seat ring
+seat surface
+seed
+sepal
+shade
+shaft
+shank
+sharpener
+shelf
+shell
+shell body
+shield
+ship body
+ship island
+shirt
+shoes
+shoji
+shop
+shoulder
+shutter button
+side
+sign
+signal board
+signal receiver
+silk
+site
+skateboard
+sky
+sled
+sleeping cabin
+sleeve
+sleeves
+slide
+slope protection
+snow collector
+sock
+sole
+solid rocket booster
+sound
+sound hole
+spear
+spillway
+spire
+spit
+spore mass
+spore sac
+spotlight
+spout
+spray nozzle
+spud leg
+square head
+squash
+squeeze pump
+stalk
+stamen
+stave
+steel chain
+steel column
+steering wheel
+stem
+stern
+stick
+stipe
+stock
+stocking
+stole
+stop sign
+strap
+straps
+strawberry
+string
+students cabin
+stuffing
+suit
+suit jacket
+support
+support ring
+supporting member
+supports
+surface
+swing movement
+switch
+table
+table leg
+table top
+tablecloth
+tail
+tap
+tape
+tape access
+tassel
+telescopic sleeve
+tent
+tentacle
+thimble
+thread
+threshing tube
+throat
+thumb
+tie
+tier
+tile
+tip
+tire
+toe
+toll
+tone hole
+tongs
+tongue
+tooth
+top
+top part
+top side
+touch board
+touch pen
+towel
+tower
+toy
+track
+tray
+trifle
+trigger
+trigger guard
+trilobite
+trousers
+truck box
+truck cab
+truck case
+truck frame
+trunks
+tube
+tubular flower
+tuning peg
+tuning tube
+turning handle
+turnstile
+turret
+tyre
+upper
+upper part
+upper part of ampoule
+urchin
+vacuum hose
+vamp
+vane
+vegetable
+velvet
+vent
+vertical column
+vertical pole
+viewfinder
+volcano
+volleyball
+wall
+watch case
+watch hand
+watchband
+watchcase
+water
+water arrival
+water jet
+water tank
+wax
+weighing platform
+weight
+wheat tortilla
+wheel
+wheel heads
+wheels
+whole
+wick
+wig
+window
+wing
+winglet
+wings
+wood case
+wool
+wreck
+zip
