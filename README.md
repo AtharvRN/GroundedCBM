@@ -132,3 +132,24 @@ for different models or datasets. More options: [evaluation guide](evals/README.
 For LF-CBM, VLG-CBM, and SALF-CBM, see [baseline setup](spatial_cbm/README.md#baselines).
 Configs are starting templates, not exact historical paper recipes; SALF-CBM
 training is a paper-based reconstruction.
+
+## Acknowledgments
+
+We thank the authors and maintainers of the following projects. When using a
+baseline, its annotations, or the sparse classifier, please also cite the
+corresponding work.
+
+| Project | Contribution |
+| --- | --- |
+| [VLG-CBM](https://github.com/Trustworthy-ML-Lab/VLG-CBM) · [Srivastava et al., NeurIPS 2024](https://arxiv.org/abs/2408.01432) | Concept vocabularies, Grounding DINO annotation pipeline, and the VLG-CBM baseline. |
+| [LF-CBM](https://github.com/Trustworthy-ML-Lab/Label-free-CBM) · [Oikarinen et al., ICLR 2023](https://openreview.net/forum?id=FlCg47MNvBA) | Label-free concept supervision and the reference method for the LF-CBM baseline. |
+| [SALF-CBM](https://github.com/itaybenou/show-and-tell) · [Benou and Riklin-Raviv, CVPR 2025](https://arxiv.org/abs/2502.20134) | Spatial concept baseline, inference code, and released ImageNet checkpoint. The training code here is an independent reconstruction. |
+| [GLM-SAGA](https://github.com/MadryLab/glm_saga) · [Wong et al., 2021](https://arxiv.org/abs/2105.04857) | Elastic-net solver adapted for fitting sparse concept-to-class classifiers. See the [solver license](glm_saga/LICENSE). |
+
+We also thank [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO)
+for the detector used to produce concept boxes, [CLIP](https://github.com/openai/CLIP)
+for the image and text encoders used in baseline supervision,
+[OpenCLIP](https://github.com/mlfoundations/open_clip) for the optional ViT
+backbone, and [Torchvision](https://github.com/pytorch/vision) for the ResNet
+implementations. We thank the [dataset creators](#get-the-data) for making the
+images and annotations available.
