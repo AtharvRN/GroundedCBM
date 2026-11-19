@@ -5,8 +5,41 @@ Places365, and PartImageNet++; select the matching config in `configs/`.
 
 ## Prepare Data
 
-Create separate training-pool and held-out test JSONL manifests. Each row contains
-an image ID, image path, zero-based class ID, and annotations:
+Start with the [image and annotation downloads](../README.md#get-the-data).
+For CUB, extract the image archive and the detector annotations separately.
+Create one JSON index for the official training images and one for the test
+images. Each key is the image path from CUB's `images.txt` (relative to
+`images/`); its value points to the detector JSON, relative to the index.
+For example, **if** that JSON's header contains the following filename and its
+boxes use pixel coordinates, an index entry looks like this:
+
+```json
+{
+  "001.Black_footed_Albatross/Black_Footed_Albatross_0046_18.jpg": {
+    "annotation": "cub_train/0.json",
+    "annotation_image_id": "Black_Footed_Albatross_0046_18.jpg",
+    "box_coordinates": "pixel_xyxy"
+  }
+}
+```
+
+Match by image identity, not by sorting numbered JSON files. Use the exact
+`file_name` or `image_id` from the detector header. If an archive lacks image
+identities, recover them from the generator's original image order or
+regenerate those annotations. Use `normalized_xyxy` instead for boxes in
+the range 0 to 1.
+
+```bash
+CUB=/data/CUB_200_2011
+for split in train test; do
+  python -m spatial_cbm.training manifest --layout cub --root "$CUB" \
+    --partition "$split" --annotation-map "/data/annotations/cub-$split.json" \
+    --output "manifests/cub-$split.jsonl"
+done
+```
+
+Alternatively, supply two JSONL manifests directly. Each row contains an image
+ID, image path, zero-based class ID, and detections:
 
 ```json
 {"id":"bird/001.jpg","image":"images/bird/001.jpg","class_id":0,"detections":[{"concept":"black bill","confidence":0.91,"box":[0.2,0.1,0.4,0.3],"coordinates":"normalized_xyxy"}]}
@@ -87,9 +120,8 @@ python -m spatial_cbm.training train --config "$CONFIG"
 ```
 
 Teacher preparation also accepts `--resume`. Set `RUN` to the baseline config's
-output before fitting its classifier. SALF-CBM is a paper-based reconstruction,
-not the authors' training code. The [upstream audit](https://github.com/AtharvRN/GroundedCBM/blob/f6131365/docs/baselines.md)
-is preserved in Git history. Use `--help` on any command for additional options.
+output before fitting its classifier. SALF-CBM training is a reconstruction
+of the published method, not the original training implementation.
 
 ## Paper Settings
 

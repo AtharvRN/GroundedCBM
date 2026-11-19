@@ -1,28 +1,43 @@
-# SpG-CBM
+# Where Concepts Fire: Spatially Grounded Concept Bottleneck Models
 
-Spatially Grounded Concept Bottleneck Models.
+**SpG-CBM** predicts which concepts are present in an image, shows where they
+appear, and uses the concept scores to predict the class. This repository
+includes training, sparse classification, and evaluation code.
 
-A shared training and evaluation pipeline for **CUB, ImageNet, Places365, and
-PartImageNet++**, with LF-CBM, VLG-CBM, and SALF-CBM baselines.
+## Get the data
 
-## Setup
+Download **one** dataset to get started. The example below uses CUB.
 
-Use a CUDA-compatible PyTorch/torchvision installation. Run all commands from
-the repository root; the example below uses CUB.
+| Dataset | What to download |
+| --- | --- |
+| [CUB-200-2011](https://data.caltech.edu/records/65de6-vp158) | Extract `CUB_200_2011.tgz`. Keep the images and the supplied train/test split together. |
+| [ImageNet-1K](https://www.image-net.org/challenges/LSVRC/2012/2012-downloads.php) | Sign in and download the ILSVRC 2012 training images, validation images, and development kit (validation labels). |
+| [Places365](https://places2.csail.mit.edu/download.html) | Use the official access form for **Places365-Standard**. Request the training images, validation images, and matching file lists with scene labels. |
+| [PartImageNet++](https://huggingface.co/datasets/lixiao20/PartImageNetPP) | Download the human part annotations and obtain the corresponding images from ImageNet-1K. Human masks and detector boxes are separate inputs. |
+
+**Grounding DINO annotations.** SpG-CBM learns its spatial maps from concept
+boxes, not just image labels. For CUB, ImageNet, and Places365, start with the
+[VLG-CBM annotation download](https://github.com/Trustworthy-ML-Lab/VLG-CBM#training-pipeline).
+For missing images or a different concept list, use the upstream
+[annotation generator](https://github.com/Trustworthy-ML-Lab/VLG-CBM#annotation-generation-optional).
+PartImageNet++ is not supported by that generator out of the box: for
+detector-supervised training, supply boxes for its own part vocabulary.
+
+## Train on CUB
+
+From the repository root, install the dependencies:
 
 ```bash
-pip install -r requirements-release.txt
-CONFIG=configs/cub.yaml
-RUN=runs/cub/seed42
+python -m pip install -r requirements-release.txt
 ```
 
-[Prepare your data](spatial_cbm/README.md#prepare-data), then edit the config's
-data, backbone checkpoint, cache, and output paths. `RUN` must match
-`training.output`. Choose another [config](configs/) for a different dataset.
-
-## Train SpG-CBM
+1. [Pair the images with their boxes and prepare the splits](spatial_cbm/README.md#prepare-data). This produces `prepared/cub`.
+2. In [the CUB config](configs/cub.yaml), set `model.checkpoint` to your CUB-trained ResNet-18 backbone (torchvision state-dict format; weights are not bundled).
+3. Check the inputs and start training:
 
 ```bash
+CONFIG=configs/cub.yaml
+RUN=runs/cub/seed42  # training.output in the config
 python -m spatial_cbm.training check --config "$CONFIG"
 python -m spatial_cbm.training train --config "$CONFIG"
 ```
