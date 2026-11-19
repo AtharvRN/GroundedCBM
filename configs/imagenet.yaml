@@ -1,4 +1,4 @@
-# Prospective unified-training recipe, not a historical-result reproduction.
+# Current paper's stated budget; historical checkpoints may have longer training histories.
 dataset: imagenet
 data:
   prepared: prepared/imagenet
@@ -18,10 +18,10 @@ training:
   output: runs/imagenet/seed42
   seed: 42
   device: cuda
-  epochs: 75
-  patience: 10
-  min_epochs: 10
-  batch_size: 32
+  epochs: 20
+  patience: 5
+  min_epochs: 5
+  batch_size: 128
   optimizer: adam
   lr: 0.0001
   weight_decay: 0.00001
@@ -30,4 +30,6 @@ training:
   fused_bce: 1.0
   kl: 0.25
   spatial_bce: 0.25
-  positive_weight: 1.0
+  positive_weight: 100.0
+  concept_bce_reduction: mean
+  filter_concepts: false

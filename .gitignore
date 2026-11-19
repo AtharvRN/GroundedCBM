@@ -21,6 +21,8 @@ RELEASE_MANIFEST.md
 # Local-only release/deployment scaffolding
 k8s/
 /tests/
+/evals/deletion.py
+/docs/
 artifacts/
 results/
 saved_models/

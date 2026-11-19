@@ -17,6 +17,7 @@ teacher:
 training:
   output: runs/cub/salf_cbm/seed42
   seed: 42
+  filter_concepts: false
   epochs: 75
   patience: 10
   min_epochs: 10

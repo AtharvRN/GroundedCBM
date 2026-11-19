@@ -316,6 +316,8 @@ def fit(cfg, resume=False):
             backbone.to(memory_format=torch.channels_last)
             model.to(memory_format=torch.channels_last)
         cached_features = prepare_regression_features(cfg,backbone,protocol) if head is not None else None
+        from .parallel import parallelize
+        execution_backbone, execution_head = parallelize(backbone, head, t.devices)
         ema = (dict(model=copy.deepcopy(backbone).eval().requires_grad_(False),updates=0)
                if t.stage == 'backbone' and t.ema_decay else None)
         options = dict(lr=t.lr, weight_decay=t.weight_decay)
@@ -349,12 +351,12 @@ def fit(cfg, resume=False):
             for group in optimizer.param_groups:
                 group['lr'] = learning_rate(t, epoch)
             train, val = loaders(cfg, data, epoch,teacher_manifest=protocol['teacher'],cached_features=cached_features)
-            tr = run_epoch(backbone, head, train, cfg, optimizer, scaler, output/'progress.json', ema)
-            validation_backbone = ema['model'] if ema is not None else backbone
+            tr = run_epoch(execution_backbone, execution_head, train, cfg, optimizer, scaler, output/'progress.json', ema)
+            validation_backbone = ema['model'] if ema is not None else execution_backbone
             annotated = data['annotated_images']==data['images']
             metrics = Metrics(len(val.dataset),concept_count,cfg.data.cache) if head is not None and annotated else None
             try:
-                va = run_epoch(validation_backbone, head, val, cfg, progress_path=output/'progress.json',metrics=metrics)
+                va = run_epoch(validation_backbone, execution_head, val, cfg, progress_path=output/'progress.json',metrics=metrics)
             finally:
                 if metrics is not None: metrics.close()
             record = dict(epoch=epoch, train_loss=tr['loss'], val_loss=va['loss'],

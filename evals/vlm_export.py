@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 
 import numpy as np
 from PIL import Image
@@ -61,7 +62,9 @@ def export(args):
         raise ValueError('Classifier/concept dimensions differ')
     if not all(torch.isfinite(v).all() for v in (weight,bias,mean,std)) or not (std>0).all(): raise ValueError('Invalid classifier tensors')
     dataset = Samples(cfg,args.split,data,concepts=False)
-    with sqlite3.connect(f'file:{cfg.data.prepared}/{dataset.database}?mode=ro',uri=True) as db:
+    from torchvision.transforms import Normalize
+    normalization_transform = next(t for t in dataset.transform.transforms if isinstance(t, Normalize))
+    with closing(sqlite3.connect(f'file:{cfg.data.prepared}/{dataset.database}?mode=ro',uri=True)) as db:
         lookup = {position:(name,label) for position,name,label in db.execute('SELECT position,id,class_id FROM samples')}
     records = [(i,*lookup[int(position)]) for i,position in enumerate(dataset.indices)]
     chosen = cohort(records,args.count,args.seed)
@@ -83,8 +86,8 @@ def export(args):
             if maps is None: raise ValueError('Model supplies no native maps; use an explicit saliency adapter')
             if not torch.isfinite(raw).all() or not torch.isfinite(maps).all(): raise ValueError('Nonfinite model output')
             z=(raw-mean)/std; logits=torch.nn.functional.linear(z,weight,bias)
-            rgb=(pixels.float()*pixels.new_tensor((.229,.224,.225))[None,:,None,None]+
-                 pixels.new_tensor((.485,.456,.406))[None,:,None,None]).clamp(0,1)
+            rgb=(pixels.float()*pixels.new_tensor(normalization_transform.std)[None,:,None,None]+
+                 pixels.new_tensor(normalization_transform.mean)[None,:,None,None]).clamp(0,1)
             for i,(_,name,label) in enumerate(chunk):
                 image_id=digest(name.encode())[:24];folder=args.output/'images'/image_id;folder.mkdir(parents=True)
                 clean=folder/'clean.png';Image.fromarray(rgb[i].mul(255).round().byte().cpu().numpy().transpose(1,2,0)).save(clean)

@@ -1,4 +1,4 @@
-# Prospective unified-training recipe, not a historical-result reproduction.
+# Current paper's convex-fusion recipe; exact reproduction also needs its prepared bank/split and backbone.
 dataset: partimagenetpp
 data:
   prepared: prepared/partimagenetpp
@@ -12,7 +12,8 @@ model:
   checkpoint: /path/to/partimagenetpp_backbone.pt
   stages: conv345
   width: 2048
-  alpha: 0.1
+  alpha: 0.75
+  fusion: convex
 training:
   stage: concept
   output: runs/partimagenetpp/seed42
@@ -30,4 +31,6 @@ training:
   fused_bce: 1.0
   kl: 0.25
   spatial_bce: 0.25
-  positive_weight: 1.0
+  positive_weight: 100.0
+  concept_bce_reduction: weight_sum
+  filter_concepts: false

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+from contextlib import closing
 
 import numpy as np
 import torch
@@ -252,35 +253,21 @@ class NonSingletonBatches(BatchSampler):
 
 
 class RegressionMeter:
-    """Full-cohort centering for validation, with disk-backed bounded-memory scores."""
+    """Full-cohort validation without disk-backed predictions or targets."""
     def __init__(self, rows, cache):
-        if rows<2: raise ValueError('Regression validation requires at least two images')
-        Path(cache).mkdir(parents=True,exist_ok=True)
-        self.directory = tempfile.TemporaryDirectory(prefix='regression-',dir=cache)
-        self.rows, self.offset, self.arrays = rows,0,[]
+        from .regression import StreamingSimilarity
+        self.reducer = StreamingSimilarity(rows)
+        self.rows, self.offset = rows, 0
 
     def update(self, prediction, target):
-        if not self.arrays:
-            self.arrays = [np.lib.format.open_memmap(Path(self.directory.name)/f'{i}.npy',mode='w+',dtype='float32',
-                shape=(self.rows,*prediction.shape[1:])) for i in range(2)]
-        end = self.offset+len(prediction)
-        for value,array in zip((prediction,target),self.arrays):
-            if not torch.isfinite(value).all(): raise ValueError('Nonfinite regression predictions/targets')
-            array[self.offset:end] = value.detach().float().cpu().numpy()
-        self.offset = end
+        self.reducer.update(prediction, target)
+        self.offset = self.reducer.count
 
     def similarities(self):
-        if self.offset != self.rows: raise ValueError('Incomplete regression validation cohort')
-        shape = self.arrays[0].shape
-        chunk = max(1,(32<<20)//(self.rows*int(np.prod(shape[2:]))*8))
-        result = []
-        for start in range(0,shape[1],chunk):
-            values = [torch.from_numpy(np.array(a[:,start:start+chunk],copy=True)).double() for a in self.arrays]
-            result.append(cubic_similarity(*values))
-        return torch.cat(result)
+        return self.reducer.similarities()
 
     def close(self):
-        self.arrays.clear(); self.directory.cleanup()
+        self.reducer.close()
 
 
 def initial_indices(cfg, protocol, teacher_manifest=None):
@@ -292,7 +279,7 @@ def initial_indices(cfg, protocol, teacher_manifest=None):
     indices = np.load(root/'indices.npz')['train']
     if cfg.model.method=='vlg_cbm':
         positions,lookup,keep = set(indices.tolist()),concept_lookup(bank),torch.zeros(len(bank),dtype=torch.bool)
-        with sqlite3.connect(f'file:{root}/samples.sqlite?mode=ro',uri=True) as db:
+        with closing(sqlite3.connect(f'file:{root}/samples.sqlite?mode=ro',uri=True)) as db:
             for position,raw in db.execute('SELECT position,detections FROM samples'):
                 if position not in positions: continue
                 items = json.loads(raw)

@@ -69,17 +69,23 @@ python -m evals.cub70 --config "$CONFIG" \
 
 See the [mask format](evals/cub70_assets/README.md#inputs) for dataset layout.
 
-## Deletion Test
+## Spatial Concept Intervention
 
-After classifier fitting, compare targeted patch deletion with random controls:
+Correct up to five missed concepts using supplied region masks, keeping the
+global branch and NEC classifier frozen (paper Experiment V):
 
 ```bash
-python -m evals.deletion --config "$CONFIG" \
-  --head-dir "$RUN/nec" --count 100 --output results/deletion/cub
+python -m evals.intervention export --config "$CONFIG" \
+  --head-dir "$RUN/nec" --feedback /data/feedback-test.json \
+  --split test --output results/intervention/test
+python -m evals.intervention evaluate --export results/intervention/test \
+  --rule replace --output results/intervention/results.json
 ```
 
-This runs a 100-image check using NEC=5, 32x32 patches, and three random controls.
-Remove `--count 100` for the full test split. Results: `results/deletion/cub/results.json`.
+Results include base/edited accuracy, percentage-point gain, and fixed/harmed
+predictions over the full supplied cohort. See [feedback inputs and SALF-CBM
+calibration](evals/README.md#spatial-concept-intervention). Evaluation of saved
+exports is CPU-only; it does not rerun the backbone.
 
 ## VLM as a Judge
 

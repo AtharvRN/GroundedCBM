@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -126,9 +127,9 @@ def human_targets(row):
 
 def prepare(source, output, dataset, concepts=None, split=None, fraction=None, seed=6885, heldout_source=None, supervision='gdino'):
     source, output = Path(source).resolve(), Path(output).resolve()
-    fraction = ({'cub':.1,'imagenet':.1,'places365':.05,'partimagenetpp':.05}.get(dataset)
+    fraction = ({'cub':.1,'imagenet':.1,'places365':.05,'partimagenetpp':.05,'rival10':.1}.get(dataset)
                 if fraction is None else fraction)
-    if dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp'} or not 0 < fraction < 1:
+    if dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp', 'rival10'} or not 0 < fraction < 1:
         raise ValueError('Invalid dataset or validation fraction')
     if supervision not in {'gdino','human'} or (supervision=='human' and dataset!='partimagenetpp'):
         raise ValueError('Human supervision is supported only for PartImageNet++')
@@ -140,7 +141,7 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
     class_names, names_by_class = {}, {}
     image_roster = hashlib.sha256()
     annotated = 0
-    with sqlite3.connect(output/'samples.sqlite') as db, source.open() as stream:
+    with closing(sqlite3.connect(output/'samples.sqlite')) as db, db, source.open() as stream:
         db.execute('CREATE TABLE samples (position INTEGER PRIMARY KEY, id TEXT UNIQUE, image TEXT UNIQUE, class_id INTEGER, detections TEXT)')
         for i, line in enumerate(stream):
             row = json.loads(line)
@@ -186,7 +187,7 @@ def prepare(source, output, dataset, concepts=None, split=None, fraction=None, s
     test_ids, test_images, test_annotated = set(), set(), 0
     if heldout_source is not None:
         heldout_source = Path(heldout_source).resolve()
-        with sqlite3.connect(output/'test.sqlite') as db, heldout_source.open() as stream:
+        with closing(sqlite3.connect(output/'test.sqlite')) as db, db, heldout_source.open() as stream:
             db.execute('CREATE TABLE samples (position INTEGER PRIMARY KEY, id TEXT UNIQUE, image TEXT UNIQUE, class_id INTEGER, detections TEXT)')
             for i, line in enumerate(stream):
                 row = json.loads(line)
@@ -288,7 +289,9 @@ class Samples(Dataset):
         annotation_key = 'test_annotated_images' if split == 'test' else 'annotated_images'
         if concepts and (not self.bank or protocol[annotation_key] != protocol[count_key]):
             raise ValueError('Concept training requires a vocabulary and explicit annotations for every image')
-        self.grid = cfg.data.input_size // (8 if cfg.model.stages == 'conv345' else 16)
+        self.grid = cfg.data.input_size // (8 if cfg.model.stages == 'conv345' or cfg.model.stage_ablation else 16)
+        if cfg.model.spatial_grid:
+            self.grid = cfg.model.spatial_grid
         self.cache = None if not concepts else SpatialTargetCache(cfg.data.cache, dict(
             version=1, database=protocol['files'][self.database], vocabulary=self.bank,
             resize=cfg.data.resize_size, crop=cfg.data.input_size, grid=self.grid,
@@ -302,6 +305,10 @@ class Samples(Dataset):
         self.db, self.pid, self.fds = None, None, {}
         interpolation = (transforms.InterpolationMode.BILINEAR if concepts or cfg.training.stage=='concept'
                          else transforms.InterpolationMode.BICUBIC)
+        mean, std = (.485,.456,.406), (.229,.224,.225)
+        if cfg.model.backbone == 'clip_vit_b16':
+            interpolation = transforms.InterpolationMode.BICUBIC
+            mean, std = (.48145466,.4578275,.40821073), (.26862954,.26130258,.27577711)
         if image_augmentation is None:
             image_augmentation = not concepts and cfg.training.stage=='backbone'
         image_augmentation = image_augmentation and split=='train'
@@ -312,7 +319,7 @@ class Samples(Dataset):
             spatial.append(transforms.RandAugment(num_ops=cfg.training.randaugment_ops,
                                                  magnitude=cfg.training.randaugment_magnitude))
         self.transform = transforms.Compose(spatial + [transforms.ToTensor(),
-            transforms.Normalize((.485,.456,.406),(.229,.224,.225))])
+            transforms.Normalize(mean,std)])
         if image_augmentation and cfg.training.random_erasing:
             self.transform.transforms.append(transforms.RandomErasing(p=cfg.training.random_erasing))
 
@@ -328,12 +335,27 @@ class Samples(Dataset):
     def __getstate__(self):
         return {**self.__dict__, 'db':None, 'pid':None, 'fds':{}}
 
+    def close(self):
+        if getattr(self, 'db', None) is not None:
+            self.db.close()
+            self.db = None
+        for fd in getattr(self, 'fds', {}).values():
+            os.close(fd)
+        self.fds, self.pid = {}, None
+        for name in ('cache', 'metric_cache'):
+            cache = getattr(self, name, None)
+            if cache is not None:
+                cache.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except (OSError, sqlite3.Error):
+            pass  # Process teardown may already have closed worker-owned handles.
+
     def __getitem__(self, index):
         if self.pid != os.getpid():
-            if self.db is not None:
-                self.db.close()
-            for fd in self.fds.values():
-                os.close(fd)
+            self.close()
             self.db = sqlite3.connect(f'file:{self.root / self.database}?mode=ro', uri=True)
             self.pid, self.fds = os.getpid(), {}
         position = int(self.indices[index])

@@ -20,7 +20,7 @@ def main():
     prepare = commands.add_parser('prepare')
     prepare.add_argument('--source', required=True)
     prepare.add_argument('--output', required=True)
-    prepare.add_argument('--dataset', choices=['cub','imagenet','places365','partimagenetpp'], required=True)
+    prepare.add_argument('--dataset', choices=['cub','imagenet','places365','partimagenetpp','rival10'], required=True)
     prepare.add_argument('--concepts')
     prepare.add_argument('--split')
     prepare.add_argument('--test-source', required=True)

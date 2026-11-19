@@ -41,6 +41,8 @@ def pool_residual_spatial_logits(
     mode = str(pooling).lower()
     if mode == "avg":
         return flat.mean(dim=-1)
+    if mode == "max":
+        return flat.amax(dim=-1)
     if mode == "topk":
         return pool_concept_maps(maps, pooling="topk", topk_fraction=topk_fraction)
     if mode == "lse":

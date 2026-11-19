@@ -32,6 +32,8 @@ class Model:
     method: str = 'sg_cbm'
     salf_grid: int = 7
     vlg_hidden: int = 0
+    stage_ablation: bool = False
+    spatial_grid: int = 0
 
 
 @dataclass
@@ -73,6 +75,7 @@ class Training:
     cache_regression_features: bool = False
     feature_batch_size: int = 128
     evaluation_batch_size: int = 0
+    devices: int = 1
 
 
 @dataclass
@@ -94,9 +97,14 @@ class Config:
     teacher: Teacher = field(default_factory=Teacher)
 
     def validate(self):
-        if self.dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp'}:
+        if self.dataset not in {'cub', 'imagenet', 'places365', 'partimagenetpp', 'rival10'}:
             raise ValueError('Unknown dataset')
         d, m, t = self.data, self.model, self.training
+        if type(t.devices) is not int or t.devices < 1:
+            raise ValueError('devices must be a positive integer')
+        if t.devices > 1 and (m.method != 'sg_cbm' or t.stage != 'concept'
+                or t.device not in {'cuda', 'cuda:0'} or t.batch_size < t.devices):
+            raise ValueError('Multiple devices require SG-CBM concept training on cuda:0 with at least one image per GPU')
         if type(t.filter_concepts) is not bool:
             raise ValueError('filter_concepts must be a boolean')
         if type(t.cache_regression_features) is not bool or type(t.feature_batch_size) is not int or t.feature_batch_size<1:
@@ -134,12 +142,26 @@ class Config:
             raise ValueError('VLG-CBM uses detector concept labels')
         if d.supervision not in {'gdino','human'} or (d.supervision=='human' and self.dataset!='partimagenetpp'):
             raise ValueError('Human supervision is supported only for PartImageNet++')
-        if m.backbone not in {'resnet18', 'resnet50', 'resnet101'} or m.stages not in {'conv45', 'conv345'}:
+        vit = m.backbone == 'clip_vit_b16'
+        allowed_stages = {'conv3', 'conv4', 'conv5', 'conv34', 'conv45', 'conv345'} if m.stage_ablation else {'conv45', 'conv345'}
+        if vit:
+            allowed_stages = {'vit4812'}
+            if (m.method != 'sg_cbm' or t.stage != 'concept' or m.stage_ablation
+                    or d.input_size != 224 or m.spatial_grid not in (0, 14)
+                    or not m.checkpoint or m.weights != 'none'):
+                raise ValueError('CLIP ViT-B/16 requires frozen SG-CBM concept training, an explicit checkpoint, 224 inputs and a native 14-grid')
+        if type(m.spatial_grid) is not int or m.spatial_grid not in (0, 14, 28):
+            raise ValueError('spatial_grid must be 0 (native), 14, or 28')
+        if m.spatial_grid and not vit and (m.method != 'sg_cbm' or m.stages != 'conv345' or d.input_size != 224):
+            raise ValueError('Explicit spatial grid requires conv345 SG-CBM at input size 224')
+        if type(m.stage_ablation) is not bool or (m.stage_ablation and m.method != 'sg_cbm'):
+            raise ValueError('Stage ablation requires the SG spatial head')
+        if m.backbone not in {'resnet18', 'resnet50', 'resnet101', 'clip_vit_b16'} or m.stages not in allowed_stages:
             raise ValueError('Unsupported backbone or spatial stages')
         if m.fusion not in {'residual', 'convex'} or type(m.learn_alpha) is not bool:
             raise ValueError('Unsupported concept fusion configuration')
-        if m.spatial_pooling not in {'lse','topk'} or not math.isfinite(m.topk_fraction) or not 0 < m.topk_fraction <= 1:
-            raise ValueError('Spatial pooling requires lse/topk and a finite top-k fraction in (0, 1]')
+        if m.spatial_pooling not in {'lse','topk','max','attention'} or not math.isfinite(m.topk_fraction) or not 0 < m.topk_fraction <= 1:
+            raise ValueError('Spatial pooling requires lse/topk/max/attention and a finite top-k fraction in (0, 1]')
         if m.fusion == 'convex' and not 0 <= m.alpha <= 1:
             raise ValueError('Convex fusion alpha must be in [0, 1]')
         if m.learn_alpha and (m.fusion != 'convex' or not 0 < m.alpha < 1):

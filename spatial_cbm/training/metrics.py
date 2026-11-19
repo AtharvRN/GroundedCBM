@@ -29,6 +29,60 @@ def row_ap(scores, labels):
     return (truth*precision.gather(1,end_index)).sum(1)/truth.sum(1).clamp_min(1)
 
 
+def macro_concepts(scores, labels, frozen=None):
+    """Exact per-concept validation F1 optima; never fit on the test cohort."""
+    if scores.shape != labels.shape or scores.ndim != 2 or not all(scores.shape):
+        raise ValueError('Expected aligned nonempty concept arrays')
+    count = scores.shape[1]
+    if frozen is not None and (frozen.get('score') != 'raw_logit' or
+            len(frozen.get('thresholds', [])) != count or len(frozen.get('policies', [])) != count):
+        raise ValueError('Frozen concept calibration dimensions or score space differ')
+    thresholds, policies, per_concept = [], [], []
+    for j in range(count):
+        x, y = np.asarray(scores[:, j]), np.asarray(labels[:, j])
+        if not np.isfinite(x).all() or not np.isin(y, [0, 1]).all():
+            raise ValueError('Invalid concept scores or binary labels')
+        positives = int(y.sum())
+        if frozen is None:
+            threshold = None
+            if positives == 0:
+                policy = 'absent'
+            elif positives == len(y):
+                policy = 'present'
+            else:
+                order = np.argsort(-x, kind='stable')
+                ranked = x[order]
+                ends = np.r_[np.flatnonzero(ranked[:-1] != ranked[1:]), len(x)-1]
+                tp = np.cumsum(y[order], dtype=np.int64)[ends]
+                f1 = 2*tp/(ends+1+positives)
+                # Descending scores: first maximum is the highest threshold tie.
+                threshold = float(ranked[ends[int(np.argmax(f1))]])
+                policy = 'threshold'
+        else:
+            threshold, policy = frozen['thresholds'][j], frozen['policies'][j]
+        if policy not in {'absent', 'present', 'threshold'}:
+            raise ValueError('Unknown frozen concept decision policy')
+        if policy == 'threshold':
+            if threshold is None or not np.isfinite(threshold):
+                raise ValueError('Invalid frozen concept threshold')
+            predicted = x >= threshold
+        else:
+            if threshold is not None:
+                raise ValueError('Constant concept policies must not have a threshold')
+            predicted = np.full(len(y), policy == 'present')
+        thresholds.append(threshold); policies.append(policy)
+        per_concept.append(precision_recall_f1(int((predicted & y.astype(bool)).sum()),
+                                              int(predicted.sum()), positives))
+    supported = [r for r in per_concept if r['positives']]
+    macro = {key: float(np.mean([r[key] for r in supported])) if supported else None
+             for key in ('precision', 'recall', 'f1')}
+    micro = precision_recall_f1(*(sum(r[k] for r in per_concept)
+                                for k in ('true_positives', 'predicted_positives', 'positives')))
+    return dict(**macro, supported=len(supported), total=count, averaging='macro over concepts with positive labels',
+                calibration=dict(score='raw_logit', thresholds=thresholds, policies=policies),
+                micro=micro, per_concept=per_concept)
+
+
 class Metrics:
     def __init__(self, rows, concepts, cache, calibrate=False, thresholds=None):
         if calibrate and thresholds is not None:
@@ -112,6 +166,9 @@ class Metrics:
             i = int(np.flatnonzero(f1==f1.max())[-1]) if self.calibrate else 0
             result['concept'] = dict(precision_recall_f1(self.concept_tp[i],self.concept_pred[i],self.positives),
                 threshold=float(self.concept_grid[i]),score='sigmoid(concept_score)',comparison='>=',averaging='micro')
+            if self.calibrate or self.thresholds.get('macro') is not None:
+                result['concept_macro'] = macro_concepts(self.scores, self.labels,
+                    None if self.calibrate else self.thresholds['macro'])
             mean_iou = self.iou/max(self.spatial_count,1) if self.iou is not None else None
             k = int(np.flatnonzero(mean_iou==mean_iou.max())[-1]) if self.calibrate and self.spatial_count else 0
             result['localization'] = dict(foreground_iou=float(mean_iou[k]) if self.spatial_count else None,
@@ -121,6 +178,7 @@ class Metrics:
                 result['search'] = dict(concept_thresholds=self.concept_grid.tolist(),
                     concept_objective='maximum validation micro F1',spatial_thresholds=self.spatial_grid.tolist(),
                     spatial_objective='maximum validation mean foreground IoU',tie_break='highest threshold')
+                result['search']['macro_objective'] = 'maximum validation F1 independently per concept; exact raw-score thresholds'
         return result
 
     def close(self):
@@ -151,10 +209,15 @@ def assess(cfg, test=False):
                 raise ValueError('Thresholds do not belong to this selected checkpoint and validation split')
             thresholds = dict(concept=calibrated['metrics']['concept']['threshold'],
                               spatial=calibrated['metrics']['localization']['threshold'])
+            if 'concept_macro' not in calibrated['metrics']:
+                raise ValueError('Legacy micro-only calibration: archive calibration.json and rerun calibrate for macro metrics')
+            thresholds['macro'] = calibrated['metrics']['concept_macro']['calibration']
         output_path = root/('test_metrics.json' if test else 'calibration.json')
         if output_path.exists():
             prior = json.loads(output_path.read_text())
             if prior['identity'] != identity: raise ValueError('Existing assessment belongs to another checkpoint')
+            if 'concept_macro' not in prior['metrics']:
+                raise ValueError('Legacy micro-only assessment: archive the existing JSON before rerunning')
             if test and prior['thresholds'] != thresholds: raise ValueError('Frozen thresholds changed')
             return prior
         count = len(bank)
@@ -169,7 +232,8 @@ def assess(cfg, test=False):
         if not test and (not values['concept']['positives'] or
                          (not values['spatial_pairs'] and getattr(head,'map_kind','native')!='unavailable')):
             raise ValueError('Calibration requires validation concept positives and visible region targets')
-        chosen = dict(concept=values['concept']['threshold'],spatial=values['localization']['threshold'])
+        chosen = dict(concept=values['concept']['threshold'],spatial=values['localization']['threshold'],
+                      macro=values['concept_macro']['calibration'])
         result = dict(identity=identity,cohort='test' if test else 'validation',
             checkpoint_epoch=best['epoch'],metrics=values,thresholds=chosen,
             supervision=('human part-presence and region annotations; supervised ablation'

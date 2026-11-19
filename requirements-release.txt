@@ -4,5 +4,6 @@ numpy>=1.26,<3
 Pillow>=10
 PyYAML>=6
 scikit-learn>=1.4
+scikit-image>=0.22
 tqdm>=4.66
 pytest>=8

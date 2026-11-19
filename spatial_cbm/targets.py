@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 from typing import Sequence, Tuple
 
 import numpy as np
@@ -24,7 +25,7 @@ class SpatialTargetCache:
         directory.mkdir(parents=True, exist_ok=True)
         self.path = directory / f'{key}.sqlite'
         self.connection, self.pid = None, None
-        with sqlite3.connect(self.path, timeout=60) as database:
+        with closing(sqlite3.connect(self.path, timeout=60)) as database, database:
             database.execute('PRAGMA journal_mode=WAL')
             database.execute('CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             database.execute('CREATE TABLE IF NOT EXISTS targets (id INTEGER PRIMARY KEY, payload BLOB NOT NULL)')
@@ -42,9 +43,15 @@ class SpatialTargetCache:
         return self.connection
 
     def close(self):
-        if self.connection is not None:
+        if getattr(self, 'connection', None) is not None:
             self.connection.close()
         self.connection, self.pid = None, None
+
+    def __del__(self):
+        try:
+            self.close()
+        except sqlite3.Error:
+            pass
 
     def __getstate__(self):
         return {**self.__dict__, 'connection': None, 'pid': None}

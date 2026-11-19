@@ -7,7 +7,7 @@ in `spatial_cbm.training`.
 | Evaluation | Entry point | Additional inputs |
 | --- | --- | --- |
 | CUB-70 human parts | `python -m evals.cub70` | Human masks, concept-to-part mapping, saved validation calibration |
-| Region deletion | `python -m evals.deletion` | Saved NEC head and training normalization |
+| Spatial concept intervention | `python -m evals.intervention` | Native maps, region feedback, validation calibration, saved NEC head |
 | VLM-as-a-judge | `python -m evals.vlm` | Saved NEC head, frozen exports, judge endpoint |
 
 ## CUB-70
@@ -26,58 +26,32 @@ calibration, never the CUB-70 human test masks. Missing masks are unknown, not
 background. The primary metrics average visible image-part pairs within each
 part, then supported parts equally; retain coverage when reporting them.
 
-## Region Deletion
+## Spatial Concept Intervention
 
-After feature export and NEC fitting:
+See [commands and feedback format](README.md#spatial-concept-intervention).
+The workflow follows Experiment V: select up to five missed, present true-class
+concepts (annotated parts on PartImageNet++), edit only their maps and re-pool
+with the native pooling function. The global activation, other concepts,
+training normalization and classifier remain unchanged. Accuracy includes
+every image in the supplied cohort, even when no concept is edited.
 
-```bash
-python -m evals.deletion --config configs/cub.yaml \
-  --head-dir runs/cub/nec --nec 5 --output results/deletion/cub \
-  --patch-size 32 --repeats 3 --batch-size 16 --seed 0
-```
+Replacement uses the logit of clipped cell occupancy. SALF's additive edit uses
+its resized binary support and a validation-selected beta. Calibration and test
+cohorts must be disjoint; beta selection never inspects test accuracy. Export
+records the actual model, classifier, masks, thresholds, selection order and
+input hashes. Saved arrays can be evaluated on CPU without the original image
+files, checkpoint or GPU; their hashes are verified before replay.
 
-This uses the saved minimum-validation-loss checkpoint, training normalization,
-and fitted classifier. It checks their hashes and exact NEC. All forwards use
-FP32 with TF32 disabled. No threshold calibration is needed.
-
-- Choose the top positive contribution to the **clean predicted class**, among
-  concepts with positive training-standardized activation. Wrong predictions
-  remain in the primary cohort. Images without eligible concepts stay in the
-  roster but are excluded from deletion averages, with counts reported.
-- Bilinearly resize the selected map to input size; remove the highest-mean
-  nonoverlapping 32x32 grid patch. Ties use row-major order. Input size must be
-  divisible by patch size. Replacement is zero in normalized space, not RGB black.
-- Independently sample three equal-size random grid patches with replacement.
-  They may coincide with the target. Every perturbation starts from the original
-  image; the clean class and selected concept stay fixed.
-- Average random controls within images, then images equally. Class drops are
-  percentage points; concept drops are standardized activation units. Drops and
-  targeted-minus-random gaps retain their signs. Correct-only results are also saved.
-
-All four datasets use the same evaluator. By default it processes the whole
-held-out split. Use `--count 100` for a deterministic class-balanced pilot, or
-`--image-ids roster.json` with a JSON list of held-out IDs for an exact shared
-cohort. Random controls are keyed by seed and image ID, independent of method
-and batch size. This defines a new reproducible cohort/control sequence; it
-does not reconstruct historical image-index-seeded experiments automatically.
-
-SpG-CBM and SALF-CBM use native maps. Linear LF-CBM/VLG-CBM heads use their
-release **linear-CAM** maps, not the ReLU Grad-CAM used for historical paper
-baselines. Nonlinear heads without maps are rejected. Official external
-checkpoints need an adapter; this command does not load them. Consequently,
-this is not a drop-in reproduction of the historical deletion table.
-
-The output directory contains `protocol.json`, per-image `rows.jsonl`,
-`results.json`, and a final `complete.json` with hashes. Input-tensor hashes,
-the full roster, selected concepts and all patch indices are retained. Interrupted
-runs have no completion marker; use a new output directory to rerun. Existing
-outputs are never overwritten. No job submission or API call is involved.
+Use the historical artifacts for exact reported cohorts and calibration. The
+release exports new runs and does not bundle paper checkpoints or datasets.
+This is simulated concept correction, not proof that a highlighted region
+causally mediates the original prediction.
 
 ## VLM-as-a-Judge Evaluation
 
 Independent judgments of **concept presence** and **spatial localization** for
 CUB, ImageNet and Places365. This is separate from training, detector-based
-evaluation, human-mask overlap, and causal deletion tests.
+evaluation, human-mask overlap, and spatial concept intervention.
 
 ```bash
 python -m evals.vlm --help
@@ -193,9 +167,11 @@ visible evidence and spatial alignment, not causal reliance or classifier faithf
 
 The judge accepts frozen exports from other models without loading their weights.
 An adapter must preserve that model's native crops, concept order, normalization,
-classifier, selection rule and maps. In particular, the official ImageNet SALF
-release must retain its original classifier; do not silently replace it with an
-NEC=5 adaptation. The public checkpoint exporter above is not that adapter.
+classifier, selection rule and maps. Record whether an official ImageNet SALF
+export uses the authors' original classifier or a refitted NEC=5 classifier;
+those are different explanation-selection protocols and must not be silently
+mixed. Retain the original backbone and concept projection in either case.
+The public checkpoint exporter above is not an official-checkpoint adapter.
 
 Create `manifest.jsonl` with one row per selected image/concept:
 

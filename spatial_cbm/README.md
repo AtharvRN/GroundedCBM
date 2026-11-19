@@ -43,6 +43,19 @@ Add `--resume` to `train` after an interruption. Minimum validation loss selects
 For PartImageNet++ human supervision, use `partimagenetpp_human.yaml` and prepare
 human-annotated manifests with `--supervision human`.
 
+Concept metrics following Table 3's definitions are `concept_ap` and
+`concept_macro.{precision,recall,f1}` in `test_metrics.json`. AP and macro scores
+average concepts with test positives. Each concept threshold maximizes its own
+validation F1 (highest threshold on ties). Concepts with no validation positives
+always predict absent; all-positive concepts always predict present. The
+`concept_macro.micro` field reports pooled scores at those same thresholds;
+`concept` retains the separate, single-threshold micro-F1 protocol for comparison.
+Archive legacy micro-only calibration/results JSON before recalibrating; the
+new evaluator will not silently relabel old results as macro scores.
+Metrics use the prepared annotations: GDINO targets give proxy scores, not
+independent human-label results. The human-supervision config is a training
+ablation, not a switch that reproduces Table 3's detector-trained comparison.
+
 ## Classification: ACC@NEC5 and AVGACC
 
 Set `RUN` to the config's `training.output`:
@@ -77,3 +90,42 @@ Teacher preparation also accepts `--resume`. Set `RUN` to the baseline config's
 output before fitting its classifier. SALF-CBM is a paper-based reconstruction,
 not the authors' training code. The [upstream audit](https://github.com/AtharvRN/GroundedCBM/blob/f6131365/docs/baselines.md)
 is preserved in Git history. Use `--help` on any command for additional options.
+
+## Paper Settings
+
+Use the same prepared splits and exact vocabulary across methods. The supplied
+concept files are source vocabularies, not a guarantee of the final paper's
+filtered banks (671 CUB, 4,306 ImageNet, 2,534 Places365, 783 PartImageNet++).
+Keep the prepared `concepts.txt` and split hashes with each reported model.
+Disable baseline vocabulary filtering with `training.filter_concepts: false`
+for a matched comparison.
+
+The current paper uses residual fusion `g + 0.1s` except on PartImageNet++, where
+`model.fusion: convex` and `model.alpha: 0.75` mean `0.75g + 0.25s`.
+The dataset templates now reflect the paper's stated training budgets. Places365
+uses the archived 10-epoch AdamW/cosine KL+BCE recipe; PartImageNet++ uses the
+archived convex recipe. ImageNet's template uses the manuscript's 20-epoch
+budget, not the longer histories of some existing checkpoints. Do not resume an
+old run with a changed recipe. CUB defaults to a 10% internal holdout (599 images);
+pass `--fraction 0.05` to `prepare` for the other three datasets. Reuse the exact
+saved split when comparing to an existing result.
+ImageNet's main SALF-CBM result uses the authors' released checkpoint and stronger
+backbone, not this repository's reconstructed SALF training recipe. Do not
+replace its backbone at inference or label a reconstructed run as official.
+Recipe templates do not include historical data, weights or exact cohorts.
+
+## Optional ViT and Multiple GPUs
+
+Install `pip install -r requirements-vit.txt`. For a frozen CLIP ViT-B/16 set
+`model.backbone: clip_vit_b16`, `model.stages: vit4812`, `model.weights: none`
+and an explicit local `model.checkpoint` (OpenCLIP full/visual-only weights).
+Use input size 224 and the native 14x14 grid. The global branch reads the
+512-dimensional image embedding; spatial projections read patch tokens after
+blocks 4, 8 and 12. CLIP normalization and bicubic resizing are automatic.
+This option supports SpG-CBM only, not backbone fine-tuning or baseline heads.
+
+For multi-GPU SpG concept training, set `training.device: cuda` and
+`training.devices: 2`. `training.batch_size` is the total batch, not per GPU;
+losses are computed after gathering. Checkpoint keys remain single-device
+compatible. LF/SALF validation uses streaming full-cohort moments, without
+materializing all spatial predictions on disk.

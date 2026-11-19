@@ -11,7 +11,7 @@ import importlib
 import io
 import json
 import os
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from copy import deepcopy
 from pathlib import Path
 import sqlite3
@@ -129,7 +129,7 @@ def _rows(root, protocol):
                     raise ValueError('Teacher cohort has overlapping or duplicate positions')
                 membership[position] = (sample_id, name)
     count = 0
-    with sqlite3.connect(f'{(root / "samples.sqlite").resolve().as_uri()}?mode=ro', uri=True) as db:
+    with closing(sqlite3.connect(f'{(root / "samples.sqlite").resolve().as_uri()}?mode=ro', uri=True)) as db:
         for position, sample_id, reference in db.execute('SELECT position,id,image FROM samples ORDER BY position'):
             member = membership.pop(position, None)
             if member is None or member[0] != sample_id:

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+from contextlib import closing
 
 import numpy as np
 from PIL import Image
@@ -79,7 +80,7 @@ def evaluate(cfg, mapping_path, output_path, masks_root=None, manifest=None):
     threshold = calibration['metrics']['localization']['threshold']
     if not 0<=threshold<=1: raise ValueError('Invalid saved localization threshold')
     columns = assignments(json.loads(Path(mapping_path).read_text()),bank)
-    with sqlite3.connect(f'file:{Path(cfg.data.prepared)/"test.sqlite"}?mode=ro',uri=True) as db:
+    with closing(sqlite3.connect(f'file:{Path(cfg.data.prepared)/"test.sqlite"}?mode=ro',uri=True)) as db:
         records = {row[1]:dict(position=row[0],id=row[1],image=json.loads(row[2]),class_id=row[3])
                    for row in db.execute('SELECT position,id,image,class_id FROM samples ORDER BY position')}
     roster,missing = [],{part:0 for part in GROUPS}
